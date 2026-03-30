@@ -8,6 +8,7 @@ import Badge from "../components/ui/badge";
 import useToastStore from "../stores/toastStore";
 import { apiDelete } from "../services/apiClient";
 import { useProductsData } from "../hooks/useProductsData";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const CATEGORY_AVATAR_MAP = {
   antalgique: [
@@ -171,7 +172,7 @@ const ProductsList = ({
   const [products, setProducts] = useState([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(5);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState({
     from: "",
     to: "",

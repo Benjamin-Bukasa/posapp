@@ -7,6 +7,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveStockStatus = (quantity, minLevel) => {
   const qty = Number(quantity || 0);
@@ -27,7 +28,7 @@ function Inventory() {
   const storeId = user?.storeId || null;
   const [inventory, setInventory] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(6);
 

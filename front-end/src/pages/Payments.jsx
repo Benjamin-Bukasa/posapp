@@ -30,6 +30,7 @@ import {
   isWithinRange,
   percentChange,
 } from "../utils/metrics";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const mapPaymentStatus = (status) => {
   if (status === "COMPLETED") return "Paye";
@@ -67,7 +68,7 @@ function Payments() {
   const showToast = useToastStore((state) => state.showToast);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);

@@ -7,6 +7,7 @@ import { formatAmount, formatDate, formatName, shortId } from "../utils/formatte
 import useToastStore from "../stores/toastStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveSupplyVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
@@ -52,7 +53,7 @@ function ReportsSupplyTable() {
   const [requests, setRequests] = useState([]);
   const [purchaseOrders, setPurchaseOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);

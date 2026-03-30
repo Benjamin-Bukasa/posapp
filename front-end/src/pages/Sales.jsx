@@ -31,6 +31,7 @@ import {
   percentChange,
 } from "../utils/metrics";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const mapPaymentMethod = (method) => {
   if (!method) return "N/A";
@@ -68,7 +69,7 @@ function Sales() {
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);

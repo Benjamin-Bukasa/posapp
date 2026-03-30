@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   Bell,
   ChevronDown,
@@ -13,7 +13,7 @@ import {
   User,
   LogOut
 } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import DropdownAction from "../../ui/dropdownAction";
 import useThemeStore from "../../../stores/themeStore";
 import useRealtimeStore from "../../../stores/realtimeStore";
@@ -29,8 +29,10 @@ const Navbar = () => {
   const [searchSort, setSearchSort] = useState("Pertinence");
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const openMobileSidebar = useUiStore((state) => state.openMobileSidebar);
   const authUser = useAuthStore((state) => state.user);
+  const [searchValue, setSearchValue] = useState("");
 
   const scopeItems = [
     { id: "all", label: "Tous" },
@@ -118,8 +120,30 @@ const Navbar = () => {
         })),
   ];
 
+  useEffect(() => {
+    setSearchValue(searchParams.get("q") || "");
+  }, [searchParams]);
+
+  const resolveSearchTarget = () => {
+    const scope = searchScope.toLowerCase();
+    if (scope === "produits") return "/products";
+    if (scope === "catégories" || scope === "catã©gories") return "/products";
+    if (scope === "clients") return "/customers";
+    return location.pathname;
+  };
+
+  const handleSearchSubmit = (event) => {
+    event.preventDefault();
+    const targetPath = resolveSearchTarget();
+    const nextParams = new URLSearchParams();
+    if (searchValue.trim()) {
+      nextParams.set("q", searchValue.trim());
+    }
+    navigate(`${targetPath}${nextParams.toString() ? `?${nextParams.toString()}` : ""}`);
+  };
+
   return (
-    <nav className="sticky top-0 z-[80] border-b border-border bg-surface px-4 py-4 sm:px-6">
+    <nav className="sticky top-0 z-30 border-b border-border bg-surface px-4 py-4 sm:px-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div className="flex min-w-0 items-start gap-3">
           <button
@@ -163,11 +187,22 @@ const Navbar = () => {
         </div>
 
         <div className="w-full md:max-w-md">
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
-            <Search size={18} strokeWidth={1.5} className="text-text-secondary" />
+          <form
+            onSubmit={handleSearchSubmit}
+            className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2"
+          >
+            <button
+              type="submit"
+              className="text-text-secondary"
+              aria-label="Lancer la recherche"
+            >
+              <Search size={18} strokeWidth={1.5} />
+            </button>
             <input
               type="text"
               placeholder={`Rechercher (${searchScope.toLowerCase()})`}
+              value={searchValue}
+              onChange={(event) => setSearchValue(event.target.value)}
               className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none"
             />
             <DropdownAction
@@ -196,7 +231,7 @@ const Navbar = () => {
               buttonClassName="bg-neutral-300 p-2 text-text-primary hover:bg-neutral-400 dark:bg-surface dark:border dark:border-border dark:hover:bg-surface/70"
               menuClassName="min-w-[180px]"
             />
-          </div>
+          </form>
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:gap-3 md:overflow-visible md:pb-0">

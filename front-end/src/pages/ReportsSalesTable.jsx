@@ -7,6 +7,7 @@ import { formatAmount, formatDate, formatName, shortId } from "../utils/formatte
 import useToastStore from "../stores/toastStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveSaleVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
@@ -44,7 +45,7 @@ function ReportsSalesTable() {
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);

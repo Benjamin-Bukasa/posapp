@@ -1,0 +1,11 @@
+[33mcommit 9cd3a1bc3c6525c536512152e7901a66e080063f[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m)[m
+Author: Benjamin-Kabeya <bukasabenjamin6@gmail.com>
+Date:   Mon Mar 30 18:44:46 2026 +0100
+
+    Remove leaked Google OAuth client secret
+
+[33mcommit 11f5c9b8ec4a54dd4e6e9387db8bcdf07791fbe6[m
+Author: Benjamin-Kabeya <bukasabenjamin6@gmail.com>
+Date:   Fri Mar 20 20:48:31 2026 +0100
+
+    feat: add admin project

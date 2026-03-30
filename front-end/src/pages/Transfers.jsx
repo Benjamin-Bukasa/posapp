@@ -7,6 +7,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import { formatDate, formatName, shortId } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveStatusVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
@@ -34,7 +35,7 @@ function Transfers() {
   const storeId = user?.storeId || null;
   const [transfers, setTransfers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(6);
 

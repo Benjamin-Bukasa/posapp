@@ -8,6 +8,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import { formatDate, formatName, shortId } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
@@ -45,7 +46,7 @@ function Requisitions() {
   const storeId = user?.storeId || null;
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [page, setPage] = useState(1);
   const [pageSize] = useState(6);
 

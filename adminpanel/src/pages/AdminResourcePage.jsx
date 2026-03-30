@@ -26,6 +26,7 @@ import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useToastStore from "../stores/toastStore";
 import { hasAnyPermission } from "../utils/permissions";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const toRows = (payload) => {
   if (Array.isArray(payload)) {
@@ -261,7 +262,7 @@ const AdminResourcePage = () => {
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(Boolean(resource?.endpoint));
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(resource?.pageSize || 10);
   const [refreshTick, setRefreshTick] = useState(0);
@@ -303,7 +304,6 @@ const AdminResourcePage = () => {
 
   useEffect(() => {
     setPage(1);
-    setSearch("");
     setFilters({});
     setSort({ sortBy: "", sortDir: "desc" });
     setError("");

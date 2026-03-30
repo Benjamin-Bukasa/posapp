@@ -18,6 +18,7 @@ import useToastStore from "../stores/toastStore";
 import { apiGet, apiPost } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { getMonthRange, percentChange } from "../utils/metrics";
+import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveStatusVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
@@ -57,7 +58,7 @@ function Customers() {
   const showToast = useToastStore((state) => state.showToast);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);
