@@ -7,15 +7,24 @@ import {
   X,
 } from "lucide-react";
 import CustomerCreateModal from "./customerCreateModal";
-import { apiGet, apiPatch, apiPost } from "../../services/apiClient";
+import { apiGet, apiPost } from "../../services/apiClient";
 import useToastStore from "../../stores/toastStore";
 import { formatName } from "../../utils/formatters";
+import {
+  buildSecondaryRateLabel,
+  formatConvertedPrimaryAmount,
+  formatPrimaryAmount,
+  formatSecondaryAmount,
+  hasSecondaryCurrency,
+  convertToPrimaryAmount,
+} from "../../utils/currency";
 
 const PaymentModal = ({
   isOpen,
   onClose,
   cartItems = [],
   totalAmount = 0,
+  currencySettings,
   onConfirm,
 }) => {
   const [method, setMethod] = useState("cash");
@@ -26,6 +35,8 @@ const PaymentModal = ({
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [customers, setCustomers] = useState([]);
   const [loadingCustomers, setLoadingCustomers] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [bonusProgram, setBonusProgram] = useState(null);
   const showToast = useToastStore((state) => state.showToast);
 
   const normalizeCustomer = useCallback(
@@ -35,7 +46,7 @@ const PaymentModal = ({
       phone: customer?.phone || "",
       points: Number(customer?.points || 0),
     }),
-    []
+    [],
   );
 
   const loadCustomers = useCallback(async () => {
@@ -58,6 +69,15 @@ const PaymentModal = ({
     }
   }, [normalizeCustomer, showToast]);
 
+  const loadBonusProgram = useCallback(async () => {
+    try {
+      const program = await apiGet("/api/customer-bonus-programs/current");
+      setBonusProgram(program || null);
+    } catch (error) {
+      setBonusProgram(null);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isOpen) return;
     setAmount(totalAmount ? totalAmount.toFixed(2) : "");
@@ -65,22 +85,35 @@ const PaymentModal = ({
     setSelectedCustomer(null);
     setIsCustomerMenuOpen(false);
     setMethod("cash");
+    setSubmitting(false);
     loadCustomers();
-  }, [isOpen, loadCustomers, totalAmount]);
+    loadBonusProgram();
+  }, [isOpen, loadBonusProgram, loadCustomers, totalAmount]);
 
   const numericAmount = useMemo(() => {
     const value = parseFloat(amount.replace(",", "."));
     return Number.isNaN(value) ? 0 : value;
   }, [amount]);
 
+  const secondaryEnabled = hasSecondaryCurrency(currencySettings);
+  const exchangeRateLabel = buildSecondaryRateLabel(currencySettings);
   const change = Math.max(0, numericAmount - totalAmount);
-  const pointsEarned =
-    selectedCustomer && totalAmount > 0 ? Math.max(1, Math.floor(totalAmount / 10)) : 0;
+  const primaryCurrencyCode = currencySettings?.primaryCurrencyCode || "USD";
+  const secondaryCurrencyCode = currencySettings?.secondaryCurrencyCode || "";
+  const pointsEarned = useMemo(() => {
+    if (!selectedCustomer || totalAmount <= 0) return 0;
+    const threshold = Number(bonusProgram?.amountThreshold || 0);
+    const points = Number(bonusProgram?.pointsAwarded || 0);
+    if (Number.isFinite(threshold) && threshold > 0 && Number.isFinite(points) && points > 0) {
+      return Math.max(0, Math.floor(totalAmount / threshold) * Math.trunc(points));
+    }
+    return Math.max(1, Math.floor(totalAmount / 10));
+  }, [bonusProgram, selectedCustomer, totalAmount]);
 
-  const keypad = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "⌫"];
+  const keypad = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "<- "];
 
   const handleKey = (key) => {
-    if (key === "⌫") {
+    if (key === "<- ") {
       setAmount((prev) => prev.slice(0, -1));
       return;
     }
@@ -105,13 +138,27 @@ const PaymentModal = ({
 
   const handleSelectCustomer = (customer) => {
     setSelectedCustomer(customer);
-    setCustomerQuery(`${customer.name} • ${customer.phone}`);
+    setCustomerQuery(`${customer.name} - ${customer.phone}`);
     setIsCustomerMenuOpen(false);
   };
 
   const handleCreateCustomer = () => {
     setIsCustomerMenuOpen(false);
     setIsCreateOpen(true);
+  };
+
+  const handleSubmitPayment = async () => {
+    setSubmitting(true);
+    try {
+      await onConfirm?.({
+        amount: numericAmount,
+        method,
+        customer: selectedCustomer,
+        pointsEarned,
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   if (!isOpen) return null;
@@ -121,36 +168,41 @@ const PaymentModal = ({
       <button
         type="button"
         className="absolute inset-0 bg-black/40 backdrop-blur-sm"
-        aria-label="Fermer la fenêtre"
+        aria-label="Fermer la fenetre"
         onClick={onClose}
+        disabled={submitting}
       />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-3xl overflow-hidden rounded-2xl bg-surface shadow-2xl ring-1 ring-black/5"
+        className="relative max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl bg-surface shadow-2xl ring-1 ring-black/5"
       >
-        <div className="flex items-start justify-between border-b border-border px-6 py-4">
+        <div className="flex items-start justify-between border-b border-border px-4 py-4 sm:px-6">
           <div>
             <p className="text-xs text-text-secondary">Vente</p>
             <h3 className="text-xl font-semibold text-text-primary">Paiement</h3>
+            {exchangeRateLabel ? (
+              <p className="mt-1 text-xs text-text-secondary">{exchangeRateLabel}</p>
+            ) : null}
           </div>
           <button
             type="button"
             onClick={onClose}
             className="rounded-lg p-2 text-text-secondary hover:bg-surface/70 hover:text-text-primary"
             aria-label="Fermer"
+            disabled={submitting}
           >
             <X size={18} strokeWidth={1.5} />
           </button>
         </div>
 
-        <div className="grid gap-6 px-6 py-5 md:grid-cols-[1.1fr_0.9fr]">
+        <div className="grid gap-6 px-4 py-5 md:grid-cols-[1.1fr_0.9fr] sm:px-6">
           <div className="space-y-4">
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs font-semibold uppercase text-text-secondary">
                 Client
               </p>
-              <div className="mt-2 relative">
+              <div className="relative mt-2">
                 <input
                   type="text"
                   value={customerQuery}
@@ -162,7 +214,7 @@ const PaymentModal = ({
                   onBlur={() => {
                     setTimeout(() => setIsCustomerMenuOpen(false), 120);
                   }}
-                  placeholder="Nom ou téléphone"
+                  placeholder="Nom ou telephone"
                   className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"
                 />
                 {isCustomerMenuOpen ? (
@@ -183,9 +235,7 @@ const PaymentModal = ({
                           >
                             <div>
                               <p className="font-medium">{customer.name}</p>
-                              <p className="text-xs text-text-secondary">
-                                {customer.phone}
-                              </p>
+                              <p className="text-xs text-text-secondary">{customer.phone}</p>
                             </div>
                             <span className="text-xs text-text-secondary">
                               {customer.points} pts
@@ -196,7 +246,7 @@ const PaymentModal = ({
                     ) : (
                       <div className="p-3 text-sm text-text-secondary">
                         <p>Client introuvable.</p>
-                        <p className="mt-1">Créer un compte ?</p>
+                        <p className="mt-1">Creer un compte ?</p>
                         <div className="mt-3 flex items-center gap-2">
                           <button
                             type="button"
@@ -222,51 +272,67 @@ const PaymentModal = ({
               {selectedCustomer ? (
                 <div className="mt-3 flex items-center justify-between rounded-lg border border-border bg-surface/80 px-3 py-2 text-sm">
                   <div>
-                    <p className="font-semibold text-text-primary">
-                      {selectedCustomer.name}
-                    </p>
-                    <p className="text-xs text-text-secondary">
-                      {selectedCustomer.phone}
-                    </p>
+                    <p className="font-semibold text-text-primary">{selectedCustomer.name}</p>
+                    <p className="text-xs text-text-secondary">{selectedCustomer.phone}</p>
                   </div>
                   <div className="text-xs text-text-secondary">
-                    Points:{" "}
-                    <span className="font-semibold text-text-primary">
-                      {selectedCustomer.points}
-                    </span>
+                    Points: <span className="font-semibold text-text-primary">{selectedCustomer.points}</span>
                   </div>
                 </div>
               ) : null}
               {selectedCustomer && pointsEarned > 0 ? (
                 <p className="mt-2 text-xs text-text-secondary">
-                  +{pointsEarned} points à l&apos;achat
+                  +{pointsEarned} points a l'achat
+                  {bonusProgram?.pointValueAmount
+                    ? ` • equivalent ${(
+                        pointsEarned * Number(bonusProgram.pointValueAmount || 0)
+                      ).toFixed(2)}`
+                    : ""}
                 </p>
               ) : null}
             </div>
 
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs font-semibold uppercase text-text-secondary">
-                Détails de la transaction
+                Details de la transaction
               </p>
-              <div className="no-scrollbar mt-3 max-h-[28vh] overflow-y-auto space-y-3">
+              <div className="no-scrollbar mt-3 max-h-[28vh] space-y-3 overflow-y-auto">
                 {cartItems.length === 0 ? (
                   <p className="text-sm text-text-secondary">Panier vide</p>
                 ) : (
                   cartItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className="flex items-center justify-between text-sm"
-                    >
+                    <div key={item.id} className="flex items-center justify-between text-sm">
                       <div>
-                        <p className="font-medium text-text-primary">
-                          {item.product}
-                        </p>
+                        <p className="font-medium text-text-primary">{item.product}</p>
                         <p className="text-xs text-text-secondary">
-                          {item.cartQty} x {item.price?.toFixed(2)} €
+                          {item.cartQty} x{" "}
+                          {formatConvertedPrimaryAmount(
+                            item.price,
+                            item.currencyCode,
+                            currencySettings,
+                          )}
                         </p>
+                        {secondaryEnabled ? (
+                          <p className="text-[10px] text-text-secondary">
+                            {item.cartQty} x{" "}
+                            {formatSecondaryAmount(
+                              item.price,
+                              currencySettings,
+                              item.currencyCode,
+                            )}
+                          </p>
+                        ) : null}
                       </div>
                       <p className="font-semibold text-text-primary">
-                        {(item.cartQty * (item.price ?? 0)).toFixed(2)} €
+                        {formatPrimaryAmount(
+                          item.cartQty *
+                            convertToPrimaryAmount(
+                              item.price ?? 0,
+                              item.currencyCode,
+                              currencySettings,
+                            ),
+                          currencySettings,
+                        )}
                       </p>
                     </div>
                   ))
@@ -276,22 +342,52 @@ const PaymentModal = ({
 
             <div className="rounded-xl border border-border bg-surface p-4">
               <div className="flex items-center justify-between text-sm">
-                <span className="text-text-secondary">Sous-total</span>
-                <span className="font-semibold text-text-primary">
-                  {totalAmount.toFixed(2)} €
+                <span className="text-text-secondary">
+                  Total ({primaryCurrencyCode})
                 </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-semibold text-text-primary">
+                    {formatPrimaryAmount(totalAmount, currencySettings)}
+                  </span>
+                  {secondaryEnabled ? (
+                    <span className="text-[10px] text-text-secondary">
+                      Equivalent en {secondaryCurrencyCode}:{" "}
+                      {formatSecondaryAmount(totalAmount, currencySettings)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-text-secondary">Montant reçu</span>
-                <span className="font-semibold text-text-primary">
-                  {numericAmount.toFixed(2)} €
+                <span className="text-text-secondary">
+                  Montant recu ({primaryCurrencyCode})
                 </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-semibold text-text-primary">
+                    {formatPrimaryAmount(numericAmount, currencySettings)}
+                  </span>
+                  {secondaryEnabled ? (
+                    <span className="text-[10px] text-text-secondary">
+                      Equivalent en {secondaryCurrencyCode}:{" "}
+                      {formatSecondaryAmount(numericAmount, currencySettings)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
               <div className="mt-2 flex items-center justify-between text-sm">
-                <span className="text-text-secondary">Monnaie</span>
-                <span className="font-semibold text-text-primary">
-                  {change.toFixed(2)} €
+                <span className="text-text-secondary">
+                  Monnaie ({primaryCurrencyCode})
                 </span>
+                <div className="flex flex-col items-end">
+                  <span className="font-semibold text-text-primary">
+                    {formatPrimaryAmount(change, currencySettings)}
+                  </span>
+                  {secondaryEnabled ? (
+                    <span className="text-[10px] text-text-secondary">
+                      Equivalent en {secondaryCurrencyCode}:{" "}
+                      {formatSecondaryAmount(change, currencySettings)}
+                    </span>
+                  ) : null}
+                </div>
               </div>
             </div>
           </div>
@@ -331,7 +427,7 @@ const PaymentModal = ({
 
             <div className="rounded-xl border border-border bg-surface p-4">
               <p className="text-xs font-semibold uppercase text-text-secondary">
-                Montant reçu
+                Montant recu
               </p>
               <input
                 type="text"
@@ -347,9 +443,9 @@ const PaymentModal = ({
                     key={value}
                     type="button"
                     onClick={() => setAmount(value.toString())}
-                    className="rounded-lg bg-neutral-200 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-neutral-300 dark:bg-surface dark:border dark:border-border dark:hover:bg-surface/70"
+                    className="rounded-lg bg-neutral-200 px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-neutral-300 dark:border dark:border-border dark:bg-surface dark:hover:bg-surface/70"
                   >
-                    {value} €
+                    {formatPrimaryAmount(value, currencySettings)}
                   </button>
                 ))}
               </div>
@@ -370,49 +466,16 @@ const PaymentModal = ({
 
             <button
               type="button"
-              onClick={async () => {
-                let updatedCustomer = selectedCustomer;
-                if (selectedCustomer && pointsEarned > 0) {
-                  const updatedPoints = selectedCustomer.points + pointsEarned;
-                  try {
-                    const response = await apiPatch(
-                      `/api/customers/${selectedCustomer.id}`,
-                      { points: updatedPoints }
-                    );
-                    updatedCustomer = normalizeCustomer(response);
-                    setCustomers((prev) =>
-                      prev.map((customer) =>
-                        customer.id === updatedCustomer.id
-                          ? updatedCustomer
-                          : customer
-                      )
-                    );
-                    setSelectedCustomer(updatedCustomer);
-                  } catch (error) {
-                    showToast({
-                      title: "Erreur",
-                      message:
-                        error.message || "Impossible de mettre à jour les points.",
-                      variant: "danger",
-                    });
-                  }
-                }
-                onConfirm?.({
-                  amount: numericAmount,
-                  method,
-                  customer: updatedCustomer,
-                  pointsEarned,
-                });
-              }}
-              disabled={totalAmount <= 0}
+              onClick={handleSubmitPayment}
+              disabled={totalAmount <= 0 || submitting}
               className={[
                 "w-full rounded-lg px-4 py-3 text-sm font-semibold text-white",
-                totalAmount <= 0
+                totalAmount <= 0 || submitting
                   ? "cursor-not-allowed bg-neutral-300 text-text-secondary"
                   : "bg-secondary hover:bg-secondary/90",
               ].join(" ")}
             >
-              Payer maintenant
+              {submitting ? "Enregistrement..." : "Payer maintenant"}
             </button>
           </div>
         </div>
@@ -433,7 +496,7 @@ const PaymentModal = ({
           } catch (error) {
             showToast({
               title: "Erreur",
-              message: error.message || "Impossible de créer le client.",
+              message: error.message || "Impossible de creer le client.",
               variant: "danger",
             });
             throw error;

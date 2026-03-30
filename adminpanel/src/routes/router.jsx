@@ -11,6 +11,7 @@ import {
   FilePlus2,
   FileSearch,
   FolderTree,
+  Gift,
   LayoutDashboard,
   ListChecks,
   Package,
@@ -35,6 +36,7 @@ import {
   Warehouse
 } from "lucide-react";
 import { createBrowserRouter, Navigate } from "react-router-dom";
+import { API_URL } from "../api/client";
 import MainLayout from "../layouts/MainLayout";
 import Dashboard from "../pages/Dashboard";
 import AdminResourcePage from "../pages/AdminResourcePage";
@@ -42,6 +44,7 @@ import AdminCreatePage from "../pages/AdminCreatePage";
 import AdminDetailPage from "../pages/AdminDetailPage";
 import Login from "../pages/Login";
 import ProtectedRoute from "./ProtectedRoute";
+import { formatMoney } from "../utils/currencyDisplay";
 
 const leaf = ({
   id,
@@ -53,6 +56,7 @@ const leaf = ({
   sectionLabel,
   parentLabel,
   parentPath,
+  requiredPermissions,
 }) => ({
   id,
   name,
@@ -61,6 +65,7 @@ const leaf = ({
   icon,
   summary,
   sectionLabel,
+  requiredPermissions,
   breadcrumbs: parentLabel
     ? [
         { label: parentLabel, path: parentPath },
@@ -77,16 +82,6 @@ const formatDate = (value) => {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(date);
-};
-
-const formatMoney = (value) => {
-  const amount = Number(value || 0);
-  return Number.isFinite(amount)
-    ? new Intl.NumberFormat("fr-FR", {
-        style: "currency",
-        currency: "USD",
-      }).format(amount)
-    : "--";
 };
 
 const formatPerson = (person) =>
@@ -165,6 +160,8 @@ const createResource = ({
   pageSize,
   transformRows,
   rowActions,
+  importConfig,
+  ...rest
 }) => ({
   endpoint,
   columns,
@@ -178,10 +175,44 @@ const createResource = ({
   pageSize,
   transformRows,
   rowActions,
+  importConfig,
+  ...rest,
 });
 
 const compactValue = (value) =>
   value === "" || value === null || value === undefined ? undefined : value;
+
+const upperCodeValue = (value) => {
+  const compacted = compactValue(value);
+  return typeof compacted === "string" ? compacted.trim().toUpperCase() : compacted;
+};
+
+const resolveAssetUrl = (value) => {
+  if (!value) return "";
+  if (
+    String(value).startsWith("http://") ||
+    String(value).startsWith("https://") ||
+    String(value).startsWith("blob:") ||
+    String(value).startsWith("data:")
+  ) {
+    return value;
+  }
+  return value.startsWith("/")
+    ? `${API_URL}${value}`
+    : `${API_URL}/${String(value).replace(/^\/+/, "")}`;
+};
+
+const renderProductThumbnail = (row) => {
+  if (!row?.imageUrl) return "--";
+  const source = resolveAssetUrl(row.imageUrl);
+  return (
+    <img
+      src={source}
+      alt={row?.name || "Produit"}
+      className="h-10 w-10 rounded-xl object-cover"
+    />
+  );
+};
 
 const numericValue = (value) => {
   if (value === "" || value === null || value === undefined) return undefined;
@@ -467,6 +498,17 @@ export const sidebarSections = [
             parentPath: "/configurations/articles",
           }),
           leaf({
+            id: "articles-collections",
+            name: "Collections",
+            path: "/configurations/articles/collections",
+            link: "articles-collections",
+            icon: FolderTree,
+            summary: "Collections principales des categories produits.",
+            sectionLabel: "Configurations",
+            parentLabel: "Articles",
+            parentPath: "/configurations/articles",
+          }),
+          leaf({
             id: "articles-familles",
             name: "Familles",
             path: "/configurations/articles/familles",
@@ -484,17 +526,6 @@ export const sidebarSections = [
             link: "articles-sous-familles",
             icon: FolderTree,
             summary: "Decoupage detaille des sous-familles.",
-            sectionLabel: "Configurations",
-            parentLabel: "Articles",
-            parentPath: "/configurations/articles",
-          }),
-          leaf({
-            id: "articles-produits-vente",
-            name: "Produits de vente",
-            path: "/configurations/articles/produits-vente",
-            link: "articles-produits-vente",
-            icon: PackageCheck,
-            summary: "Produits exposes aux boutiques et a la caisse.",
             sectionLabel: "Configurations",
             parentLabel: "Articles",
             parentPath: "/configurations/articles",
@@ -559,6 +590,28 @@ export const sidebarSections = [
             link: "parametres-devise",
             icon: BadgeDollarSign,
             summary: "Monnaies de travail et de valorisation du stock.",
+            sectionLabel: "Configurations",
+            parentLabel: "Parametres",
+            parentPath: "/configurations/parametres",
+          }),
+          leaf({
+            id: "parametres-conversions-devise",
+            name: "Conversions devise",
+            path: "/configurations/parametres/conversions-devise",
+            link: "parametres-conversions-devise",
+            icon: ArrowRightLeft,
+            summary: "Taux de conversion entre devises configurees.",
+            sectionLabel: "Configurations",
+            parentLabel: "Parametres",
+            parentPath: "/configurations/parametres",
+          }),
+          leaf({
+            id: "parametres-bonus-client",
+            name: "Bonus client",
+            path: "/configurations/parametres/bonus-client",
+            link: "parametres-bonus-client",
+            icon: Gift,
+            summary: "Regles de points bonus client et seuils de recompense.",
             sectionLabel: "Configurations",
             parentLabel: "Parametres",
             parentPath: "/configurations/parametres",
@@ -655,8 +708,196 @@ export const allRouteMeta = [
 
 let createRouteMeta = [];
 
+const routePermissionConfig = {
+  "/commande/demande-achat": {
+    read: ["purchase_requests.read"],
+    create: ["purchase_requests.create"],
+    edit: ["purchase_requests.update", "purchase_requests.update_own_draft"],
+    delete: ["purchase_requests.delete"],
+    detail: ["purchase_requests.read"],
+  },
+  "/commande/commande": {
+    read: ["purchase_orders.read"],
+    create: ["purchase_orders.create"],
+    edit: ["purchase_orders.update"],
+    delete: ["purchase_orders.delete"],
+    detail: ["purchase_orders.read"],
+  },
+  "/commande/liste-commande": {
+    read: ["purchase_orders.read"],
+    create: ["purchase_orders.create"],
+    edit: ["purchase_orders.update"],
+    delete: ["purchase_orders.delete"],
+    detail: ["purchase_orders.read"],
+  },
+  "/mouvement/entree-stock": {
+    read: ["movements.read"],
+    create: ["movements.create"],
+    edit: ["movements.update"],
+    delete: ["movements.delete"],
+    detail: ["movements.read"],
+  },
+  "/mouvement/sortie-stock": {
+    read: ["movements.read"],
+    create: ["movements.create"],
+    edit: ["movements.update"],
+    delete: ["movements.delete"],
+  },
+  "/mouvement/retour-stock": {
+    read: ["movements.read"],
+    create: ["movements.create"],
+    edit: ["movements.update"],
+    delete: ["movements.delete"],
+  },
+  "/mouvement/transfert": {
+    read: ["transfers.read"],
+    create: ["transfers.create"],
+    edit: ["transfers.update"],
+    delete: ["transfers.delete"],
+    detail: ["transfers.read"],
+  },
+  "/mouvement/retour-fournisseur": {
+    read: ["movements.read"],
+    create: ["movements.create"],
+    edit: ["movements.update"],
+    delete: ["movements.delete"],
+  },
+  "/mouvement/historique-mouvements": {
+    read: ["movements.read"],
+  },
+  "/etat-stock": {
+    read: ["stock_state.read"],
+  },
+  "/inventaire/inventaire": {
+    read: ["inventory.read"],
+    create: ["inventory.create"],
+    edit: ["inventory.update"],
+    delete: ["inventory.delete"],
+  },
+  "/inventaire/etat-inventaire": {
+    read: ["inventory.read"],
+    create: ["inventory.create"],
+    edit: ["inventory.update"],
+    delete: ["inventory.delete"],
+  },
+  "/configurations/articles/produits": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/articles": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/collections": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/familles": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/sous-familles": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/fiche-technique": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/articles/categorie": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/unite": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/tva": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/devise": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/conversions-devise": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/bonus-client": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/locale-vente": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/zone-stockage": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/parametres/niveau-validation": {
+    read: ["settings.read"],
+    create: ["settings.create"],
+    edit: ["settings.update"],
+    delete: ["settings.delete"],
+  },
+  "/configurations/utilisateur/liste-utilisateurs": {
+    read: ["users.read"],
+    create: ["users.create"],
+    edit: ["users.update"],
+    delete: ["users.delete"],
+  },
+  "/configurations/utilisateur/creer": {
+    read: ["users.read"],
+    create: ["users.create"],
+    edit: ["users.update"],
+    delete: ["users.delete"],
+  },
+  "/configurations/utilisateur/roles-permissions": {
+    read: ["users.read"],
+    create: ["users.create", "users.update"],
+    edit: ["users.update"],
+    delete: ["users.delete"],
+  },
+};
+
 const normalizePath = (path = "") =>
   path.length > 1 && path.endsWith("/") ? path.slice(0, -1) : path || "/dashboard";
+
+export const getRouteRequiredPermissions = (path = "") =>
+  routePermissionConfig[normalizePath(path)]?.read || [];
+
+export const getRouteActionPermissions = (path = "", action = "read") =>
+  routePermissionConfig[normalizePath(path)]?.[action] || [];
 
 export const findRouteByPath = (path) =>
   [...allRouteMeta, ...createRouteMeta].find(
@@ -669,6 +910,7 @@ export const getBreadcrumbItems = (path) => {
 };
 
 const purchaseRequestColumns = [
+  column("Code", (row) => row.code || "--"),
   column("Titre", "title"),
   column("Statut", "status", { render: (row) => renderPill(row.status) }),
   column("Boutique", "store.name"),
@@ -718,6 +960,7 @@ const inventoryMovementColumns = [
 ];
 
 const transferColumns = [
+  column("Code", (row) => row.code || "--"),
   column("Statut", "status", { render: (row) => renderPill(row.status) }),
   column("Boutique source", "fromStore.name"),
   column("Boutique cible", "toStore.name"),
@@ -758,43 +1001,126 @@ const orderColumns = [
   column("Articles", (row) => formatCount(row.items), {
     className: "text-center",
   }),
-  column("Total", (row) => formatMoney(row.total), { sortBy: "total" }),
+  column("Total", (row) => formatMoney(row.total, row.currencyCode), { sortBy: "total" }),
   column("Date", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
 ];
 
 const productColumns = [
+  column("Image", "imageUrl", { render: renderProductThumbnail }),
   column("Produit", "name"),
   column("SKU", (row) => row.sku || "--", { sortBy: "sku" }),
   column("Categorie", "category.name"),
   column("Famille", "family.name"),
-  column("Prix", (row) => formatMoney(row.unitPrice), { sortBy: "unitPrice" }),
+  column("TVA", (row) => row.tva?.code || row.tva?.name || "--"),
+  column("Prix", (row) => formatMoney(row.unitPrice, row.currencyCode), { sortBy: "unitPrice" }),
+  column("Seuil min", (row) => row.minLevel ?? "--", { sortBy: "minLevel" }),
+  column("Seuil max", (row) => row.maxLevel ?? "--", { sortBy: "maxLevel" }),
   column("Actif", (row) => renderPill(row.isActive ? "ACTIVE" : "INACTIVE")),
 ];
 
 const articleColumns = [
+  column("Image", "imageUrl", { render: renderProductThumbnail }),
   column("Reference", (row) => row.sku || row.id),
   column("Libelle", "name"),
   column("Description", (row) => row.description || "--"),
   column("Categorie", "category.name"),
   column("Famille", "family.name"),
+  column("TVA", (row) => row.tva?.code || row.tva?.name || "--"),
+  column("Prix vente", (row) => formatMoney(row.unitPrice, row.currencyCode), { sortBy: "unitPrice" }),
+  column("Seuil min", (row) => row.minLevel ?? "--", { sortBy: "minLevel" }),
+  column("Seuil max", (row) => row.maxLevel ?? "--", { sortBy: "maxLevel" }),
+  column("Actif", (row) => renderPill(row.isActive ? "ACTIVE" : "INACTIVE")),
 ];
 
 const technicalColumns = [
-  column("Produit", "name"),
-  column("Unite vente", (row) => row.saleUnit?.name || "--"),
-  column("Unite stock", (row) => row.stockUnit?.name || "--"),
-  column("Unite dosage", (row) => row.dosageUnit?.name || "--"),
-  column("Description", (row) => row.description || "--"),
+  column("Article", "name"),
+  column("Reference", (row) => row.sku || "--", { sortBy: "sku" }),
+  column("Composants", (row) => formatCount(row.components), {
+    className: "text-center",
+  }),
+  column(
+    "Composition",
+    (row) =>
+      Array.isArray(row.components) && row.components.length
+        ? row.components
+            .slice(0, 3)
+            .map((item) => item.componentProduct?.name || item.componentName || "--")
+            .join(", ")
+        : "--",
+  ),
+  column("Maj", (row) => formatDate(row.updatedAt), { sortBy: "updatedAt" }),
+];
+
+const currencyColumns = [
+  column("Code", "code", { sortBy: "code" }),
+  column("Nom", "name", { sortBy: "name" }),
+  column("Symbole", (row) => row.symbol || "--", { sortBy: "symbol" }),
+  column("En cours", (row) => renderPill(row.isCurrent ? "ACTIVE" : "INACTIVE"), {
+    sortBy: "isCurrent",
+  }),
+  column(
+    "Secondaire",
+    (row) => (row.isSecondary ? renderPill("ACTIVE") : "--"),
+    { sortBy: "isSecondary" },
+  ),
+  column("Actif", (row) => renderPill(row.isActive ? "ACTIVE" : "INACTIVE"), {
+    sortBy: "isActive",
+  }),
+  column("Conversions", (row) => row.conversionCount || 0, {
+    sortBy: "conversionCount",
+    className: "text-center",
+  }),
+];
+
+const currencyConversionLabel = (row) =>
+  row?.code && row?.name ? `${row.code} - ${row.name}` : row?.code || row?.name || "--";
+
+const conversionColumns = [
+  column("Devise depart", "fromCurrencyCode", { sortBy: "fromCurrencyCode" }),
+  column("Devise cible", "toCurrencyCode", { sortBy: "toCurrencyCode" }),
+  column("Taux", (row) => (row.rate ? Number(row.rate).toFixed(6) : "--"), {
+    sortBy: "rate",
+  }),
+  column("Creation", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
+];
+
+const customerBonusProgramColumns = [
+  column("Nom", "name", { sortBy: "name" }),
+  column("Montant seuil", "amountThreshold", { sortBy: "amountThreshold" }),
+  column("Points gagnes", "pointsAwarded", { sortBy: "pointsAwarded" }),
+  column("Valeur d'un point", "pointValueAmount", { sortBy: "pointValueAmount" }),
+  column("Quota points", (row) => row.quotaPoints ?? "--", { sortBy: "quotaPoints" }),
+  column("Periode (jours)", (row) => row.quotaPeriodDays ?? "--", {
+    sortBy: "quotaPeriodDays",
+  }),
+  column("Prime montant", (row) => row.quotaRewardAmount ?? "--"),
+  column("Actif", (row) => renderPill(row.isActive ? "ACTIVE" : "INACTIVE"), {
+    sortBy: "isActive",
+  }),
 ];
 
 const familyColumns = [
   column("Nom", "name"),
+  column("Categorie", (row) => row.category?.name || "--"),
+  column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
+];
+
+const collectionColumns = [
+  column("Nom", "name"),
+  column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
+];
+
+const subFamilyColumns = [
+  column("Nom", "name"),
+  column("Famille parente", (row) => row.parentFamily?.name || "--"),
   column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
 ];
 
 const unitColumns = [
   column("Nom", "name"),
-  column("Type", "type", { render: (row) => renderPill(row.type) }),
+  column("Type", "businessType", {
+    render: (row) => renderPill(row.businessType || row.type),
+  }),
   column("Symbole", (row) => row.symbol || "--", { sortBy: "symbol" }),
   column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
 ];
@@ -833,7 +1159,21 @@ const userColumns = [
   column("Email", (row) => row.email || "--"),
   column("Telephone", (row) => row.phone || "--"),
   column("Boutique", (row) => row.store?.name || row.storeName || "--"),
+  column("Profil permissions", (row) => row.permissionProfile?.name || row.permissionProfileName || "--"),
   column("Actif", (row) => renderPill(row.isActive ? "ACTIVE" : "INACTIVE")),
+];
+
+const permissionProfileColumns = [
+  column("Nom", "name"),
+  column("Role", "role", { render: (row) => renderPill(row.role) }),
+  column("Description", (row) => row.description || "--"),
+  column("Permissions", (row) => row.permissionCount || 0, {
+    className: "text-center",
+  }),
+  column("Utilisateurs", (row) => row.userCount || 0, {
+    className: "text-center",
+  }),
+  column("Creation", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
 ];
 
 const approvalActions = (resourcePath) => [
@@ -871,6 +1211,56 @@ const stockEntryRowActions = [
     endpoint: (row) => `/api/stock-entries/${row.id}/post`,
     visible: (row) => row.status === "APPROVED",
     tone: "primary",
+  },
+];
+
+const currencyRowActions = [
+  {
+    id: "currency-set-current",
+    label: "Definir en cours",
+    method: "POST",
+    endpoint: (row) => `/api/currency-settings/${row.id}/set-current`,
+    visible: (row) => !row.isCurrent && row.isActive,
+    tone: "success",
+  },
+  {
+    id: "currency-set-secondary",
+    label: "Definir secondaire",
+    method: "POST",
+    endpoint: (row) => `/api/currency-settings/${row.id}/set-secondary`,
+    visible: (row) => !row.isCurrent && !row.isSecondary && row.isActive,
+    tone: "primary",
+  },
+  {
+    id: "currency-unset-secondary",
+    label: "Retirer secondaire",
+    method: "POST",
+    endpoint: (row) => `/api/currency-settings/${row.id}/unset-secondary`,
+    visible: (row) => row.isSecondary,
+    tone: "danger",
+  },
+];
+
+const customerBonusProgramRowActions = [
+  {
+    id: "bonus-program-set-current",
+    label: "Definir actif",
+    method: "POST",
+    endpoint: (row) => `/api/customer-bonus-programs/${row.id}/set-current`,
+    visible: (row) => !row.isActive,
+    tone: "success",
+  },
+];
+
+const productRowActions = [
+  {
+    id: "product-reactivate",
+    label: "Reactiver",
+    method: "PATCH",
+    endpoint: (row) => `/api/products/${row.id}`,
+    body: () => ({ isActive: true }),
+    visible: (row) => row?.isActive === false,
+    tone: "success",
   },
 ];
 
@@ -1011,17 +1401,85 @@ export const resourceCatalog = {
   }),
   "/configurations/articles/produits": createResource({
     endpoint: "/api/products",
+    defaultQuery: { kind: "COMPONENT" },
     columns: productColumns,
+    rowActions: productRowActions,
     tableTitle: "Produits",
-    tableDescription: "Catalogue principal des produits stockes.",
-    emptyMessage: "Aucun produit disponible.",
+    tableDescription: "Catalogue des produits composants geres en stock.",
+    emptyMessage: "Aucun produit composant disponible.",
+    importConfig: {
+      templatePath: "/api/products/template?kind=COMPONENT",
+      importPath: "/api/products/import?kind=COMPONENT",
+      templateFileName: "template-produits.xlsx",
+      modalTitle: "Importer des produits",
+      modalDescription:
+        "Telechargez le template, completez vos produits composants, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template produits",
+      importButtonLabel: "Importer les produits",
+      importSuccessMessage: "Les produits ont ete importes avec succes.",
+    },
   }),
   "/configurations/articles/articles": createResource({
     endpoint: "/api/products",
+    defaultQuery: { kind: "ARTICLE" },
     columns: articleColumns,
+    rowActions: productRowActions,
     tableTitle: "Articles",
-    tableDescription: "Referentiel des articles et references internes.",
+    tableDescription: "Referentiel des articles vendus aux clients.",
     emptyMessage: "Aucun article disponible.",
+    importConfig: {
+      templatePath: "/api/products/template?kind=ARTICLE",
+      importPath: "/api/products/import?kind=ARTICLE",
+      templateFileName: "template-articles.xlsx",
+      modalTitle: "Importer des articles",
+      modalDescription:
+        "Telechargez le template, renseignez vos articles de vente, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template articles",
+      importButtonLabel: "Importer les articles",
+      importSuccessMessage: "Les articles ont ete importes avec succes.",
+    },
+    extraImportConfigs: [
+      {
+        templatePath: "/api/products/technical-sheets/template",
+        importPath: "/api/products/technical-sheets/import",
+        templateFileName: "template-fiches-techniques.xlsx",
+        modalTitle: "Importer des fiches techniques",
+        modalDescription:
+          "Telechargez le template, renseignez article et composants, puis importez le fichier XLSX.",
+        templateButtonLabel: "Template fiche technique",
+        importButtonLabel: "Importer fiche technique",
+        importSuccessMessage: "Les fiches techniques ont ete importees avec succes.",
+        selectionConfig: {
+          fieldName: "articleId",
+          name: "articleId",
+          label: "Article",
+          placeholder: "Rechercher un article...",
+          endpoint: "/api/products",
+          query: { kind: "ARTICLE" },
+          required: true,
+          mapOptionLabel: (row) =>
+            row?.sku ? `${row.name} (${row.sku})` : row?.name || row?.id,
+        },
+      },
+    ],
+  }),
+  "/configurations/articles/collections": createResource({
+    endpoint: "/api/product-collections",
+    columns: collectionColumns,
+    tableTitle: "Collections",
+    tableDescription: "Collections principales auxquelles sont rattachees les categories.",
+    emptyMessage: "Aucune collection disponible.",
+    importConfig: {
+      templatePath: "/api/product-collections/template",
+      importPath: "/api/product-collections/import",
+      templateFileName: "template-collections.xlsx",
+      modalTitle: "Importer des collections",
+      modalDescription:
+        "Telechargez le template, completez vos collections, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template collections",
+      importButtonLabel: "Importer les collections",
+      importSuccessMessage: "Les collections ont ete importees avec succes.",
+    },
   }),
   "/configurations/articles/familles": createResource({
     endpoint: "/api/product-families",
@@ -1029,37 +1487,87 @@ export const resourceCatalog = {
     tableTitle: "Familles",
     tableDescription: "Familles d'articles definies dans le tenant.",
     emptyMessage: "Aucune famille disponible.",
+    importConfig: {
+      templatePath: "/api/product-families/template",
+      importPath: "/api/product-families/import",
+      templateFileName: "template-familles.xlsx",
+      modalTitle: "Importer des familles",
+      modalDescription:
+        "Telechargez le template, completez vos familles, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template familles",
+      importButtonLabel: "Importer les familles",
+      importSuccessMessage: "Les familles ont ete importees avec succes.",
+    },
   }),
   "/configurations/articles/sous-familles": createResource({
-    endpoint: "/api/product-families",
-    columns: familyColumns,
+    endpoint: "/api/product-subfamilies",
+    columns: subFamilyColumns,
     tableTitle: "Sous-familles",
-    tableDescription:
-      "En attente d'un modele distinct; cette vue reutilise les familles existantes.",
+    tableDescription: "Sous-familles d'articles separees des familles principales.",
     emptyMessage: "Aucune sous-famille disponible.",
-  }),
-  "/configurations/articles/produits-vente": createResource({
-    endpoint: "/api/products",
-    defaultQuery: { isActive: true },
-    columns: productColumns,
-    tableTitle: "Produits de vente",
-    tableDescription:
-      "Produits actifs exposes aux boutiques et a la caisse.",
-    emptyMessage: "Aucun produit de vente disponible.",
+    importConfig: {
+      templatePath: "/api/product-subfamilies/template",
+      importPath: "/api/product-subfamilies/import",
+      templateFileName: "template-sous-familles.xlsx",
+      modalTitle: "Importer des sous-familles",
+      modalDescription:
+        "Telechargez le template, completez vos sous-familles, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template sous-familles",
+      importButtonLabel: "Importer les sous-familles",
+      importSuccessMessage: "Les sous-familles ont ete importees avec succes.",
+    },
   }),
   "/configurations/articles/fiche-technique": createResource({
     endpoint: "/api/products",
+    defaultQuery: { kind: "ARTICLE", includeComponents: true, isActive: true },
     columns: technicalColumns,
     tableTitle: "Fiches techniques",
-    tableDescription: "Informations techniques disponibles par produit.",
+    tableDescription: "Composition des articles de vente a partir des produits composants.",
     emptyMessage: "Aucune fiche technique disponible.",
+    importConfig: {
+      templatePath: "/api/products/technical-sheets/template",
+      importPath: "/api/products/technical-sheets/import",
+      templateFileName: "template-fiches-techniques.xlsx",
+      modalTitle: "Importer des fiches techniques",
+      modalDescription:
+        "Telechargez le template, renseignez article et composants, puis importez le fichier XLSX.",
+      templateButtonLabel: "Template fiches techniques",
+      importButtonLabel: "Importer les fiches techniques",
+      importSuccessMessage: "Les fiches techniques ont ete importees avec succes.",
+      selectionConfig: {
+        fieldName: "articleId",
+        name: "articleId",
+        label: "Article",
+        placeholder: "Rechercher un article...",
+        endpoint: "/api/products",
+        query: { kind: "ARTICLE" },
+        required: true,
+        mapOptionLabel: (row) =>
+          row?.sku ? `${row.name} (${row.sku})` : row?.name || row?.id,
+      },
+    },
   }),
   "/configurations/articles/categorie": createResource({
     endpoint: "/api/product-categories",
-    columns: familyColumns,
+    columns: [
+      column("Nom", "name"),
+      column("Collection", (row) => row.collection?.name || "--"),
+      column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
+    ],
     tableTitle: "Categories",
     tableDescription: "Categories produits definies dans le tenant.",
     emptyMessage: "Aucune categorie disponible.",
+    importConfig: {
+      templatePath: "/api/product-categories/template",
+      importPath: "/api/product-categories/import",
+      templateFileName: "template-categories.xlsx",
+      modalTitle: "Importer des categories",
+      modalDescription:
+        "Telechargez le template, completez vos categories, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template categories",
+      importButtonLabel: "Importer les categories",
+      importSuccessMessage: "Les categories ont ete importees avec succes.",
+    },
   }),
   "/configurations/parametres/unite": createResource({
     endpoint: "/api/units",
@@ -1067,36 +1575,55 @@ export const resourceCatalog = {
     tableTitle: "Unites",
     tableDescription: "Unites de mesure, vente et stockage.",
     emptyMessage: "Aucune unite disponible.",
+    importConfig: {
+      templatePath: "/api/units/template",
+      importPath: "/api/units/import",
+      templateFileName: "template-unites.xlsx",
+      modalTitle: "Importer des unites",
+      modalDescription:
+        "Telechargez le template, completez vos unites, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template unites",
+      importButtonLabel: "Importer les unites",
+      importSuccessMessage: "Les unites ont ete importees avec succes.",
+    },
   }),
   "/configurations/parametres/tva": createResource({
+    endpoint: "/api/tax-rates",
     columns: [
-      column("Code", "code"),
-      column("Taux", "rate"),
-      column("Statut", "status", { render: (row) => renderPill(row.status) }),
+      column("Code", "code", { sortBy: "code" }),
+      column("Nom", (row) => row.name || "--", { sortBy: "name" }),
+      column("Taux", "rate", { sortBy: "rate" }),
+      column("Statut", "status", { render: (row) => renderPill(row.status), sortBy: "isActive" }),
     ],
-    staticRows: [],
-    searchEnabled: false,
     tableTitle: "TVA",
-    tableDescription:
-      "Aucune ressource serveur dediee n'est encore exposee pour les taux de TVA.",
-    emptyMessage: "Aucune TVA configuree via API.",
-    description: "Cette vue est prete pour recevoir la future ressource TVA.",
+    tableDescription: "Taux TVA disponibles pour les articles et produits.",
+    emptyMessage: "Aucune TVA configuree.",
   }),
   "/configurations/parametres/devise": createResource({
-    columns: [
-      column("Code", "code"),
-      column("Libelle", "label"),
-      column("Defaut", (row) => renderPill(formatBoolean(row.default))),
-    ],
-    staticRows: [
-      { id: "usd", code: "USD", label: "Dollar americain", default: true },
-      { id: "cdf", code: "CDF", label: "Franc congolais", default: false },
-    ],
-    searchEnabled: false,
+    endpoint: "/api/currency-settings",
+    columns: currencyColumns,
+    rowActions: currencyRowActions,
     tableTitle: "Devises",
     tableDescription:
-      "Table technique locale en attendant une ressource serveur dediee.",
-    emptyMessage: "Aucune devise disponible.",
+      "Catalogue des devises, gestion des conversions et selection de la devise en cours.",
+    emptyMessage: "Aucune devise configuree.",
+  }),
+  "/configurations/parametres/conversions-devise": createResource({
+    endpoint: "/api/currency-settings/conversions",
+    columns: conversionColumns,
+    tableTitle: "Conversions devise",
+    tableDescription:
+      "Paires de conversion definies entre devises configurees dans le tenant.",
+    emptyMessage: "Aucune conversion de devise configuree.",
+  }),
+  "/configurations/parametres/bonus-client": createResource({
+    endpoint: "/api/customer-bonus-programs",
+    columns: customerBonusProgramColumns,
+    rowActions: customerBonusProgramRowActions,
+    tableTitle: "Bonus client",
+    tableDescription:
+      "Parametres d'attribution des points bonus, equivalence montant et quota par periode.",
+    emptyMessage: "Aucun programme bonus client configure.",
   }),
   "/configurations/parametres/locale-vente": createResource({
     endpoint: "/api/stores",
@@ -1125,6 +1652,17 @@ export const resourceCatalog = {
     tableTitle: "Liste d'utilisateurs",
     tableDescription: "Comptes utilisateur actuellement enregistres.",
     emptyMessage: "Aucun utilisateur disponible.",
+    importConfig: {
+      templatePath: "/api/users/template",
+      importPath: "/api/users/import",
+      templateFileName: "template-utilisateurs.xlsx",
+      modalTitle: "Importer des utilisateurs",
+      modalDescription:
+        "Telechargez le template, completez vos utilisateurs, puis deposez le fichier XLSX ici.",
+      templateButtonLabel: "Template utilisateurs",
+      importButtonLabel: "Importer les utilisateurs",
+      importSuccessMessage: "Les utilisateurs ont ete importes avec succes.",
+    },
   }),
   "/configurations/utilisateur/creer": createResource({
     endpoint: "/api/users",
@@ -1135,12 +1673,12 @@ export const resourceCatalog = {
     emptyMessage: "Aucun utilisateur disponible.",
   }),
   "/configurations/utilisateur/roles-permissions": createResource({
-    endpoint: "/api/users",
-    columns: userColumns,
+    endpoint: "/api/permission-profiles",
+    columns: permissionProfileColumns,
     tableTitle: "Roles et permissions",
     tableDescription:
-      "Lecture des comptes par role; la gestion fine des permissions peut ensuite etre branchee.",
-    emptyMessage: "Aucun utilisateur disponible.",
+      "Profils nommes de permissions avec matrice CRUD par module.",
+    emptyMessage: "Aucun profil de permissions disponible.",
   }),
 };
 
@@ -1151,8 +1689,7 @@ const sourceOptions = [
 ];
 
 const unitTypeOptions = [
-  { value: "SALE", label: "Vente" },
-  { value: "STOCK", label: "Stock" },
+  { value: "GESTION", label: "Unite de gestion" },
   { value: "DOSAGE", label: "Dosage" },
 ];
 
@@ -1168,10 +1705,30 @@ const userRoleOptions = [
   { value: "USER", label: "Utilisateur" },
 ];
 
+const permissionProfileRoleOptions = [
+  { value: "ADMIN", label: "Admin" },
+  { value: "MANAGER", label: "Manager" },
+  { value: "USER", label: "Utilisateur" },
+];
+
 const sendViaOptions = [
   { value: "email", label: "Email" },
   { value: "sms", label: "SMS" },
 ];
+
+const permissionsToMatrix = (permissions = []) =>
+  (Array.isArray(permissions) ? permissions : []).reduce(
+    (accumulator, code) => ({
+      ...accumulator,
+      [code]: true,
+    }),
+    {},
+  );
+
+const matrixToPermissions = (matrix = {}) =>
+  Object.entries(matrix || {})
+    .filter(([, enabled]) => Boolean(enabled))
+    .map(([code]) => code);
 
 const productLabel = (item) =>
   [item?.name, item?.sku ? `(${item.sku})` : null].filter(Boolean).join(" ");
@@ -1188,20 +1745,22 @@ const productLineFields = (extraFields = []) => [
   {
     name: "productId",
     label: "Produit",
-    type: "select",
+    type: "search-select",
     required: true,
     optionsEndpoint: "/api/products",
     optionValue: "id",
     optionLabel: productLabel,
+    placeholder: "Rechercher un produit...",
   },
   {
     name: "unitId",
     label: "Unite",
-    type: "select",
+    type: "search-select",
     required: true,
     optionsEndpoint: "/api/units",
     optionValue: "id",
     optionLabel: unitLabel,
+    placeholder: "Rechercher une unite...",
   },
   {
     name: "quantity",
@@ -1218,11 +1777,12 @@ const inventoryLineFields = () => [
   {
     name: "productId",
     label: "Produit",
-    type: "select",
+    type: "search-select",
     required: true,
     optionsEndpoint: "/api/products",
     optionValue: "id",
     optionLabel: productLabel,
+    placeholder: "Rechercher un produit...",
   },
   {
     name: "quantity",
@@ -1279,6 +1839,14 @@ const purchaseRequestForm = {
   successMessage: "Demande d'achat creee.",
   fields: [
     {
+      name: "code",
+      label: "Code demande",
+      type: "text",
+      placeholder: "Genere automatiquement",
+      disabled: true,
+      description: "Code genere automatiquement au format DA0001.",
+    },
+    {
       name: "title",
       label: "Titre",
       type: "text",
@@ -1288,10 +1856,11 @@ const purchaseRequestForm = {
     {
       name: "storeId",
       label: "Boutique",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une boutique...",
     },
     {
       name: "note",
@@ -1338,6 +1907,14 @@ const supplyRequestForm = {
   successMessage: "Requisition creee.",
   fields: [
     {
+      name: "code",
+      label: "Code requisition",
+      type: "text",
+      placeholder: "Genere automatiquement",
+      disabled: true,
+      description: "Code genere automatiquement au format REQ0001.",
+    },
+    {
       name: "title",
       label: "Titre",
       type: "text",
@@ -1347,18 +1924,20 @@ const supplyRequestForm = {
     {
       name: "storeId",
       label: "Boutique",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une boutique...",
     },
     {
       name: "storageZoneId",
       label: "Zone cible",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher une zone cible...",
     },
     {
       name: "note",
@@ -1408,34 +1987,40 @@ const purchaseOrderForm = {
     {
       name: "storeId",
       label: "Boutique",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une boutique...",
     },
     {
       name: "supplierId",
       label: "Fournisseur",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/suppliers",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher un fournisseur...",
     },
     {
       name: "purchaseRequestId",
       label: "Demande d'achat source",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/purchase-requests",
       query: { status: "APPROVED" },
       optionValue: "id",
-      optionLabel: "title",
+      optionLabel: (item) =>
+        item?.code ? `${item.code} - ${item.title || "--"}` : item?.title || "--",
+      placeholder: "Rechercher une demande validee...",
     },
     {
       name: "code",
       label: "Code commande",
       type: "text",
-      placeholder: "Ex. PO-2026-001",
+      placeholder: "Genere automatiquement",
+      disabled: true,
+      description: "Code genere automatiquement au format CMD0001.",
     },
     {
       name: "orderDate",
@@ -1511,11 +2096,12 @@ const stockEntryForm = {
     {
       name: "sourceId",
       label: "Commande source",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/purchase-orders",
       query: { status: "SENT" },
       optionValue: "id",
       optionLabel: (item) => item.code || item.id,
+      placeholder: "Rechercher une commande validee...",
     },
     {
       name: "receiptNumber",
@@ -1526,19 +2112,21 @@ const stockEntryForm = {
     {
       name: "storeId",
       label: "Boutique",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une boutique...",
     },
     {
       name: "storageZoneId",
       label: "Zone de stockage",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher une zone de stockage...",
     },
     {
       name: "note",
@@ -1603,35 +2191,39 @@ const stockOutputForm = {
     {
       name: "supplyRequestId",
       label: "Requisition validee",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/supply-requests",
       query: { status: "APPROVED" },
       optionValue: "id",
       optionLabel: "title",
+      placeholder: "Rechercher une requisition validee...",
     },
     {
       name: "fromZoneId",
       label: "Zone source requisition",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher la zone source...",
     },
     {
       name: "toZoneId",
       label: "Zone cible requisition",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher la zone cible...",
     },
     {
       name: "storageZoneId",
       label: "Zone de sortie directe",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher une zone de sortie...",
     },
     {
       name: "note",
@@ -1694,11 +2286,12 @@ const stockReturnForm = {
     {
       name: "storageZoneId",
       label: "Zone de stockage",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher une zone de stockage...",
     },
     {
       name: "note",
@@ -1727,38 +2320,50 @@ const transferForm = {
   successMessage: "Transfert cree.",
   fields: [
     {
+      name: "code",
+      label: "Code transfert",
+      type: "text",
+      placeholder: "Genere automatiquement",
+      disabled: true,
+      description: "Code genere automatiquement au format TRF0001.",
+    },
+    {
       name: "fromStoreId",
       label: "Boutique source",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher la boutique source...",
     },
     {
       name: "toStoreId",
       label: "Boutique cible",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/stores",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher la boutique cible...",
     },
     {
       name: "fromZoneId",
       label: "Zone source",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher la zone source...",
     },
     {
       name: "toZoneId",
       label: "Zone cible",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher la zone cible...",
     },
     {
       name: "note",
@@ -1846,11 +2451,12 @@ const inventoryForm = {
     {
       name: "storageZoneId",
       label: "Zone de stockage",
-      type: "select",
+      type: "search-select",
       required: true,
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+      placeholder: "Rechercher une zone de stockage...",
     },
     {
       name: "note",
@@ -1889,13 +2495,22 @@ const productForm = {
       name: "sku",
       label: "SKU",
       type: "text",
-      placeholder: "Ex. ART-0001",
+      placeholder: "Genere automatiquement",
+      disabled: true,
+      description: "Code genere automatiquement au format ART0001 ou PROD0001.",
     },
     {
       name: "description",
       label: "Description",
       type: "textarea",
       placeholder: "Forme, dosage, indication",
+    },
+    {
+      name: "imageUrl",
+      label: "Image",
+      type: "image-upload",
+      uploadEndpoint: "/api/products/upload-image",
+      helper: "Ajoutez l'image de l'article ou du produit.",
     },
     {
       name: "unitPrice",
@@ -1906,47 +2521,81 @@ const productForm = {
       step: "0.01",
     },
     {
+      name: "purchaseUnitPrice",
+      label: "Prix achat unitaire",
+      type: "number",
+      min: "0",
+      step: "0.01",
+    },
+    {
+      name: "minLevel",
+      label: "Seuil min",
+      type: "number",
+      min: "0",
+      step: "0.01",
+    },
+    {
+      name: "maxLevel",
+      label: "Seuil max",
+      type: "number",
+      min: "0",
+      step: "0.01",
+    },
+    {
       name: "categoryId",
       label: "Categorie",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/product-categories",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une categorie...",
     },
     {
       name: "familyId",
       label: "Famille",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/product-families",
       optionValue: "id",
       optionLabel: "name",
+      placeholder: "Rechercher une famille...",
     },
     {
-      name: "saleUnitId",
-      label: "Unite de vente",
-      type: "select",
+      name: "subFamilyId",
+      label: "Sous-famille",
+      type: "search-select",
+      optionsEndpoint: "/api/product-subfamilies",
+      optionValue: "id",
+      optionLabel: "name",
+      placeholder: "Rechercher une sous-famille...",
+    },
+    {
+      name: "tvaId",
+      label: "TVA",
+      type: "search-select",
+      optionsEndpoint: "/api/tax-rates",
+      optionValue: "id",
+      optionLabel: (item) => item?.code || item?.name || "--",
+      placeholder: "Rechercher une TVA...",
+    },
+    {
+      name: "managementUnitId",
+      label: "Unite de gestion",
+      type: "search-select",
       optionsEndpoint: "/api/units",
       optionValue: "id",
       optionLabel: unitLabel,
-      query: { type: "SALE" },
-    },
-    {
-      name: "stockUnitId",
-      label: "Unite de stock",
-      type: "select",
-      optionsEndpoint: "/api/units",
-      optionValue: "id",
-      optionLabel: unitLabel,
-      query: { type: "STOCK" },
+      query: { type: "GESTION" },
+      placeholder: "Rechercher une unite de gestion...",
     },
     {
       name: "dosageUnitId",
       label: "Unite de dosage",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/units",
       optionValue: "id",
       optionLabel: unitLabel,
       query: { type: "DOSAGE" },
+      placeholder: "Rechercher une unite de dosage...",
     },
   ],
   buildRequest: (values) => ({
@@ -1956,12 +2605,138 @@ const productForm = {
       name: values.name,
       sku: compactValue(values.sku),
       description: compactValue(values.description),
+      imageUrl: compactValue(values.imageUrl),
       unitPrice: numericValue(values.unitPrice) ?? 0,
+      purchaseUnitPrice: numericValue(values.purchaseUnitPrice),
+      minLevel: numericValue(values.minLevel),
+      maxLevel: numericValue(values.maxLevel),
       categoryId: compactValue(values.categoryId),
       familyId: compactValue(values.familyId),
-      saleUnitId: compactValue(values.saleUnitId),
-      stockUnitId: compactValue(values.stockUnitId),
+      subFamilyId: compactValue(values.subFamilyId),
+      tvaId: compactValue(values.tvaId),
+      managementUnitId: compactValue(values.managementUnitId),
       dosageUnitId: compactValue(values.dosageUnitId),
+    },
+  }),
+};
+
+const buildProductRequest = (values, kind) => ({
+  endpoint: "/api/products",
+  method: "POST",
+  body: {
+    name: values.name,
+    sku: compactValue(values.sku),
+    description: compactValue(values.description),
+    imageUrl: compactValue(values.imageUrl),
+    unitPrice: numericValue(values.unitPrice) ?? 0,
+    purchaseUnitPrice: numericValue(values.purchaseUnitPrice),
+    minLevel: numericValue(values.minLevel),
+    maxLevel: numericValue(values.maxLevel),
+    categoryId: compactValue(values.categoryId),
+    familyId: compactValue(values.familyId),
+    subFamilyId: compactValue(values.subFamilyId),
+    tvaId: compactValue(values.tvaId),
+    managementUnitId: compactValue(values.managementUnitId),
+    dosageUnitId: compactValue(values.dosageUnitId),
+    kind,
+  },
+});
+
+const articleProductForm = {
+  ...productForm,
+  title: "Nouvel article",
+  description: "Ajoute un article de vente propose au client.",
+  submitLabel: "Creer l'article",
+  successMessage: "Article cree.",
+  buildRequest: (values) => buildProductRequest(values, "ARTICLE"),
+};
+
+const componentProductForm = {
+  ...productForm,
+  title: "Nouveau produit composant",
+  description: "Ajoute un produit composant utilise dans les fiches techniques.",
+  submitLabel: "Creer le produit",
+  successMessage: "Produit composant cree.",
+  buildRequest: (values) => buildProductRequest(values, "COMPONENT"),
+};
+
+const technicalSheetFields = [
+  {
+    name: "articleId",
+    label: "Article",
+    type: "search-select",
+    required: true,
+    optionsEndpoint: "/api/products",
+    optionValue: "id",
+    optionLabel: productLabel,
+    query: { kind: "ARTICLE" },
+    disableOnEdit: true,
+    placeholder: "Rechercher un article...",
+  },
+];
+
+const technicalSheetLineFields = [
+  {
+    name: "componentProductId",
+    label: "Produit composant",
+    type: "search-select",
+    required: true,
+    optionsEndpoint: "/api/products",
+    optionValue: "id",
+    optionLabel: productLabel,
+    query: { kind: "COMPONENT" },
+    placeholder: "Rechercher un produit composant...",
+  },
+  {
+    name: "dosageUnitId",
+    label: "Unite de dosage",
+    type: "search-select",
+    optionsEndpoint: "/api/units",
+    optionValue: "id",
+    optionLabel: unitLabel,
+    query: { type: "DOSAGE" },
+    placeholder: "Rechercher une unite de dosage...",
+  },
+  {
+    name: "quantity",
+    label: "Quantite composant",
+    type: "number",
+    required: true,
+    min: "1",
+    step: "1",
+  },
+];
+
+const technicalSheetForm = {
+  title: "Nouvelle fiche technique",
+  description: "Associe plusieurs produits composants a un article de vente.",
+  submitLabel: "Enregistrer la fiche",
+  successMessage: "Fiche technique enregistree.",
+  fields: technicalSheetFields,
+  repeaters: [
+    {
+      name: "components",
+      label: "Produits composants",
+      addLabel: "Ajouter un composant",
+      minRows: 1,
+      fields: technicalSheetLineFields,
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint: values.articleId
+      ? `/api/products/${values.articleId}/components`
+      : undefined,
+    method: "POST",
+    body: {
+      components: mapItems(values.components, (item) => {
+        const quantity = numericValue(item.quantity);
+        if (!item.componentProductId || quantity === undefined) return null;
+        return {
+          componentProductId: item.componentProductId,
+          dosageUnitId: compactValue(item.dosageUnitId),
+          quantity,
+        };
+      }),
     },
   }),
 };
@@ -1988,6 +2763,126 @@ const simpleNameForm = (title, description, endpoint, submitLabel, successMessag
   }),
 });
 
+const subFamilyForm = (
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+) => ({
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+  fields: [
+    {
+      name: "name",
+      label: "Nom",
+      type: "text",
+      required: true,
+      placeholder: "Nom",
+    },
+    {
+      name: "parentFamilyId",
+      label: "Famille parente",
+      type: "search-select",
+      optionsEndpoint: "/api/product-families",
+      optionValue: "id",
+      optionLabel: "name",
+      placeholder: "Rechercher une famille...",
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint,
+    method: "POST",
+    body: {
+      name: values.name,
+      parentFamilyId: compactValue(values.parentFamilyId),
+    },
+  }),
+});
+
+const categoryForm = (
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+) => ({
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+  fields: [
+    {
+      name: "name",
+      label: "Nom",
+      type: "text",
+      required: true,
+      placeholder: "Nom",
+    },
+    {
+      name: "collectionId",
+      label: "Collection",
+      type: "search-select",
+      optionsEndpoint: "/api/product-collections",
+      optionValue: "id",
+      optionLabel: "name",
+      placeholder: "Rechercher une collection...",
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint,
+    method: "POST",
+    body: {
+      name: values.name,
+      collectionId: compactValue(values.collectionId),
+    },
+  }),
+});
+
+const familyForm = (
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+) => ({
+  title,
+  description,
+  endpoint,
+  submitLabel,
+  successMessage,
+  fields: [
+    {
+      name: "name",
+      label: "Nom",
+      type: "text",
+      required: true,
+      placeholder: "Nom",
+    },
+    {
+      name: "categoryId",
+      label: "Categorie",
+      type: "search-select",
+      optionsEndpoint: "/api/product-categories",
+      optionValue: "id",
+      optionLabel: "name",
+      placeholder: "Rechercher une categorie...",
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint,
+    method: "POST",
+    body: {
+      name: values.name,
+      categoryId: compactValue(values.categoryId),
+    },
+  }),
+});
+
 const unitForm = {
   title: "Nouvelle unite",
   description: "Ajoute une unite de mesure ou de vente.",
@@ -2008,7 +2903,7 @@ const unitForm = {
       type: "select",
       required: true,
       options: unitTypeOptions,
-      initialValue: "SALE",
+      initialValue: "GESTION",
     },
     {
       name: "symbol",
@@ -2169,10 +3064,20 @@ const userForm = {
     {
       name: "defaultStorageZoneId",
       label: "Zone par defaut",
-      type: "select",
+      type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
+    },
+    {
+      name: "permissionProfileId",
+      label: "Profil de permissions",
+      type: "search-select",
+      optionsEndpoint: "/api/permission-profiles",
+      optionValue: "id",
+      optionLabel: (item) => `${item.name} (${item.role})`,
+      placeholder: "Choisir un profil de permissions...",
+      emptyMessage: "Aucun profil disponible.",
     },
     { name: "sendVia", label: "Envoi mot de passe", type: "select", options: sendViaOptions, initialValue: "email" },
   ],
@@ -2187,6 +3092,7 @@ const userForm = {
       role: compactValue(values.role),
       storeId: compactValue(values.storeId),
       defaultStorageZoneId: compactValue(values.defaultStorageZoneId),
+      permissionProfileId: compactValue(values.permissionProfileId),
       sendVia: compactValue(values.sendVia),
     },
   }),
@@ -2194,32 +3100,289 @@ const userForm = {
 
 const tvaForm = {
   title: "Nouvelle TVA",
-  description: "Page de creation prete en attente de l'API TVA.",
-  submitLabel: "Creation indisponible",
-  unavailableMessage: "L'API TVA n'est pas encore disponible.",
+  description: "Ajoute un taux TVA utilisable dans le catalogue produits.",
+  endpoint: "/api/tax-rates",
+  submitLabel: "Creer la TVA",
+  successMessage: "TVA enregistree.",
   fields: [
     { name: "code", label: "Code", type: "text", required: true, placeholder: "Ex. TVA16" },
+    { name: "name", label: "Nom", type: "text", placeholder: "Ex. TVA 16%" },
     { name: "rate", label: "Taux", type: "number", required: true, min: "0", step: "0.01" },
+    {
+      name: "isActive",
+      label: "Actif",
+      type: "checkbox",
+      checkboxLabel: "TVA active",
+      initialValue: true,
+    },
   ],
+  buildRequest: (values) => ({
+    endpoint: "/api/tax-rates",
+    method: "POST",
+    body: {
+      code: compactValue(values.code),
+      name: compactValue(values.name),
+      rate: numericValue(values.rate),
+      isActive: values.isActive !== false,
+    },
+  }),
 };
 
 const currencyForm = {
   title: "Nouvelle devise",
-  description: "Page de creation prete en attente de l'API devise.",
-  submitLabel: "Creation indisponible",
-  unavailableMessage: "L'API devise n'est pas encore disponible.",
+  description:
+    "Creez une devise, puis definissez ses conversions sous la forme devise de depart vers devise cible.",
+  endpoint: "/api/currency-settings",
+  submitLabel: "Creer la devise",
+  successMessage: "Devise enregistree.",
   fields: [
-    { name: "code", label: "Code", type: "text", required: true, placeholder: "Ex. USD" },
-    { name: "label", label: "Libelle", type: "text", required: true, placeholder: "Ex. Dollar americain" },
+    {
+      name: "code",
+      label: "Code ISO de depart",
+      type: "text",
+      required: true,
+      placeholder: "Ex. USD",
+      disableOnEdit: true,
+    },
+    {
+      name: "name",
+      label: "Nom",
+      type: "text",
+      required: true,
+      placeholder: "Ex. Dollar americain",
+    },
+    {
+      name: "symbol",
+      label: "Symbole",
+      type: "text",
+      placeholder: "Ex. $",
+    },
+    {
+      name: "isCurrent",
+      label: "Devise en cours",
+      type: "checkbox",
+      checkboxLabel: "Definir comme devise en cours",
+      initialValue: false,
+    },
+    {
+      name: "isSecondary",
+      label: "Devise secondaire",
+      type: "checkbox",
+      checkboxLabel: "Utiliser comme devise secondaire",
+      initialValue: false,
+    },
+    {
+      name: "isActive",
+      label: "Actif",
+      type: "checkbox",
+      checkboxLabel: "Devise active",
+      initialValue: true,
+    },
   ],
+  repeaters: [
+    {
+      name: "conversions",
+      label: "Conversions",
+      description:
+        "Chaque ligne represente une conversion de la devise de depart vers une devise cible.",
+      addLabel: "Ajouter une conversion",
+      fields: [
+        {
+          name: "fromCurrencyCode",
+          label: "Devise de depart",
+          type: "text",
+          placeholder: "Ex. CDF",
+        },
+        {
+          name: "toCurrencyCode",
+          label: "Devise de conversion",
+          type: "search-select",
+          required: true,
+          optionsEndpoint: "/api/currency-settings",
+          optionValue: "code",
+          optionLabel: "code",
+          placeholder: "Choisir la devise cible...",
+          emptyMessage: "Aucune devise cible disponible.",
+        },
+        {
+          name: "rate",
+          label: "Taux",
+          type: "number",
+          required: true,
+          min: "0",
+          step: "0.000001",
+          placeholder: "Ex. 2800",
+        },
+      ],
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint: "/api/currency-settings",
+    method: "POST",
+    body: {
+      code: upperCodeValue(values.code),
+      name: compactValue(values.name),
+      symbol: compactValue(values.symbol),
+      isCurrent: Boolean(values.isCurrent),
+      isSecondary: Boolean(values.isSecondary),
+      isActive: values.isActive !== false,
+      conversions: mapItems(values.conversions, (conversion) => ({
+        fromCurrencyCode: upperCodeValue(conversion.fromCurrencyCode) || upperCodeValue(values.code),
+        toCurrencyCode: upperCodeValue(conversion.toCurrencyCode),
+        rate: numericValue(conversion.rate),
+      })),
+    },
+  }),
+};
+
+const currencyConversionForm = {
+  title: "Nouvelle conversion devise",
+  description:
+    "Definissez une paire de conversion explicite entre une devise de depart et une devise cible.",
+  endpoint: "/api/currency-settings/conversions",
+  submitLabel: "Creer la conversion",
+  successMessage: "Conversion de devise enregistree.",
+  fields: [
+    {
+      name: "fromCurrencyCode",
+      label: "Devise de depart",
+      type: "search-select",
+      required: true,
+      optionsEndpoint: "/api/currency-settings",
+      optionValue: "code",
+      optionLabel: currencyConversionLabel,
+      placeholder: "Choisir la devise de depart...",
+      emptyMessage: "Aucune devise disponible.",
+    },
+    {
+      name: "toCurrencyCode",
+      label: "Devise cible",
+      type: "search-select",
+      required: true,
+      optionsEndpoint: "/api/currency-settings",
+      optionValue: "code",
+      optionLabel: currencyConversionLabel,
+      placeholder: "Choisir la devise cible...",
+      emptyMessage: "Aucune devise disponible.",
+    },
+    {
+      name: "rate",
+      label: "Taux",
+      type: "number",
+      required: true,
+      min: "0",
+      step: "0.000001",
+      placeholder: "Ex. 2800",
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint: "/api/currency-settings/conversions",
+    method: "POST",
+    body: {
+      fromCurrencyCode: upperCodeValue(values.fromCurrencyCode),
+      toCurrencyCode: upperCodeValue(values.toCurrencyCode),
+      rate: numericValue(values.rate),
+    },
+  }),
+};
+
+const customerBonusProgramForm = {
+  title: "Nouveau programme bonus client",
+  description:
+    "Definit les points bonus attribues sur les ventes, leur equivalent montant et le quota sur une periode.",
+  endpoint: "/api/customer-bonus-programs",
+  submitLabel: "Creer le programme",
+  successMessage: "Programme bonus client enregistre.",
+  fields: [
+    {
+      name: "name",
+      label: "Nom",
+      type: "text",
+      required: true,
+      placeholder: "Ex. Fidelite standard",
+    },
+    {
+      name: "amountThreshold",
+      label: "Montant seuil",
+      type: "number",
+      required: true,
+      min: "0.01",
+      step: "0.01",
+      placeholder: "Ex. 10",
+    },
+    {
+      name: "pointsAwarded",
+      label: "Points attribues",
+      type: "number",
+      required: true,
+      min: "0",
+      step: "1",
+      placeholder: "Ex. 1",
+    },
+    {
+      name: "pointValueAmount",
+      label: "Equivalent montant d'un point",
+      type: "number",
+      required: true,
+      min: "0",
+      step: "0.01",
+      placeholder: "Ex. 0.5",
+    },
+    {
+      name: "quotaPoints",
+      label: "Quota de points",
+      type: "number",
+      min: "0",
+      step: "1",
+      placeholder: "Ex. 100",
+    },
+    {
+      name: "quotaPeriodDays",
+      label: "Periode (jours)",
+      type: "number",
+      min: "0",
+      step: "1",
+      placeholder: "Ex. 30",
+    },
+    {
+      name: "quotaRewardAmount",
+      label: "Prime en montant",
+      type: "number",
+      min: "0",
+      step: "0.01",
+      placeholder: "Ex. 5",
+    },
+    {
+      name: "isActive",
+      label: "Actif",
+      type: "checkbox",
+      checkboxLabel: "Utiliser comme programme actif",
+      initialValue: true,
+    },
+  ],
+  buildRequest: (values) => ({
+    endpoint: "/api/customer-bonus-programs",
+    method: "POST",
+    body: {
+      name: compactValue(values.name),
+      amountThreshold: numericValue(values.amountThreshold),
+      pointsAwarded: numericValue(values.pointsAwarded),
+      pointValueAmount: numericValue(values.pointValueAmount),
+      quotaPoints: numericValue(values.quotaPoints),
+      quotaPeriodDays: numericValue(values.quotaPeriodDays),
+      quotaRewardAmount: numericValue(values.quotaRewardAmount),
+      isActive: values.isActive !== false,
+    },
+  }),
 };
 
 const rolePermissionForm = {
   title: "Nouveau role ou jeu de permissions",
-  description: "Page prete en attente de l'API roles et permissions.",
-  submitLabel: "Creation indisponible",
-  unavailableMessage:
-    "La gestion serveur des roles et permissions n'est pas encore disponible.",
+  description:
+    "Definissez un profil nomme puis cochez les operations CRUD autorisees par module.",
+  endpoint: "/api/permission-profiles",
+  submitLabel: "Creer le profil",
+  successMessage: "Profil de permissions cree.",
   fields: [
     {
       name: "name",
@@ -2229,12 +3392,36 @@ const rolePermissionForm = {
       placeholder: "Ex. Pharmacien chef",
     },
     {
+      name: "role",
+      label: "Role",
+      type: "select",
+      required: true,
+      options: permissionProfileRoleOptions,
+      initialValue: "USER",
+    },
+    {
       name: "description",
       label: "Description",
       type: "textarea",
       placeholder: "Perimetre fonctionnel du role",
     },
+    {
+      name: "permissions",
+      label: "Permissions",
+      type: "permission-matrix",
+      optionsEndpoint: "/api/permission-profiles/catalog",
+    },
   ],
+  buildRequest: (values) => ({
+    endpoint: "/api/permission-profiles",
+    method: "POST",
+    body: {
+      name: compactValue(values.name),
+      role: compactValue(values.role),
+      description: compactValue(values.description),
+      permissions: matrixToPermissions(values.permissions),
+    },
+  }),
 };
 
 export const createCatalog = {
@@ -2262,37 +3449,69 @@ export const createCatalog = {
     ...inventoryForm,
     title: "Nouvel ajustement d'etat d'inventaire",
   }),
-  "/configurations/articles/produits": createForm({ createPath: "/configurations/articles/produits/nouveau", ...productForm }),
+  "/configurations/articles/produits": createForm({
+    createPath: "/configurations/articles/produits/nouveau",
+    ...componentProductForm,
+  }),
   "/configurations/articles/articles": createForm({
     createPath: "/configurations/articles/articles/nouveau",
-    ...productForm,
-    title: "Nouvel article",
+    ...articleProductForm,
+  }),
+  "/configurations/articles/collections": createForm({
+    createPath: "/configurations/articles/collections/nouveau",
+    ...simpleNameForm(
+      "Nouvelle collection",
+      "Ajoute une collection de categories.",
+      "/api/product-collections",
+      "Creer la collection",
+      "Collection creee.",
+    ),
   }),
   "/configurations/articles/familles": createForm({
     createPath: "/configurations/articles/familles/nouveau",
-    ...simpleNameForm("Nouvelle famille", "Ajoute une famille d'articles.", "/api/product-families", "Creer la famille", "Famille creee."),
+    ...familyForm(
+      "Nouvelle famille",
+      "Ajoute une famille d'articles.",
+      "/api/product-families",
+      "Creer la famille",
+      "Famille creee.",
+    ),
   }),
   "/configurations/articles/sous-familles": createForm({
     createPath: "/configurations/articles/sous-familles/nouveau",
-    ...simpleNameForm("Nouvelle sous-famille", "Ajoute une sous-famille d'articles.", "/api/product-families", "Creer la sous-famille", "Sous-famille creee."),
-  }),
-  "/configurations/articles/produits-vente": createForm({
-    createPath: "/configurations/articles/produits-vente/nouveau",
-    ...productForm,
-    title: "Nouveau produit de vente",
+    ...subFamilyForm(
+      "Nouvelle sous-famille",
+      "Ajoute une sous-famille d'articles.",
+      "/api/product-subfamilies",
+      "Creer la sous-famille",
+      "Sous-famille creee.",
+    ),
   }),
   "/configurations/articles/fiche-technique": createForm({
     createPath: "/configurations/articles/fiche-technique/nouveau",
-    ...productForm,
-    title: "Nouvelle fiche produit",
+    ...technicalSheetForm,
   }),
   "/configurations/articles/categorie": createForm({
     createPath: "/configurations/articles/categorie/nouveau",
-    ...simpleNameForm("Nouvelle categorie", "Ajoute une categorie de produits.", "/api/product-categories", "Creer la categorie", "Categorie creee."),
+    ...categoryForm(
+      "Nouvelle categorie",
+      "Ajoute une categorie de produits.",
+      "/api/product-categories",
+      "Creer la categorie",
+      "Categorie creee.",
+    ),
   }),
   "/configurations/parametres/unite": createForm({ createPath: "/configurations/parametres/unite/nouveau", ...unitForm }),
   "/configurations/parametres/tva": createForm({ createPath: "/configurations/parametres/tva/nouveau", ...tvaForm }),
   "/configurations/parametres/devise": createForm({ createPath: "/configurations/parametres/devise/nouveau", ...currencyForm }),
+  "/configurations/parametres/conversions-devise": createForm({
+    createPath: "/configurations/parametres/conversions-devise/nouveau",
+    ...currencyConversionForm,
+  }),
+  "/configurations/parametres/bonus-client": createForm({
+    createPath: "/configurations/parametres/bonus-client/nouveau",
+    ...customerBonusProgramForm,
+  }),
   "/configurations/parametres/locale-vente": createForm({ createPath: "/configurations/parametres/locale-vente/nouveau", ...storeForm }),
   "/configurations/parametres/zone-stockage": createForm({ createPath: "/configurations/parametres/zone-stockage/nouveau", ...zoneForm }),
   "/configurations/parametres/niveau-validation": createForm({
@@ -2346,6 +3565,35 @@ const basePatchBuilder = (builder, endpointBuilder) => (values, id) => {
 const isDraftStatus = (row) => row?.status === "DRAFT";
 const isPendingStatus = (row) => row?.status === "PENDING";
 const alwaysMutable = () => true;
+const productDeactivateConfig = {
+  deleteLabel: "Desactiver",
+  deleteConfirmTitle: "Confirmer la desactivation",
+  deleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment desactiver ${row?.name || row?.sku || row?.id || "cet element"} ? Il sera masque des listes actives mais conserve dans l'historique.`,
+};
+const productHardDeleteConfig = {
+  hardDeleteLabel: "Supprimer definitivement",
+  hardDeleteConfirmTitle: "Confirmer la suppression definitive",
+  hardDeleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment supprimer definitivement ${row?.name || row?.sku || row?.id || "cet element"} ? Cette action est irreversible et echouera si le produit est deja reference.`,
+};
+const productFormValues = (row) => ({
+  name: row.name || "",
+  sku: row.sku || "",
+  description: row.description || "",
+  imageUrl: row.imageUrl || "",
+  unitPrice: toAmountInputValue(row.unitPrice),
+  purchaseUnitPrice: toAmountInputValue(row.purchaseUnitPrice),
+  minLevel: toAmountInputValue(row.minLevel),
+  maxLevel: toAmountInputValue(row.maxLevel),
+  categoryId: row.categoryId || row.category?.id || "",
+  familyId: row.familyId || row.family?.id || "",
+  subFamilyId: row.subFamilyId || row.subFamily?.id || "",
+  tvaId: row.tvaId || row.tva?.id || "",
+  managementUnitId:
+    row.saleUnitId || row.saleUnit?.id || row.stockUnitId || row.stockUnit?.id || "",
+  dosageUnitId: row.dosageUnitId || row.dosageUnit?.id || "",
+});
 
 export const editCatalog = {
   "/commande/demande-achat": {
@@ -2354,6 +3602,7 @@ export const editCatalog = {
     detailPath: "/commande/demande-achat/detail",
     detailEndpoint: (id) => `/api/purchase-requests/${id}`,
     buildFormValues: (row) => ({
+      code: row.code || "",
       title: row.title || "",
       storeId: row.storeId || row.store?.id || "",
       note: row.note || "",
@@ -2377,6 +3626,7 @@ export const editCatalog = {
     detailPath: "/commande/requisitions/detail",
     detailEndpoint: (id) => `/api/supply-requests/${id}`,
     buildFormValues: (row) => ({
+      code: row.code || "",
       title: row.title || "",
       storeId: row.storeId || row.store?.id || "",
       storageZoneId: row.storageZoneId || row.storageZone?.id || "",
@@ -2491,8 +3741,10 @@ export const editCatalog = {
   "/mouvement/transfert": {
     ...transferForm,
     editPath: "/mouvement/transfert/modifier",
+    detailPath: "/mouvement/transfert/detail",
     detailEndpoint: (id) => `/api/transfers/${id}`,
     buildFormValues: (row) => ({
+      code: row.code || "",
       fromStoreId: row.fromStoreId || row.fromStore?.id || "",
       toStoreId: row.toStoreId || row.toStore?.id || "",
       fromZoneId: row.fromZoneId || row.fromZone?.id || "",
@@ -2504,136 +3756,171 @@ export const editCatalog = {
       transferForm.buildRequest,
       (id) => `/api/transfers/${id}`,
     ),
+    pdfUrl: (row) => `/api/transfers/${row.id}/pdf`,
     deleteRequest: (id) => ({ endpoint: `/api/transfers/${id}`, method: "DELETE" }),
     canEdit: isDraftStatus,
     canDelete: isDraftStatus,
   },
   "/configurations/articles/produits": {
-    ...productForm,
+    ...componentProductForm,
     editPath: "/configurations/articles/produits/modifier",
     detailEndpoint: (id) => `/api/products/${id}`,
-    buildFormValues: (row) => ({
-      name: row.name || "",
-      sku: row.sku || "",
-      description: row.description || "",
-      unitPrice: toAmountInputValue(row.unitPrice),
-      categoryId: row.categoryId || row.category?.id || "",
-      familyId: row.familyId || row.family?.id || "",
-      saleUnitId: row.saleUnitId || row.saleUnit?.id || "",
-      stockUnitId: row.stockUnitId || row.stockUnit?.id || "",
-      dosageUnitId: row.dosageUnitId || row.dosageUnit?.id || "",
-    }),
+    buildFormValues: productFormValues,
     buildUpdateRequest: basePatchBuilder(
-      productForm.buildRequest,
+      componentProductForm.buildRequest,
       (id) => `/api/products/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
+    ...productDeactivateConfig,
+    hardDeleteRequest: (id) => ({ endpoint: `/api/products/${id}/hard`, method: "DELETE" }),
+    canHardDelete: alwaysMutable,
+    ...productHardDeleteConfig,
   },
   "/configurations/articles/articles": {
-    ...productForm,
+    ...articleProductForm,
     editPath: "/configurations/articles/articles/modifier",
     detailEndpoint: (id) => `/api/products/${id}`,
-    buildFormValues: (row) => ({
-      name: row.name || "",
-      sku: row.sku || "",
-      description: row.description || "",
-      unitPrice: toAmountInputValue(row.unitPrice),
-      categoryId: row.categoryId || row.category?.id || "",
-      familyId: row.familyId || row.family?.id || "",
-      saleUnitId: row.saleUnitId || row.saleUnit?.id || "",
-      stockUnitId: row.stockUnitId || row.stockUnit?.id || "",
-      dosageUnitId: row.dosageUnitId || row.dosageUnit?.id || "",
-    }),
+    buildFormValues: productFormValues,
     buildUpdateRequest: basePatchBuilder(
-      productForm.buildRequest,
+      articleProductForm.buildRequest,
       (id) => `/api/products/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
-  },
-  "/configurations/articles/produits-vente": {
-    ...productForm,
-    editPath: "/configurations/articles/produits-vente/modifier",
-    detailEndpoint: (id) => `/api/products/${id}`,
-    buildFormValues: (row) => ({
-      name: row.name || "",
-      sku: row.sku || "",
-      description: row.description || "",
-      unitPrice: toAmountInputValue(row.unitPrice),
-      categoryId: row.categoryId || row.category?.id || "",
-      familyId: row.familyId || row.family?.id || "",
-      saleUnitId: row.saleUnitId || row.saleUnit?.id || "",
-      stockUnitId: row.stockUnitId || row.stockUnit?.id || "",
-      dosageUnitId: row.dosageUnitId || row.dosageUnit?.id || "",
-    }),
-    buildUpdateRequest: basePatchBuilder(
-      productForm.buildRequest,
-      (id) => `/api/products/${id}`,
-    ),
-    deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
-    canEdit: alwaysMutable,
-    canDelete: alwaysMutable,
+    ...productDeactivateConfig,
+    hardDeleteRequest: (id) => ({ endpoint: `/api/products/${id}/hard`, method: "DELETE" }),
+    canHardDelete: alwaysMutable,
+    ...productHardDeleteConfig,
   },
   "/configurations/articles/fiche-technique": {
-    ...productForm,
+    ...technicalSheetForm,
     editPath: "/configurations/articles/fiche-technique/modifier",
     detailEndpoint: (id) => `/api/products/${id}`,
     buildFormValues: (row) => ({
-      name: row.name || "",
-      sku: row.sku || "",
-      description: row.description || "",
-      unitPrice: toAmountInputValue(row.unitPrice),
-      categoryId: row.categoryId || row.category?.id || "",
-      familyId: row.familyId || row.family?.id || "",
-      saleUnitId: row.saleUnitId || row.saleUnit?.id || "",
-      stockUnitId: row.stockUnitId || row.stockUnit?.id || "",
-      dosageUnitId: row.dosageUnitId || row.dosageUnit?.id || "",
+      articleId: row.id || "",
+      components: (row.components || []).map((item) => ({
+        componentProductId: item.componentProductId || item.componentProduct?.id || "",
+        dosageUnitId: item.dosageUnitId || item.dosageUnit?.id || "",
+        quantity: toAmountInputValue(item.quantity),
+      })),
     }),
-    buildUpdateRequest: basePatchBuilder(
-      productForm.buildRequest,
-      (id) => `/api/products/${id}`,
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/products/${id}/components`,
+      method: "PUT",
+      body: {
+        components: mapItems(values.components, (item) => {
+          const quantity = numericValue(item.quantity);
+          if (!item.componentProductId || quantity === undefined) return null;
+          return {
+            componentProductId: item.componentProductId,
+            dosageUnitId: compactValue(item.dosageUnitId),
+            quantity,
+          };
+        }),
+      },
+    }),
+    deleteRequest: (id) => ({ endpoint: `/api/products/${id}/components`, method: "DELETE" }),
+    canEdit: alwaysMutable,
+    canDelete: alwaysMutable,
+  },
+  "/configurations/articles/collections": {
+    ...simpleNameForm(
+      "Modifier la collection",
+      "Edition d'une collection.",
+      "/api/product-collections",
+      "Enregistrer",
+      "Collection modifiee.",
     ),
-    deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
+    editPath: "/configurations/articles/collections/modifier",
+    buildFormValues: (row) => ({ name: row.name || "" }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/product-collections/${id}`,
+      method: "PATCH",
+      body: { name: values.name },
+    }),
+    deleteRequest: (id) => ({
+      endpoint: `/api/product-collections/${id}`,
+      method: "DELETE",
+    }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
   },
   "/configurations/articles/familles": {
-    ...simpleNameForm("Modifier la famille", "Edition d'une famille.", "/api/product-families", "Enregistrer", "Famille modifiee."),
+    ...familyForm(
+      "Modifier la famille",
+      "Edition d'une famille.",
+      "/api/product-families",
+      "Enregistrer",
+      "Famille modifiee.",
+    ),
     editPath: "/configurations/articles/familles/modifier",
-    buildFormValues: (row) => ({ name: row.name || "" }),
+    buildFormValues: (row) => ({
+      name: row.name || "",
+      categoryId: row.categoryId || row.category?.id || "",
+    }),
     buildUpdateRequest: (values, id) => ({
       endpoint: `/api/product-families/${id}`,
       method: "PATCH",
-      body: { name: values.name },
+      body: {
+        name: values.name,
+        categoryId: compactValue(values.categoryId),
+      },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/product-families/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
   },
   "/configurations/articles/sous-familles": {
-    ...simpleNameForm("Modifier la sous-famille", "Edition d'une sous-famille.", "/api/product-families", "Enregistrer", "Sous-famille modifiee."),
+    ...subFamilyForm(
+      "Modifier la sous-famille",
+      "Edition d'une sous-famille.",
+      "/api/product-subfamilies",
+      "Enregistrer",
+      "Sous-famille modifiee.",
+    ),
     editPath: "/configurations/articles/sous-familles/modifier",
-    buildFormValues: (row) => ({ name: row.name || "" }),
-    buildUpdateRequest: (values, id) => ({
-      endpoint: `/api/product-families/${id}`,
-      method: "PATCH",
-      body: { name: values.name },
+    buildFormValues: (row) => ({
+      name: row.name || "",
+      parentFamilyId: row.parentFamilyId || row.parentFamily?.id || "",
     }),
-    deleteRequest: (id) => ({ endpoint: `/api/product-families/${id}`, method: "DELETE" }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/product-subfamilies/${id}`,
+      method: "PATCH",
+      body: {
+        name: values.name,
+        parentFamilyId: compactValue(values.parentFamilyId),
+      },
+    }),
+    deleteRequest: (id) => ({
+      endpoint: `/api/product-subfamilies/${id}`,
+      method: "DELETE",
+    }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
   },
   "/configurations/articles/categorie": {
-    ...simpleNameForm("Modifier la categorie", "Edition d'une categorie.", "/api/product-categories", "Enregistrer", "Categorie modifiee."),
+    ...categoryForm(
+      "Modifier la categorie",
+      "Edition d'une categorie.",
+      "/api/product-categories",
+      "Enregistrer",
+      "Categorie modifiee.",
+    ),
     editPath: "/configurations/articles/categorie/modifier",
-    buildFormValues: (row) => ({ name: row.name || "" }),
+    buildFormValues: (row) => ({
+      name: row.name || "",
+      collectionId: row.collectionId || row.collection?.id || "",
+    }),
     buildUpdateRequest: (values, id) => ({
       endpoint: `/api/product-categories/${id}`,
       method: "PATCH",
-      body: { name: values.name },
+      body: {
+        name: values.name,
+        collectionId: compactValue(values.collectionId),
+      },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/product-categories/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
@@ -2644,7 +3931,7 @@ export const editCatalog = {
     editPath: "/configurations/parametres/unite/modifier",
     buildFormValues: (row) => ({
       name: row.name || "",
-      type: row.type || "SALE",
+      type: row.businessType || (row.type === "DOSAGE" ? "DOSAGE" : "GESTION"),
       symbol: row.symbol || "",
     }),
     buildUpdateRequest: (values, id) => ({
@@ -2659,6 +3946,145 @@ export const editCatalog = {
     deleteRequest: (id) => ({ endpoint: `/api/units/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
+  },
+  "/configurations/parametres/tva": {
+    ...tvaForm,
+    title: "Modifier TVA",
+    submitLabel: "Enregistrer",
+    successMessage: "TVA mise a jour.",
+    editPath: "/configurations/parametres/tva/modifier",
+    detailEndpoint: (id) => `/api/tax-rates/${id}`,
+    buildFormValues: (row) => ({
+      code: row.code || "",
+      name: row.name || "",
+      rate: row.rate ?? "",
+      isActive: row.isActive !== false,
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/tax-rates/${id}`,
+      method: "PATCH",
+      body: {
+        code: compactValue(values.code),
+        name: compactValue(values.name),
+        rate: numericValue(values.rate),
+        isActive: values.isActive !== false,
+      },
+    }),
+    deleteRequest: (id) => ({ endpoint: `/api/tax-rates/${id}`, method: "DELETE" }),
+    canEdit: alwaysMutable,
+    canDelete: alwaysMutable,
+  },
+  "/configurations/parametres/devise": {
+    ...currencyForm,
+    title: "Modifier devise",
+    submitLabel: "Enregistrer",
+    successMessage: "Devise mise a jour.",
+    editPath: "/configurations/parametres/devise/modifier",
+    detailEndpoint: (id) => `/api/currency-settings/${id}`,
+    buildFormValues: (row) => ({
+      code: row.code || "",
+      name: row.name || "",
+      symbol: row.symbol || "",
+      isCurrent: Boolean(row.isCurrent),
+      isSecondary: Boolean(row.isSecondary),
+      isActive: row.isActive !== false,
+      conversions: (row.conversions || []).map((conversion) => ({
+        fromCurrencyCode: conversion.fromCurrencyCode || row.code || "",
+        toCurrencyCode: conversion.toCurrencyCode || "",
+        rate: toAmountInputValue(conversion.rate),
+      })),
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/currency-settings/${id}`,
+      method: "PATCH",
+      body: {
+        code: upperCodeValue(values.code),
+        name: compactValue(values.name),
+        symbol: compactValue(values.symbol),
+        isCurrent: Boolean(values.isCurrent),
+        isSecondary: Boolean(values.isSecondary),
+        isActive: values.isActive !== false,
+        conversions: mapItems(values.conversions, (conversion) => ({
+          fromCurrencyCode:
+            upperCodeValue(conversion.fromCurrencyCode) || upperCodeValue(values.code),
+          toCurrencyCode: upperCodeValue(conversion.toCurrencyCode),
+          rate: numericValue(conversion.rate),
+        })),
+      },
+    }),
+    deleteRequest: (id) => ({ endpoint: `/api/currency-settings/${id}`, method: "DELETE" }),
+    canDelete: (row) => !row?.isCurrent,
+    deleteLabel: "Supprimer",
+    deleteConfirmTitle: "Confirmer la suppression",
+    deleteConfirmDescription: (row) =>
+      `Voulez-vous vraiment supprimer la devise ${row?.code || row?.name || "selectionnee"} ?`,
+    canEdit: alwaysMutable,
+  },
+  "/configurations/parametres/conversions-devise": {
+    ...currencyConversionForm,
+    title: "Modifier conversion devise",
+    submitLabel: "Enregistrer",
+    successMessage: "Conversion de devise mise a jour.",
+    editPath: "/configurations/parametres/conversions-devise/modifier",
+    detailEndpoint: (id) => `/api/currency-settings/conversions/${id}`,
+    buildFormValues: (row) => ({
+      fromCurrencyCode: row.fromCurrencyCode || "",
+      toCurrencyCode: row.toCurrencyCode || "",
+      rate: toAmountInputValue(row.rate),
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/currency-settings/conversions/${id}`,
+      method: "PATCH",
+      body: {
+        fromCurrencyCode: upperCodeValue(values.fromCurrencyCode),
+        toCurrencyCode: upperCodeValue(values.toCurrencyCode),
+        rate: numericValue(values.rate),
+      },
+    }),
+    deleteRequest: (id) => ({
+      endpoint: `/api/currency-settings/conversions/${id}`,
+      method: "DELETE",
+    }),
+    canEdit: alwaysMutable,
+    canDelete: alwaysMutable,
+  },
+  "/configurations/parametres/bonus-client": {
+    ...customerBonusProgramForm,
+    title: "Modifier programme bonus client",
+    submitLabel: "Enregistrer",
+    successMessage: "Programme bonus client mis a jour.",
+    editPath: "/configurations/parametres/bonus-client/modifier",
+    detailEndpoint: (id) => `/api/customer-bonus-programs/${id}`,
+    buildFormValues: (row) => ({
+      name: row.name || "",
+      amountThreshold: row.amountThreshold ?? "",
+      pointsAwarded: row.pointsAwarded ?? "",
+      pointValueAmount: row.pointValueAmount ?? "",
+      quotaPoints: row.quotaPoints ?? "",
+      quotaPeriodDays: row.quotaPeriodDays ?? "",
+      quotaRewardAmount: row.quotaRewardAmount ?? "",
+      isActive: row.isActive !== false,
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/customer-bonus-programs/${id}`,
+      method: "PATCH",
+      body: {
+        name: compactValue(values.name),
+        amountThreshold: numericValue(values.amountThreshold),
+        pointsAwarded: numericValue(values.pointsAwarded),
+        pointValueAmount: numericValue(values.pointValueAmount),
+        quotaPoints: numericValue(values.quotaPoints),
+        quotaPeriodDays: numericValue(values.quotaPeriodDays),
+        quotaRewardAmount: numericValue(values.quotaRewardAmount),
+        isActive: values.isActive !== false,
+      },
+    }),
+    deleteRequest: (id) => ({
+      endpoint: `/api/customer-bonus-programs/${id}`,
+      method: "DELETE",
+    }),
+    canEdit: alwaysMutable,
+    canDelete: (row) => !row?.isActive,
   },
   "/configurations/parametres/locale-vente": {
     ...storeForm,
@@ -2753,6 +4179,7 @@ export const editCatalog = {
       role: row.role || "USER",
       storeId: row.storeId || row.store?.id || "",
       defaultStorageZoneId: row.defaultStorageZoneId || "",
+      permissionProfileId: row.permissionProfileId || row.permissionProfile?.id || "",
       sendVia: "email",
     }),
     buildUpdateRequest: (values, id) => ({
@@ -2766,6 +4193,7 @@ export const editCatalog = {
         role: compactValue(values.role),
         storeId: compactValue(values.storeId),
         defaultStorageZoneId: compactValue(values.defaultStorageZoneId),
+        permissionProfileId: compactValue(values.permissionProfileId),
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/users/${id}`, method: "DELETE" }),
@@ -2784,6 +4212,7 @@ export const editCatalog = {
       role: row.role || "USER",
       storeId: row.storeId || row.store?.id || "",
       defaultStorageZoneId: row.defaultStorageZoneId || "",
+      permissionProfileId: row.permissionProfileId || row.permissionProfile?.id || "",
       sendVia: "email",
     }),
     buildUpdateRequest: (values, id) => ({
@@ -2797,9 +4226,40 @@ export const editCatalog = {
         role: compactValue(values.role),
         storeId: compactValue(values.storeId),
         defaultStorageZoneId: compactValue(values.defaultStorageZoneId),
+        permissionProfileId: compactValue(values.permissionProfileId),
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/users/${id}`, method: "DELETE" }),
+    canEdit: alwaysMutable,
+    canDelete: alwaysMutable,
+  },
+  "/configurations/utilisateur/roles-permissions": {
+    ...rolePermissionForm,
+    title: "Modifier role ou jeu de permissions",
+    submitLabel: "Enregistrer",
+    successMessage: "Profil de permissions mis a jour.",
+    editPath: "/configurations/utilisateur/roles-permissions/modifier",
+    detailEndpoint: (id) => `/api/permission-profiles/${id}`,
+    buildFormValues: (row) => ({
+      name: row.name || "",
+      role: row.role || "USER",
+      description: row.description || "",
+      permissions: permissionsToMatrix(row.permissions),
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/permission-profiles/${id}`,
+      method: "PATCH",
+      body: {
+        name: compactValue(values.name),
+        role: compactValue(values.role),
+        description: compactValue(values.description),
+        permissions: matrixToPermissions(values.permissions),
+      },
+    }),
+    deleteRequest: (id) => ({
+      endpoint: `/api/permission-profiles/${id}`,
+      method: "DELETE",
+    }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
   },
@@ -2863,6 +4323,14 @@ export const getTableActionConfig = (path) => {
     canEdit: editConfig?.canEdit || null,
     canDelete: editConfig?.canDelete || null,
     deleteRequest: editConfig?.deleteRequest || null,
+    deleteLabel: editConfig?.deleteLabel || null,
+    deleteConfirmTitle: editConfig?.deleteConfirmTitle || null,
+    deleteConfirmDescription: editConfig?.deleteConfirmDescription || null,
+    canHardDelete: editConfig?.canHardDelete || null,
+    hardDeleteRequest: editConfig?.hardDeleteRequest || null,
+    hardDeleteLabel: editConfig?.hardDeleteLabel || null,
+    hardDeleteConfirmTitle: editConfig?.hardDeleteConfirmTitle || null,
+    hardDeleteConfirmDescription: editConfig?.hardDeleteConfirmDescription || null,
     pdfUrl: editConfig?.pdfUrl || null,
   };
 };
@@ -2965,6 +4433,10 @@ const router = createBrowserRouter([
         children: [
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: "dashboard", element: <Dashboard /> },
+          {
+            path: "configurations/articles/produits-vente",
+            element: <Navigate to="/configurations/articles/articles" replace />,
+          },
           ...redirectRoutes,
           ...workspaceRoutes,
           ...createRoutes,

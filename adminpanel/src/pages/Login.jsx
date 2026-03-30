@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pill } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import useAuthStore from "../stores/authStore";
+import useToastStore from "../stores/toastStore";
 
 const Login = () => {
   const navigate = useNavigate();
@@ -10,6 +11,7 @@ const Login = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const loading = useAuthStore((state) => state.loading);
   const error = useAuthStore((state) => state.error);
+  const showToast = useToastStore((state) => state.showToast);
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
   const [rememberMe, setRememberMe] = useState(true);
@@ -25,8 +27,20 @@ const Login = () => {
     event.preventDefault();
     const result = await login({ identifier, password, rememberMe });
     if (result?.success) {
+      showToast({
+        title: "Connexion reussie",
+        message: "Bienvenue dans l'administration.",
+        variant: "success",
+      });
       navigate(fromPath, { replace: true });
+      return;
     }
+
+    showToast({
+      title: "Connexion echouee",
+      message: result?.message || "Impossible de se connecter.",
+      variant: "danger",
+    });
   };
 
   return (
@@ -109,12 +123,6 @@ const Login = () => {
                 />
                 Garder la session active
               </label>
-
-              {error ? (
-                <div className="rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
-                  {error}
-                </div>
-              ) : null}
 
               <button
                 type="submit"

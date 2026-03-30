@@ -1,4 +1,5 @@
 const xlsx = require("xlsx");
+const { createStyledPdf } = require("../services/pdfTheme");
 
 const escapeCsv = (value) => {
   if (value === null || value === undefined) {
@@ -23,7 +24,32 @@ const toCsv = (rows) => {
   return [headerLine, ...lines].join("\n");
 };
 
-const sendExport = (res, rows, filename, type = "csv") => {
+const sendExport = async (res, rows, filename, type = "csv", options = {}) => {
+  if (type === "pdf") {
+    const safeRows = Array.isArray(rows) ? rows : [];
+    const headers = safeRows.length ? Object.keys(safeRows[0]) : ["Ligne"];
+    const pdfBuffer = await createStyledPdf({
+      title: filename.replace(/-/g, " ").toUpperCase(),
+      reference: `EXPORT : ${filename.toUpperCase()}`,
+      companyName: options.companyName || res.locals?.tenantName || "NEOPHARMA",
+      subtitleLines: ["Export systeme"],
+      metaItems: [
+        { label: "Nombre de lignes", value: String(safeRows.length) },
+      ],
+      tableTitle: "Donnees exportees",
+      columns: headers.map((header) => ({
+        label: header,
+        width: Math.max(1, header.length / 8),
+        value: (row) => row?.[header] ?? "",
+      })),
+      rows: safeRows,
+      footerLeft: "Document genere automatiquement",
+    });
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}.pdf"`);
+    return res.send(pdfBuffer);
+  }
+
   if (type === "xlsx") {
     const worksheet = xlsx.utils.json_to_sheet(rows);
     const workbook = xlsx.utils.book_new();

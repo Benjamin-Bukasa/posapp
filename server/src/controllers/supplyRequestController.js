@@ -9,6 +9,28 @@ const {
 const { sendExport } = require("../utils/exporter");
 const { emitToStore, emitToTenant } = require("../socket");
 const { buildSupplyRequestPdf } = require("../services/supplyRequestPdf");
+const {
+  attachDocumentCodes,
+  assignGeneratedDocumentCode,
+} = require("../utils/documentCodeStore");
+
+const includesSearch = (value, search) =>
+  String(value || "")
+    .toLowerCase()
+    .includes(String(search || "").trim().toLowerCase());
+
+const matchesSupplyRequestSearch = (item, search) => {
+  if (!search) return true;
+  return [
+    item.code,
+    item.title,
+    item.status,
+    item.store?.name,
+    item.storageZone?.name,
+    item.requestedBy?.firstName,
+    item.requestedBy?.lastName,
+  ].some((value) => includesSearch(value, search));
+};
 
 const loadSupplyRequestFlow = (tenantId) =>
   prisma.approvalFlow.findUnique({
@@ -123,6 +145,17 @@ const createSupplyRequest = async (req, res) => {
     },
   });
 
+  supplyRequest = {
+    ...supplyRequest,
+    code: await assignGeneratedDocumentCode({
+      tableName: "supplyRequests",
+      tenantId: req.user.tenantId,
+      id: supplyRequest.id,
+      prefix: "REQ",
+      currentCode: supplyRequest.code,
+    }),
+  };
+
   const approvalCount = await ensureSupplyRequestApprovals(
     req.user.tenantId,
     supplyRequest.id
@@ -143,7 +176,10 @@ const createSupplyRequest = async (req, res) => {
   let pdfBuffer = null;
   let pdfFileName = null;
   try {
-    pdfBuffer = await buildSupplyRequestPdf(supplyRequest);
+    pdfBuffer = await buildSupplyRequestPdf(
+      await attachDocumentCodes("supplyRequests", supplyRequest),
+      req.user.tenantName,
+    );
     if (pdfBuffer) {
       pdfFileName = `requisition-${supplyRequest.id}.pdf`;
       await prisma.supplyRequest.update({
@@ -176,7 +212,7 @@ const createSupplyRequest = async (req, res) => {
   }
 
   const responsePayload = sanitizeRequest(
-    { ...supplyRequest, pdfFileName },
+    await attachDocumentCodes("supplyRequests", { ...supplyRequest, pdfFileName }),
     pdfBuffer
   );
   return res.status(201).json(responsePayload);
@@ -188,25 +224,11 @@ const listSupplyRequests = async (req, res) => {
     parseListParams(req.query);
   const createdAtFilter = buildDateRangeFilter(req.query, "createdAt");
 
-  const searchFilter = search
-    ? {
-        OR: [
-          { title: contains(search) },
-          { status: contains(search) },
-          { store: { name: contains(search) } },
-          { storageZone: { name: contains(search) } },
-          { requestedBy: { firstName: contains(search) } },
-          { requestedBy: { lastName: contains(search) } },
-        ],
-      }
-    : {};
-
   const where = {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
     ...(storeId ? { storeId } : {}),
     ...createdAtFilter,
-    ...searchFilter,
   };
 
   const orderBy =
@@ -228,8 +250,12 @@ const listSupplyRequests = async (req, res) => {
       orderBy,
     });
 
-    const rows = data.map((item) => ({
+    const hydratedData = (await attachDocumentCodes("supplyRequests", data)).filter((item) =>
+      matchesSupplyRequestSearch(item, search),
+    );
+    const rows = hydratedData.map((item) => ({
       id: item.id,
+      code: item.code || "",
       title: item.title,
       status: item.status,
       store: item.store?.name || "",
@@ -256,28 +282,33 @@ const listSupplyRequests = async (req, res) => {
       },
       orderBy,
     });
-    return res.json(requests.map((item) => sanitizeRequest(item)));
+    return res.json(
+      (await attachDocumentCodes("supplyRequests", requests))
+        .filter((item) => matchesSupplyRequestSearch(item, search))
+        .map((item) => sanitizeRequest(item)),
+    );
   }
 
-  const [total, requests] = await prisma.$transaction([
-    prisma.supplyRequest.count({ where }),
-    prisma.supplyRequest.findMany({
-      where,
-      include: {
-        items: { include: { product: true, unit: true } },
-        approvals: true,
-        store: true,
-        storageZone: true,
-        requestedBy: true,
-      },
-      orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
+  const requests = await prisma.supplyRequest.findMany({
+    where,
+    include: {
+      items: { include: { product: true, unit: true } },
+      approvals: true,
+      store: true,
+      storageZone: true,
+      requestedBy: true,
+    },
+    orderBy,
+  });
+  const filteredRequests = (await attachDocumentCodes("supplyRequests", requests)).filter(
+    (item) => matchesSupplyRequestSearch(item, search),
+  );
+  const total = filteredRequests.length;
 
   return res.json({
-    data: requests.map((item) => sanitizeRequest(item)),
+    data: filteredRequests
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((item) => sanitizeRequest(item)),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
 };
@@ -300,7 +331,7 @@ const getSupplyRequest = async (req, res) => {
     return res.status(404).json({ message: "Supply request not found." });
   }
 
-  return res.json(sanitizeRequest(request));
+  return res.json(sanitizeRequest(await attachDocumentCodes("supplyRequests", request)));
 };
 
 const getSupplyRequestPdf = async (req, res) => {
@@ -320,12 +351,13 @@ const getSupplyRequestPdf = async (req, res) => {
     return res.status(404).json({ message: "PDF not found." });
   }
 
+  const requestWithCode = await attachDocumentCodes("supplyRequests", request);
   let pdfData = request.pdfData;
   let pdfFileName = request.pdfFileName;
 
   if (!pdfData) {
-    pdfData = await buildSupplyRequestPdf(request);
-    pdfFileName = `requisition-${id}.pdf`;
+    pdfData = await buildSupplyRequestPdf(requestWithCode, req.user.tenantName);
+    pdfFileName = `${requestWithCode.code || `requisition-${id}`}.pdf`;
 
     await prisma.supplyRequest.update({
       where: { id },
@@ -340,7 +372,7 @@ const getSupplyRequestPdf = async (req, res) => {
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
-    `inline; filename="${pdfFileName || `requisition-${id}.pdf`}"`
+    `inline; filename="${pdfFileName || requestWithCode.code || `requisition-${id}`}.pdf"`
   );
   return res.send(pdfData);
 };
@@ -578,7 +610,9 @@ const updateSupplyRequest = async (req, res) => {
     },
   });
 
-  return res.json(sanitizeRequest(updated));
+  return res.json(
+    sanitizeRequest(await attachDocumentCodes("supplyRequests", updated)),
+  );
 };
 
 const deleteSupplyRequest = async (req, res) => {

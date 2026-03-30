@@ -1,24 +1,7 @@
 /* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/rules-of-hooks */
 import React, { useEffect, useRef, useState } from "react";
-
-const getClippingParent = (element) => {
-  let current = element?.parentElement;
-
-  while (current && current !== document.body) {
-    const style = window.getComputedStyle(current);
-    const overflowY = style.overflowY;
-    const overflowX = style.overflowX;
-    const isClipping =
-      (overflowY && overflowY !== "visible") ||
-      (overflowX && overflowX !== "visible");
-
-    if (isClipping) return current;
-    current = current.parentElement;
-  }
-
-  return null;
-};
+import { createPortal } from "react-dom";
 
 const DropdownAction = ({
   label = "Action",
@@ -32,8 +15,13 @@ const DropdownAction = ({
   disabled = false,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [direction, setDirection] = useState("down");
-  const [align, setAlign] = useState("left");
+  const [menuStyle, setMenuStyle] = useState({
+    position: "fixed",
+    top: 0,
+    left: 0,
+    zIndex: 120,
+    visibility: "hidden",
+  });
   const containerRef = useRef(null);
   const buttonRef = useRef(null);
   const menuRef = useRef(null);
@@ -55,49 +43,43 @@ const DropdownAction = ({
 
       const buttonRect = buttonEl.getBoundingClientRect();
       const menuRect = menuEl.getBoundingClientRect();
-      const clippingParent = getClippingParent(containerRef.current);
       const margin = 8;
-
-      let parentBelow = Number.POSITIVE_INFINITY;
-      let parentAbove = Number.POSITIVE_INFINITY;
-      let parentLeft = 0;
-      let parentRight = window.innerWidth;
-
-      if (clippingParent) {
-        const parentRect = clippingParent.getBoundingClientRect();
-        parentBelow = parentRect.bottom - buttonRect.bottom;
-        parentAbove = buttonRect.top - parentRect.top;
-        parentLeft = parentRect.left;
-        parentRight = parentRect.right;
-      }
-
       const viewportBelow = window.innerHeight - buttonRect.bottom;
       const viewportAbove = buttonRect.top;
-      const availableBelow = Math.min(viewportBelow, parentBelow);
-      const availableAbove = Math.min(viewportAbove, parentAbove);
-      const availableRight = parentRight - buttonRect.right;
-      const availableLeft = buttonRect.left - parentLeft;
+      const viewportRight = window.innerWidth - buttonRect.right;
+      const viewportLeft = buttonRect.left;
 
-      setDirection(
-        availableBelow < menuRect.height + margin &&
-          availableAbove >= menuRect.height + margin
-          ? "up"
-          : "down",
+      const shouldOpenUp =
+        viewportBelow < menuRect.height + margin &&
+        viewportAbove >= menuRect.height + margin;
+
+      let left = buttonRect.left;
+      if (
+        viewportRight < menuRect.width + margin &&
+        viewportLeft >= menuRect.width + margin
+      ) {
+        left = buttonRect.right - menuRect.width;
+      }
+
+      left = Math.max(
+        margin,
+        Math.min(left, window.innerWidth - menuRect.width - margin),
       );
 
-      if (
-        availableRight < menuRect.width + margin &&
-        availableLeft >= menuRect.width + margin
-      ) {
-        setAlign("right");
-      } else if (
-        availableLeft < menuRect.width + margin &&
-        availableRight >= menuRect.width + margin
-      ) {
-        setAlign("left");
-      } else {
-        setAlign(availableRight >= availableLeft ? "left" : "right");
-      }
+      const top = shouldOpenUp
+        ? Math.max(margin, buttonRect.top - menuRect.height - margin)
+        : Math.min(
+            buttonRect.bottom + margin,
+            window.innerHeight - menuRect.height - margin,
+          );
+
+      setMenuStyle({
+        position: "fixed",
+        top,
+        left,
+        zIndex: 120,
+        visibility: "visible",
+      });
     };
 
     const raf = requestAnimationFrame(updatePosition);
@@ -115,7 +97,11 @@ const DropdownAction = ({
     if (!isOpen) return;
 
     const handleClickOutside = (event) => {
-      if (!containerRef.current?.contains(event.target)) {
+      const target = event.target;
+      if (
+        !containerRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
         closeMenu();
       }
     };
@@ -200,25 +186,27 @@ const DropdownAction = ({
         {label}
       </button>
 
-      {isOpen ? (
-        <div
-          ref={menuRef}
-          className={[
-            "absolute z-50 min-w-[180px] rounded-lg border border-border bg-surface text-text-primary shadow-lg",
-            direction === "down" ? "top-full mt-2" : "bottom-full mb-2",
-            align === "right" ? "right-0" : "left-0",
-            menuClassName,
-          ].join(" ")}
-        >
-          <div
-            className={[
-              menuBodyClassName || (children ? "p-2" : "flex flex-col gap-1 p-2"),
-            ].join(" ")}
-          >
-            {renderItems()}
-          </div>
-        </div>
-      ) : null}
+      {isOpen
+        ? createPortal(
+            <div
+              ref={menuRef}
+              style={menuStyle}
+              className={[
+                "min-w-[180px] rounded-lg border border-border bg-surface text-text-primary shadow-lg",
+                menuClassName,
+              ].join(" ")}
+            >
+              <div
+                className={[
+                  menuBodyClassName || (children ? "p-2" : "flex flex-col gap-1 p-2"),
+                ].join(" ")}
+              >
+                {renderItems()}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 };

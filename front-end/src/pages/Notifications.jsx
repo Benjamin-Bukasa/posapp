@@ -22,7 +22,7 @@ function Notifications() {
 
   return (
     <section className="w-full h-full flex flex-col gap-4 p-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">
             Notifications
@@ -36,7 +36,7 @@ function Notifications() {
           onClick={clearNotifications}
           disabled={notifications.length === 0}
           className={[
-            "rounded-lg border px-3 py-2 text-xs font-semibold",
+            "w-full rounded-lg border px-3 py-2 text-xs font-semibold sm:w-auto",
             notifications.length === 0
               ? "cursor-not-allowed border-border text-text-secondary"
               : "border-secondary text-secondary hover:bg-secondary/10",

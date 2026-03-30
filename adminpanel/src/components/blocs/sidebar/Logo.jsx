@@ -1,10 +1,13 @@
 import React, { useEffect, useRef, useState } from "react";
-import { PanelRightClose, PanelRightOpen, Pill } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Pill, X } from "lucide-react";
 import useUiStore from "../../../stores/uiStore";
+import useAuthStore from "../../../stores/authStore";
 
 const Logo = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
+  const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
+  const tenantName = useAuthStore((state) => state.user?.tenantName || "NEOPHARMA");
   const buttonRef = useRef(null);
   const tooltipRef = useRef(null);
   const [tooltipSide, setTooltipSide] = useState("right");
@@ -53,11 +56,25 @@ const Logo = () => {
     <div className="flex w-full items-center justify-between gap-2">
       <div className="flex items-center justify-start gap-2">
         <Pill size={24} strokeWidth={2} className="text-accent" />
-        {isSidebarOpen ? (
-          <p className="text-2xl font-semibold text-white">NeoPharma</p>
-        ) : null}
+        <p
+          className={[
+            "max-w-[180px] truncate text-2xl font-semibold text-white",
+            isSidebarOpen ? "block" : "block lg:hidden",
+          ].join(" ")}
+          title={tenantName}
+        >
+          {tenantName}
+        </p>
       </div>
-      <div className="group relative">
+      <button
+        type="button"
+        onClick={closeMobileSidebar}
+        className="rounded-lg p-1 text-accent lg:hidden"
+        aria-label="Fermer le menu"
+      >
+        <X size={22} strokeWidth={1.8} />
+      </button>
+      <div className="group relative hidden lg:block">
         <button
           ref={buttonRef}
           type="button"

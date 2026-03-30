@@ -1,86 +1,83 @@
-const PDFDocument = require("pdfkit");
-
-const formatDate = (value) => {
-  if (!value) return "";
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString("fr-FR");
-};
+const {
+  DEFAULT_PRIMARY_CURRENCY,
+  convertAmount,
+  normalizeCurrencyCode,
+} = require("../utils/currencySettings");
+const { createStyledPdf, formatDateTime } = require("./pdfTheme");
 
 const toNumber = (value) => {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
 };
 
-const formatMoney = (value) =>
+const formatMoney = (
+  value,
+  sourceCurrencyCode = DEFAULT_PRIMARY_CURRENCY,
+  settings = {},
+) =>
   new Intl.NumberFormat("fr-FR", {
     style: "currency",
-    currency: "USD",
-  }).format(toNumber(value));
+    currency: normalizeCurrencyCode(
+      settings.primaryCurrencyCode,
+      DEFAULT_PRIMARY_CURRENCY,
+    ),
+  }).format(
+    toNumber(
+      convertAmount(
+        value,
+        sourceCurrencyCode,
+        normalizeCurrencyCode(
+          settings.primaryCurrencyCode,
+          DEFAULT_PRIMARY_CURRENCY,
+        ),
+        settings,
+      ),
+    ),
+  );
 
-const buildStockEntryPdf = (entry) =>
-  new Promise((resolve, reject) => {
-    try {
-      const doc = new PDFDocument({ size: "A4", margin: 40 });
-      const chunks = [];
-
-      doc.on("data", (chunk) => chunks.push(chunk));
-      doc.on("end", () => resolve(Buffer.concat(chunks)));
-      doc.on("error", reject);
-
-      doc.fontSize(18).text("Entree de stock", { align: "center" });
-      doc.moveDown(0.5);
-      doc.fontSize(10).text(`Reference: SE-${entry.id.slice(0, 8).toUpperCase()}`);
-      doc.text(`Type source: ${entry.sourceType || "--"}`);
-      doc.text(`Statut: ${entry.status || "PENDING"}`);
-      doc.text(`Date creation: ${formatDate(entry.createdAt)}`);
-      if (entry.approvedAt) doc.text(`Date validation: ${formatDate(entry.approvedAt)}`);
-      if (entry.postedAt) doc.text(`Date comptabilisation: ${formatDate(entry.postedAt)}`);
-      doc.moveDown(0.5);
-
-      if (entry.store?.name) doc.text(`Boutique: ${entry.store.name}`);
-      if (entry.storageZone?.name) doc.text(`Zone: ${entry.storageZone.name}`);
-      if (entry.sourceId) doc.text(`Document source: ${entry.sourceId}`);
-      if (entry.createdBy) {
-        const createdBy = [entry.createdBy.firstName, entry.createdBy.lastName]
-          .filter(Boolean)
-          .join(" ");
-        if (createdBy) doc.text(`Cree par: ${createdBy}`);
-      }
-      if (entry.approvedBy) {
-        const approvedBy = [entry.approvedBy.firstName, entry.approvedBy.lastName]
-          .filter(Boolean)
-          .join(" ");
-        if (approvedBy) doc.text(`Valide par: ${approvedBy}`);
-      }
-      if (entry.note) {
-        doc.moveDown(0.5);
-        doc.text(`Note: ${entry.note}`);
-      }
-
-      doc.moveDown();
-      doc.fontSize(12).text("Lignes", { underline: true });
-      doc.moveDown(0.5);
-
-      (entry.items || []).forEach((item, index) => {
-        const name = item.product?.name || "Produit";
-        const unitLabel = item.unit?.symbol || item.unit?.name || "";
-        const quantity = toNumber(item.quantity);
-        const unitCost = toNumber(item.unitCost);
-
-        doc
-          .fontSize(10)
-          .text(
-            `${index + 1}. ${name} | Quantite: ${quantity} ${unitLabel} | Cout unitaire: ${formatMoney(
-              unitCost,
-            )}`,
-          );
-      });
-
-      doc.end();
-    } catch (error) {
-      reject(error);
-    }
+const buildStockEntryPdf = (entry, currencySettings = {}, companyName) =>
+  createStyledPdf({
+    title: "ENTREE EN STOCK",
+    reference: `ENTREE N° : SE-${String(entry.id || "").slice(0, 8).toUpperCase()}`,
+    companyName: companyName || "NEOPHARMA",
+    subtitleLines: [
+      `Date : ${formatDateTime(entry.createdAt)}`,
+      `Statut : ${entry.status || "-"}`,
+      entry.receiptNumber ? `Bon de reception : ${entry.receiptNumber}` : "",
+    ],
+    metaItems: [
+      { label: "Type source", value: entry.sourceType || "-" },
+      { label: "Zone", value: entry.storageZone?.name || "-" },
+      {
+        label: "Cree par",
+        value:
+          [entry.createdBy?.firstName, entry.createdBy?.lastName]
+            .filter(Boolean)
+            .join(" ") || "-",
+      },
+      {
+        label: "Valide par",
+        value:
+          [entry.approvedBy?.firstName, entry.approvedBy?.lastName]
+            .filter(Boolean)
+            .join(" ") || "-",
+      },
+      { label: "Observation", value: entry.note || "-" },
+    ],
+    tableTitle: "Lignes recues",
+    columns: [
+      { label: "Code", width: 1.2, value: (row) => row.product?.sku || "-" },
+      { label: "Article", width: 2.6, value: (row) => row.product?.name || "-" },
+      { label: "Unite", width: 0.8, value: (row) => row.unit?.symbol || row.unit?.name || "-" },
+      { label: "Qte", width: 0.8, value: (row) => row.quantity ?? 0 },
+      {
+        label: "Cout unitaire",
+        width: 1.2,
+        value: (row) => formatMoney(row.unitCost, row.currencyCode, currencySettings),
+      },
+    ],
+    rows: entry.items || [],
+    footerLeft: "Bon d'entree en stock",
   });
 
 module.exports = { buildStockEntryPdf };

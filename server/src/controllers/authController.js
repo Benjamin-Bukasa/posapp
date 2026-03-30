@@ -178,6 +178,7 @@ const login = async (req, res) => {
       lastName: user.lastName,
       storeId: user.storeId,
       storeName: user.store?.name || null,
+      defaultStorageZoneId: user.defaultStorageZoneId || null,
     },
   });
 };
@@ -541,6 +542,7 @@ const googleLogin = async (req, res) => {
       lastName: user.lastName,
       storeId: user.storeId,
       storeName: user.store?.name || null,
+      defaultStorageZoneId: user.defaultStorageZoneId || null,
     },
   });
 };

@@ -1,27 +1,27 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const approvalFlowController = require("../controllers/approvalFlowController");
 
 const router = express.Router();
 
-router.get("/", auth, approvalFlowController.listFlows);
+router.get("/", auth, requirePermission("settings.read"), approvalFlowController.listFlows);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.create"),
   approvalFlowController.createFlow
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.update"),
   approvalFlowController.updateFlow
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.delete"),
   approvalFlowController.deleteFlow
 );
 

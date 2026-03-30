@@ -1,5 +1,9 @@
 const prisma = require("../config/prisma");
 const {
+  attachCurrencyCodes,
+  getCurrencyCodeMap,
+} = require("../utils/moneyCurrency");
+const {
   parseListParams,
   buildOrderBy,
   contains,
@@ -7,6 +11,42 @@ const {
   buildDateRangeFilter,
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
+
+const hydratePaymentsWithCurrencyCodes = async (records) => {
+  const list = Array.isArray(records)
+    ? records.filter(Boolean)
+    : records
+      ? [records]
+      : [];
+
+  if (!list.length) {
+    return Array.isArray(records) ? [] : records;
+  }
+
+  const paymentCurrencyMap = await getCurrencyCodeMap(
+    prisma,
+    "payments",
+    list.map((item) => item.id),
+  );
+  const orderCurrencyMap = await getCurrencyCodeMap(
+    prisma,
+    "orders",
+    list.map((item) => item.orderId),
+  );
+
+  const hydrated = attachCurrencyCodes(list, paymentCurrencyMap).map((payment) => ({
+    ...payment,
+    order: payment.order
+      ? {
+          ...payment.order,
+          currencyCode:
+            orderCurrencyMap.get(payment.orderId) || payment.currencyCode || "USD",
+        }
+      : payment.order,
+  }));
+
+  return Array.isArray(records) ? hydrated : hydrated[0];
+};
 
 const listPayments = async (req, res) => {
   const { status, method, orderId } = req.query || {};
@@ -70,7 +110,7 @@ const listPayments = async (req, res) => {
       orderBy,
     });
 
-    return res.json(payments);
+    return res.json(await hydratePaymentsWithCurrencyCodes(payments));
   }
 
   const [total, payments] = await prisma.$transaction([
@@ -85,7 +125,7 @@ const listPayments = async (req, res) => {
   ]);
 
   return res.json({
-    data: payments,
+    data: await hydratePaymentsWithCurrencyCodes(payments),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
 };
@@ -102,7 +142,7 @@ const getPayment = async (req, res) => {
     return res.status(404).json({ message: "Payment not found." });
   }
 
-  return res.json(payment);
+  return res.json(await hydratePaymentsWithCurrencyCodes(payment));
 };
 
 module.exports = {

@@ -1,41 +1,41 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const stockEntryController = require("../controllers/stockEntryController");
 
 const router = express.Router();
 
-router.get("/", auth, stockEntryController.listStockEntries);
-router.get("/:id", auth, stockEntryController.getStockEntry);
-router.get("/:id/pdf", auth, stockEntryController.getStockEntryPdf);
+router.get("/", auth, requirePermission("movements.read"), stockEntryController.listStockEntries);
+router.get("/:id", auth, requirePermission("movements.read"), stockEntryController.getStockEntry);
+router.get("/:id/pdf", auth, requirePermission("movements.read"), stockEntryController.getStockEntryPdf);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("movements.create"),
   stockEntryController.createStockEntry
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("movements.update"),
   stockEntryController.updateStockEntry
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("movements.delete"),
   stockEntryController.deleteStockEntry
 );
 router.post(
   "/:id/approve",
   auth,
-  requireRole("SUPERADMIN"),
+  requirePermission("movements.update"),
   stockEntryController.approveStockEntry
 );
 router.post(
   "/:id/post",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("movements.update"),
   stockEntryController.postStockEntry
 );
 

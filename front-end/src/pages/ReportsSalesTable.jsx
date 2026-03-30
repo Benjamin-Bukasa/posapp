@@ -5,6 +5,7 @@ import { getCurrentUser } from "../utils/currentUser";
 import { apiGet } from "../services/apiClient";
 import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
 import useToastStore from "../stores/toastStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 
 const resolveSaleVariant = (status) => {
@@ -32,6 +33,9 @@ const mapSaleStatus = (status) => {
 
 function ReportsSalesTable() {
   const currentUser = useMemo(() => getCurrentUser(), []);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const refreshTick = useRealtimeRefetch([
     "sale:created",
     "sale:updated",
@@ -95,12 +99,12 @@ function ReportsSalesTable() {
         date: formatDate(order.createdAt),
         items,
         quantity: quantity || 0,
-        total: formatAmount(order.total),
+        total: formatAmount(order.total, order.currencyCode),
         paymentMethod,
         status: mapSaleStatus(order.status),
       };
     });
-  }, [orders]);
+  }, [orders, displayCurrencyCode]);
 
   const filteredSales = useMemo(() => {
     let results = [...salesRows];

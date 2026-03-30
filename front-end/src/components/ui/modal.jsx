@@ -36,7 +36,7 @@ const Modal = ({
       <div
         role="dialog"
         aria-modal="true"
-        className="relative w-full max-w-lg overflow-hidden rounded-2xl bg-surface shadow-2xl ring-1 ring-black/5"
+        className="relative max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-surface shadow-2xl ring-1 ring-black/5"
       >
         <div className="p-6">
           <div className="flex items-start justify-between gap-4">
@@ -63,12 +63,12 @@ const Modal = ({
           </div>
           {children ? <div className="mt-4">{children}</div> : null}
         </div>
-        <div className="flex items-center justify-end gap-2 border-t border-border bg-surface/80 px-6 py-4">
+        <div className="flex flex-col-reverse gap-2 border-t border-border bg-surface/80 px-6 py-4 sm:flex-row sm:items-center sm:justify-end">
           <button
             type="button"
             onClick={onCancel}
             className={[
-              "rounded-lg bg-neutral-200 px-4 py-2 text-sm font-medium text-text-primary hover:bg-neutral-300 dark:bg-surface dark:border dark:border-border dark:hover:bg-surface/70",
+              "w-full rounded-lg bg-neutral-200 px-4 py-2 text-sm font-medium text-text-primary hover:bg-neutral-300 dark:bg-surface dark:border dark:border-border dark:hover:bg-surface/70 sm:w-auto",
               cancelButtonClassName,
             ].join(" ")}
           >
@@ -78,7 +78,7 @@ const Modal = ({
             type="button"
             onClick={onConfirm}
             className={[
-              "rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90",
+              "w-full rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90 sm:w-auto",
               confirmButtonClassName,
             ].join(" ")}
           >

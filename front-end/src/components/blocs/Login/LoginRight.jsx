@@ -4,16 +4,16 @@ const LoginRight = () => {
   const slides = useMemo(
     () => [
       {
-        src: "https://i.pinimg.com/736x/34/0e/db/340edb16ec3baf1a695385d03662ecc7.jpg",
+        src: "https://i.pinimg.com/1200x/70/47/f4/7047f492e9a9614c7b548c54c8de9258.jpg",
+        alt: "Accueil client",
+      },
+      {
+        src: "https://i.pinimg.com/736x/27/06/d3/2706d3b6cb6b084b2d565d32d16e9dbb.jpg",
         alt: "Equipe en réunion",
       },
       {
         src: "https://i.pinimg.com/1200x/5d/92/58/5d92589d8659cf3f6c3d67727584df78.jpg",
         alt: "Professionnels en entreprise",
-      },
-      {
-        src: "https://i.pinimg.com/1200x/70/47/f4/7047f492e9a9614c7b548c54c8de9258.jpg",
-        alt: "Accueil client",
       },
     ],
     []
@@ -27,7 +27,7 @@ const LoginRight = () => {
     }
     const intervalId = setInterval(() => {
       setActiveIndex((prev) => (prev + 1) % slides.length);
-    }, 8000);
+    }, 5000);
     return () => clearInterval(intervalId);
   }, [slides.length]);
 

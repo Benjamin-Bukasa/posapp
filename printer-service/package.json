@@ -1,0 +1,10 @@
+{
+  "name": "neopharma-printer-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Service local d'impression ESC/POS pour NeoPharma",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  }
+}

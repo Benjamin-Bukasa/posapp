@@ -32,6 +32,12 @@
     color: rgb(var(--text-primary));
   }
 
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
   .theme-transition,
   .theme-transition * {
     transition:
@@ -44,6 +50,22 @@
 }
 
 @layer utilities {
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(-8px) scale(0.98);
+    }
+
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+    }
+  }
+
+  .toast-enter {
+    animation: toast-in 220ms ease;
+  }
+
   .no-scrollbar::-webkit-scrollbar {
     display: none;
   }
@@ -97,11 +119,11 @@
   }
 
   .main {
-    @apply flex h-full w-full flex-col gap-0;
+    @apply flex h-full w-full min-w-0 flex-1 flex-col gap-0;
   }
 
   .layoutSection {
-    @apply p-2;
+    @apply p-3 sm:p-4 lg:p-5;
   }
 
   .sidebar {

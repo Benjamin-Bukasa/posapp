@@ -196,7 +196,7 @@ function Requisitions() {
 
   return (
     <section className="w-full h-full flex flex-col gap-4 p-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Requisitions</h1>
           <p className="text-sm text-text-secondary">
@@ -208,7 +208,7 @@ function Requisitions() {
           label="Nouvelle requisition"
           variant="primary"
           size="small"
-          className="whitespace-nowrap"
+          className="w-full whitespace-nowrap sm:w-auto"
           onClick={() => navigate("/operations/requisitions/nouvelle")}
         />
       </div>

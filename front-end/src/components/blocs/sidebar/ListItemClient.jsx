@@ -18,8 +18,11 @@ const CLIENT_LINKS = new Set([
 
 const ListItemClient = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
+  const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
   const location = useLocation();
   const [openGroups, setOpenGroups] = useState({});
+  const expandedContentClass = isSidebarOpen ? "block" : "block lg:hidden";
+  const expandedFlexClass = isSidebarOpen ? "" : "lg:hidden";
 
   const navItems = useMemo(
     () => items.filter((item) => CLIENT_LINKS.has(item.link)),
@@ -42,7 +45,7 @@ const ListItemClient = () => {
         const hasActiveChild = item.children.some((child) =>
           isPathActive(child.path)
         );
-        if (hasActiveChild) next[item.link] = true;
+        if (hasActiveChild && next[item.link] === undefined) next[item.link] = true;
       });
       return next;
     });
@@ -57,7 +60,7 @@ const ListItemClient = () => {
           const isActiveGroup = item.children.some((child) =>
             isPathActive(child.path)
           );
-          const isOpen = Boolean(openGroups[item.link]) || isActiveGroup;
+          const isOpen = openGroups[item.link] ?? isActiveGroup;
 
           return (
             <div key={item.id} className="flex flex-col gap-1">
@@ -73,7 +76,7 @@ const ListItemClient = () => {
                 }
                 className={[
                   "flex w-full items-center transition-colors",
-                  isSidebarOpen ? "justify-between" : "justify-center",
+                  isSidebarOpen ? "justify-between" : "justify-between lg:justify-center",
                   "rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
                   isActiveGroup ? "bg-accent text-primary" : "text-white",
                 ].join(" ")}
@@ -81,27 +84,26 @@ const ListItemClient = () => {
                 <span
                   className={[
                     "flex items-center",
-                    isSidebarOpen ? "gap-3" : "gap-2",
+                    isSidebarOpen ? "gap-3" : "gap-3 lg:gap-2",
                   ].join(" ")}
                 >
                   <Icon size={20} strokeWidth={1.5} />
-                  {isSidebarOpen ? (
-                    <span className="text-sm font-normal">{item.name}</span>
-                  ) : null}
+                  <span className={["text-sm font-normal", expandedContentClass].join(" ")}>
+                    {item.name}
+                  </span>
                 </span>
-                {isSidebarOpen ? (
-                  <ChevronDown
-                    size={16}
-                    strokeWidth={1.5}
-                    className={[
-                      "transition-transform",
-                      isOpen ? "rotate-180" : "",
-                    ].join(" ")}
-                  />
-                ) : null}
+                <ChevronDown
+                  size={16}
+                  strokeWidth={1.5}
+                  className={[
+                    "transition-transform",
+                    expandedFlexClass,
+                    isOpen ? "rotate-180" : "",
+                  ].join(" ")}
+                />
               </button>
-              {isSidebarOpen && isOpen ? (
-                <div className="flex flex-col gap-1 pl-6">
+              {isOpen ? (
+                <div className={["flex flex-col gap-1 pl-6", expandedFlexClass].join(" ")}>
                   {item.children.map((child) => {
                     const ChildIcon = child.icon;
                     return (
@@ -116,6 +118,7 @@ const ListItemClient = () => {
                             isActive ? "bg-accent text-primary" : "text-white",
                           ].join(" ")
                         }
+                        onClick={closeMobileSidebar}
                       >
                         {ChildIcon ? (
                           <ChildIcon size={18} strokeWidth={1.5} />
@@ -138,16 +141,19 @@ const ListItemClient = () => {
             className={({ isActive }) =>
               [
                 "flex items-center transition-colors",
-                isSidebarOpen ? "gap-3 justify-start" : "gap-2 justify-center",
+                isSidebarOpen
+                  ? "gap-3 justify-start"
+                  : "gap-3 justify-start lg:gap-2 lg:justify-center",
                 "rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
                 isActive ? "bg-accent text-primary" : "text-white",
               ].join(" ")
             }
+            onClick={closeMobileSidebar}
           >
             <Icon size={20} strokeWidth={1.5} />
-            {isSidebarOpen ? (
-              <span className="text-sm font-normal">{item.name}</span>
-            ) : null}
+            <span className={["text-sm font-normal", expandedContentClass].join(" ")}>
+              {item.name}
+            </span>
           </NavLink>
         );
       })}

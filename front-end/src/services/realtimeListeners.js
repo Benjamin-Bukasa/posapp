@@ -1,6 +1,8 @@
 import { connectSocket } from "./socket";
 import useToastStore from "../stores/toastStore";
 import useRealtimeStore from "../stores/realtimeStore";
+import useCurrencyStore from "../stores/currencyStore";
+import { translateMessage } from "../utils/translateMessage";
 
 let initialized = false;
 
@@ -21,7 +23,7 @@ export const initRealtimeListeners = () => {
   const realtime = useRealtimeStore.getState();
 
   socket.on("connect_error", (error) => {
-    notify("Socket error", error?.message || "Connection failed", "warning");
+    notify("Erreur socket", translateMessage(error?.message, "Connexion impossible."), "warning");
   });
 
   socket.on("notification:new", (payload) => {
@@ -37,179 +39,183 @@ export const initRealtimeListeners = () => {
   socket.on("order:created", (payload) => {
     realtime.incrementCounter("orders");
     realtime.addEvent({
-      title: "New order",
-      message: `Order ${getLabel(payload, "")}`.trim(),
+      title: "Nouvelle commande",
+      message: `Commande ${getLabel(payload, "")}`.trim(),
       payload,
     });
-    notify("New order", `Order ${getLabel(payload, "")}`.trim(), "success");
+    notify("Nouvelle commande", `Commande ${getLabel(payload, "")}`.trim(), "success");
   });
 
   socket.on("sale:created", (payload) => {
     realtime.incrementCounter("sales");
     realtime.addEvent({
-      title: "New sale",
-      message: `Sale ${getLabel(payload, "")}`.trim(),
+      title: "Nouvelle vente",
+      message: `Vente ${getLabel(payload, "")}`.trim(),
       payload,
     });
-    notify("New sale", `Sale ${getLabel(payload, "")}`.trim(), "success");
+    notify("Nouvelle vente", `Vente ${getLabel(payload, "")}`.trim(), "success");
   });
 
   socket.on("stock:entry:created", (payload) => {
     realtime.incrementCounter("stockEntries");
     realtime.addEvent({
-      title: "Stock entry created",
-      message: `Entry ${getLabel(payload, "")}`.trim(),
+      title: "Entree de stock creee",
+      message: `Entree ${getLabel(payload, "")}`.trim(),
       payload,
     });
-    notify("Stock entry created", `Entry ${getLabel(payload, "")}`.trim());
+    notify("Entree de stock creee", `Entree ${getLabel(payload, "")}`.trim());
   });
 
   socket.on("stock:entry:approved", (payload) => {
     realtime.addEvent({
-      title: "Stock entry approved",
-      message: `Entry ${getLabel(payload, "")}`.trim(),
+      title: "Entree de stock approuvee",
+      message: `Entree ${getLabel(payload, "")}`.trim(),
       payload,
     });
-    notify("Stock entry approved", `Entry ${getLabel(payload, "")}`.trim());
+    notify("Entree de stock approuvee", `Entree ${getLabel(payload, "")}`.trim());
   });
 
   socket.on("stock:entry:posted", (payload) => {
     realtime.addEvent({
-      title: "Stock entry posted",
-      message: `Entry ${getLabel(payload, "")}`.trim(),
+      title: "Entree de stock comptabilisee",
+      message: `Entree ${getLabel(payload, "")}`.trim(),
       payload,
     });
-    notify("Stock entry posted", `Entry ${getLabel(payload, "")}`.trim());
+    notify("Entree de stock comptabilisee", `Entree ${getLabel(payload, "")}`.trim());
   });
 
   socket.on("supply:request:created", (payload) => {
     realtime.incrementCounter("supplyRequests");
     realtime.addEvent({
-      title: "Supply request created",
+      title: "Requisition creee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Supply request created", payload?.title || getLabel(payload, ""));
+    notify("Requisition creee", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("supply:request:submitted", (payload) => {
     realtime.addEvent({
-      title: "Supply request submitted",
+      title: "Requisition soumise",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Supply request submitted", payload?.title || getLabel(payload, ""));
+    notify("Requisition soumise", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("supply:request:approved", (payload) => {
     realtime.addEvent({
-      title: "Supply request approved",
+      title: "Requisition approuvee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Supply request approved", payload?.title || getLabel(payload, ""));
+    notify("Requisition approuvee", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("supply:request:rejected", (payload) => {
     realtime.addEvent({
-      title: "Supply request rejected",
+      title: "Requisition rejetee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Supply request rejected", payload?.title || getLabel(payload, ""), "warning");
+    notify("Requisition rejetee", payload?.title || getLabel(payload, ""), "warning");
   });
 
   socket.on("purchase:request:created", (payload) => {
     realtime.incrementCounter("purchaseRequests");
     realtime.addEvent({
-      title: "Purchase request created",
+      title: "Demande d'achat creee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Purchase request created", payload?.title || getLabel(payload, ""));
+    notify("Demande d'achat creee", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("purchase:request:submitted", (payload) => {
     realtime.addEvent({
-      title: "Purchase request submitted",
+      title: "Demande d'achat soumise",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Purchase request submitted", payload?.title || getLabel(payload, ""));
+    notify("Demande d'achat soumise", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("purchase:request:approved", (payload) => {
     realtime.addEvent({
-      title: "Purchase request approved",
+      title: "Demande d'achat approuvee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Purchase request approved", payload?.title || getLabel(payload, ""));
+    notify("Demande d'achat approuvee", payload?.title || getLabel(payload, ""));
   });
 
   socket.on("purchase:request:rejected", (payload) => {
     realtime.addEvent({
-      title: "Purchase request rejected",
+      title: "Demande d'achat rejetee",
       message: payload?.title || getLabel(payload, ""),
       payload,
     });
-    notify("Purchase request rejected", payload?.title || getLabel(payload, ""), "warning");
+    notify("Demande d'achat rejetee", payload?.title || getLabel(payload, ""), "warning");
   });
 
   socket.on("purchase:order:created", (payload) => {
     realtime.incrementCounter("purchaseOrders");
     realtime.addEvent({
-      title: "Purchase order created",
+      title: "Commande fournisseur creee",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Purchase order created", getLabel(payload, ""));
+    notify("Commande fournisseur creee", getLabel(payload, ""));
   });
 
   socket.on("purchase:order:sent", (payload) => {
     realtime.addEvent({
-      title: "Purchase order sent",
+      title: "Commande fournisseur validee",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Purchase order sent", getLabel(payload, ""));
+    notify("Commande fournisseur validee", getLabel(payload, ""));
   });
 
   socket.on("delivery:note:created", (payload) => {
     realtime.incrementCounter("deliveryNotes");
     realtime.addEvent({
-      title: "Delivery note created",
+      title: "Bon de reception cree",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Delivery note created", getLabel(payload, ""));
+    notify("Bon de reception cree", getLabel(payload, ""));
   });
 
   socket.on("delivery:note:received", (payload) => {
     realtime.addEvent({
-      title: "Delivery note received",
+      title: "Bon de reception recu",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Delivery note received", getLabel(payload, ""));
+    notify("Bon de reception recu", getLabel(payload, ""));
   });
 
   socket.on("transfer:created", (payload) => {
     realtime.incrementCounter("transfers");
     realtime.addEvent({
-      title: "Transfer created",
+      title: "Transfert cree",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Transfer created", getLabel(payload, ""));
+    notify("Transfert cree", getLabel(payload, ""));
   });
 
   socket.on("transfer:completed", (payload) => {
     realtime.addEvent({
-      title: "Transfer completed",
+      title: "Transfert termine",
       message: getLabel(payload, ""),
       payload,
     });
-    notify("Transfer completed", getLabel(payload, ""));
+    notify("Transfert termine", getLabel(payload, ""));
+  });
+
+  socket.on("currency:updated", async () => {
+    await useCurrencyStore.getState().loadSettings({ force: true });
   });
 };

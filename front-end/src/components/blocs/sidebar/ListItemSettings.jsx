@@ -7,6 +7,8 @@ const SETTINGS_LINKS = new Set(["settings", "help", "logout"]);
 
 const ListItemSettings = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
+  const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
+  const expandedContentClass = isSidebarOpen ? "block" : "block lg:hidden";
 
   return (
     <nav className="w-full flex flex-col gap-2">
@@ -23,16 +25,19 @@ const ListItemSettings = () => {
               className={({ isActive }) =>
                 [
                   "flex items-center transition-colors",
-                  isSidebarOpen ? "gap-3 justify-start" : "gap-0 justify-center",
+                  isSidebarOpen
+                    ? "gap-3 justify-start"
+                    : "gap-3 justify-start lg:gap-0 lg:justify-center",
                   "rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
                   isActive ? "bg-accent text-primary" : "text-white",
                 ].join(" ")
               }
+              onClick={closeMobileSidebar}
             >
               <Icon size={20} strokeWidth={1.5} />
-              {isSidebarOpen ? (
-                <span className="text-sm font-normal">{item.name}</span>
-              ) : null}
+              <span className={["text-sm font-normal", expandedContentClass].join(" ")}>
+                {item.name}
+              </span>
             </NavLink>
           );
         })}

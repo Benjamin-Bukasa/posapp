@@ -1,21 +1,26 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const inventoryController = require("../controllers/inventoryController");
 
 const router = express.Router();
 
-router.get("/", auth, inventoryController.listInventory);
+router.get(
+  "/",
+  auth,
+  requirePermission("stock_state.read", "inventory.read"),
+  inventoryController.listInventory
+);
 router.post(
   "/adjust",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("inventory.create", "inventory.update"),
   inventoryController.adjustInventory
 );
 router.patch(
   "/:id/min-level",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("inventory.update"),
   inventoryController.updateMinLevel
 );
 

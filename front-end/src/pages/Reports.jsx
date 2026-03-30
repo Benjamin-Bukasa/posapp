@@ -14,7 +14,8 @@ import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 import useToastStore from "../stores/toastStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
-import { formatAmount } from "../utils/formatters";
+import useCurrencyStore from "../stores/currencyStore";
+import { formatDisplayAmount, toDisplayAmount } from "../utils/formatters";
 
 const DAY_LABELS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
@@ -318,6 +319,9 @@ const DualLineChart = ({ data }) => {
 function Reports() {
   const showToast = useToastStore((state) => state.showToast);
   const user = useAuthStore((state) => state.user);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const storeId = user?.storeId || null;
   const storeName = user?.storeName || "Toutes pharmacies";
   const refreshTick = useRealtimeRefetch([
@@ -487,7 +491,10 @@ function Reports() {
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const monthSales = paidOrders
       .filter((order) => new Date(order.createdAt) >= startOfMonth)
-      .reduce((sum, order) => sum + Number(order.total || 0), 0);
+      .reduce(
+        (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
+        0,
+      );
     const monthOrders = orders.filter(
       (order) => new Date(order.createdAt) >= startOfMonth
     ).length;
@@ -504,7 +511,7 @@ function Reports() {
     return [
       {
         title: "Ventes du mois",
-        value: formatAmount(monthSales),
+        value: formatDisplayAmount(monthSales),
         subtitle: storeId ? `Boutique: ${storeName}` : "Toutes pharmacies",
         icon: BarChart3,
       },
@@ -527,7 +534,7 @@ function Reports() {
         icon: WalletCards,
       },
     ];
-  }, [orders, paidOrders, storeId, storeName]);
+  }, [orders, paidOrders, storeId, storeName, displayCurrencyCode]);
 
   const salesTotal = useMemo(
     () => salesStatusData.reduce((acc, item) => acc + item.value, 0),
@@ -614,7 +621,7 @@ function Reports() {
 
   return (
     <section className="w-full h-full flex flex-col gap-4 p-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Rapports</h1>
           <p className="text-sm text-text-secondary">
@@ -630,7 +637,7 @@ function Reports() {
           }
           variant="default"
           size="default"
-          className="bg-neutral-300 text-text-primary hover:bg-neutral-300/80"
+          className="w-full bg-neutral-300 text-text-primary hover:bg-neutral-300/80 sm:w-auto"
           onClick={downloadExcel}
         />
       </div>

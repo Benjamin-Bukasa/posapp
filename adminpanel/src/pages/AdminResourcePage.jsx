@@ -11,15 +11,21 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import AdminDataTable from "../components/ui/AdminDataTable";
+import ConfirmModal from "../components/ui/ConfirmModal";
 import DropdownAction from "../components/ui/dropdownAction";
-import { ApiError, requestBlob, requestJson } from "../api/client";
+import ImportXlsxModal from "../components/ui/ImportXlsxModal";
+import { ApiError, requestBlob, requestFormData, requestJson } from "../api/client";
 import {
   findRouteByPath,
   getCreateConfig,
+  getRouteActionPermissions,
   getResourceConfig,
   getTableActionConfig,
 } from "../routes/router";
 import useAuthStore from "../stores/authStore";
+import useCurrencyStore from "../stores/currencyStore";
+import useToastStore from "../stores/toastStore";
+import { hasAnyPermission } from "../utils/permissions";
 
 const toRows = (payload) => {
   if (Array.isArray(payload)) {
@@ -93,6 +99,10 @@ const filterDefinitions = [
     label: "Etat",
     accessor: "isActive",
     queryKey: "isActive",
+    options: [
+      { value: "true", label: "Actif" },
+      { value: "false", label: "Inactif" },
+    ],
     serialize: (value) => String(Boolean(value)),
     formatLabel: (value) =>
       String(value) === "true" || value === true ? "Actif" : "Inactif",
@@ -225,15 +235,28 @@ const slugify = (value = "export") => {
   return normalized || "export";
 };
 
+const resolveDeleteLabel = (row) =>
+  row?.name ||
+  row?.title ||
+  row?.code ||
+  row?.sku ||
+  row?.email ||
+  row?.id ||
+  "cet element";
+
 const AdminResourcePage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const currentRoute = findRouteByPath(location.pathname);
+  useCurrencyStore((state) => state.settings.primaryCurrencyCode);
+  const loadCurrencySettings = useCurrencyStore((state) => state.loadSettings);
   const resource = getResourceConfig(currentRoute.path);
   const createConfig = getCreateConfig(currentRoute.path);
   const tableActionConfig = getTableActionConfig(currentRoute.path);
   const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const showToast = useToastStore((state) => state.showToast);
   const [rows, setRows] = useState(resource?.staticRows || []);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(Boolean(resource?.endpoint));
@@ -245,6 +268,38 @@ const AdminResourcePage = () => {
   const [pendingActionKey, setPendingActionKey] = useState("");
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState({ sortBy: "", sortDir: "desc" });
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [hardDeleteTarget, setHardDeleteTarget] = useState(null);
+  const [isImportOpen, setIsImportOpen] = useState(false);
+  const [activeImportConfig, setActiveImportConfig] = useState(null);
+  const [importSelectionValue, setImportSelectionValue] = useState("");
+  const [importSelectionOptions, setImportSelectionOptions] = useState([]);
+  const [templateLoading, setTemplateLoading] = useState(false);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+  const canAccessPage = hasAnyPermission(
+    user,
+    resource?.requiredPermissions ||
+      currentRoute.requiredPermissions ||
+      getRouteActionPermissions(currentRoute.path, "read"),
+  );
+  const canCreate = Boolean(
+    createConfig &&
+      hasAnyPermission(
+        user,
+        createConfig.requiredPermissions ||
+          getRouteActionPermissions(currentRoute.path, "create"),
+      ),
+  );
+  const canUseImport = Boolean(
+    resource?.importConfig &&
+      hasAnyPermission(
+        user,
+        resource.importConfig.requiredPermissions ||
+          createConfig?.requiredPermissions ||
+          getRouteActionPermissions(currentRoute.path, "create"),
+      ),
+  );
 
   useEffect(() => {
     setPage(1);
@@ -253,6 +308,15 @@ const AdminResourcePage = () => {
     setSort({ sortBy: "", sortDir: "desc" });
     setError("");
     setPageSize(resource?.pageSize || 10);
+    setDeleteTarget(null);
+    setHardDeleteTarget(null);
+    setIsImportOpen(false);
+    setActiveImportConfig(null);
+    setImportSelectionValue("");
+    setImportSelectionOptions([]);
+    setTemplateLoading(false);
+    setImportLoading(false);
+    setImportResult(null);
   }, [location.pathname, resource?.pageSize]);
 
   const sortItems = useMemo(
@@ -307,6 +371,14 @@ const AdminResourcePage = () => {
     let ignore = false;
 
     const load = async () => {
+      if (!canAccessPage) {
+        setRows([]);
+        setMeta(null);
+        setLoading(false);
+        setError("");
+        return;
+      }
+
       if (!resource) {
         setRows([]);
         setMeta(null);
@@ -348,10 +420,7 @@ const AdminResourcePage = () => {
       } catch (requestError) {
         if (ignore) return;
 
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
@@ -360,6 +429,11 @@ const AdminResourcePage = () => {
         setRows([]);
         setMeta(null);
         setError(requestError.message || "Impossible de charger les donnees.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible de charger les donnees.",
+          variant: "danger",
+        });
       } finally {
         if (!ignore) {
           setLoading(false);
@@ -372,7 +446,16 @@ const AdminResourcePage = () => {
     return () => {
       ignore = true;
     };
-  }, [accessToken, buildQuery, logout, navigate, refreshTick, resource]);
+  }, [
+    accessToken,
+    buildQuery,
+    canAccessPage,
+    logout,
+    navigate,
+    refreshTick,
+    resource,
+    showToast,
+  ]);
 
   const displayedRows = useMemo(() => {
     const filteredRows = rows.filter((row) => {
@@ -450,20 +533,26 @@ const AdminResourcePage = () => {
     filterDefinitions.forEach((definition) => {
       const optionsMap = new Map();
 
-      rows.forEach((row) => {
-        const rawValue = resolveAccessor(row, definition.accessor);
-        if (isEmptyValue(rawValue)) {
-          return;
-        }
+      if (Array.isArray(definition.options) && definition.options.length) {
+        definition.options.forEach((option) => {
+          optionsMap.set(option.value, option.label);
+        });
+      } else {
+        rows.forEach((row) => {
+          const rawValue = resolveAccessor(row, definition.accessor);
+          if (isEmptyValue(rawValue)) {
+            return;
+          }
 
-        const serializedValue = definition.serialize
-          ? definition.serialize(rawValue)
-          : toPlainValue(rawValue);
-        const label = definition.formatLabel
-          ? definition.formatLabel(rawValue)
-          : toPlainValue(rawValue);
-        optionsMap.set(serializedValue, label);
-      });
+          const serializedValue = definition.serialize
+            ? definition.serialize(rawValue)
+            : toPlainValue(rawValue);
+          const label = definition.formatLabel
+            ? definition.formatLabel(rawValue)
+            : toPlainValue(rawValue);
+          optionsMap.set(serializedValue, label);
+        });
+      }
 
       const selectedValue = filters[definition.id];
       if (selectedValue && selectedValue !== "all" && !optionsMap.has(selectedValue)) {
@@ -516,6 +605,62 @@ const AdminResourcePage = () => {
     };
   }, [displayedRows.length, meta, page, pageSize, resource?.endpoint, rows.length]);
 
+  const importConfigs = useMemo(
+    () => [resource?.importConfig, ...(resource?.extraImportConfigs || [])].filter(Boolean),
+    [resource?.extraImportConfigs, resource?.importConfig],
+  );
+
+  useEffect(() => {
+    let ignore = false;
+
+    const loadImportSelectionOptions = async () => {
+      const selectionConfig = activeImportConfig?.selectionConfig;
+      if (!selectionConfig || !isImportOpen) {
+        setImportSelectionOptions([]);
+        return;
+      }
+
+      if (Array.isArray(selectionConfig.options)) {
+        setImportSelectionOptions(selectionConfig.options);
+        return;
+      }
+
+      if (!selectionConfig.endpoint || !accessToken) {
+        setImportSelectionOptions([]);
+        return;
+      }
+
+      try {
+        const payload = await requestJson(selectionConfig.endpoint, {
+          token: accessToken,
+          query: selectionConfig.query,
+        });
+        if (ignore) return;
+
+        const { rows: optionRows } = toRows(payload);
+        const options = optionRows.map((row) => ({
+          value: row.id,
+          label:
+            selectionConfig.mapOptionLabel?.(row) ||
+            row.name ||
+            row.title ||
+            row.code ||
+            row.id,
+        }));
+        setImportSelectionOptions(options);
+      } catch (_error) {
+        if (ignore) return;
+        setImportSelectionOptions([]);
+      }
+    };
+
+    loadImportSelectionOptions();
+
+    return () => {
+      ignore = true;
+    };
+  }, [accessToken, activeImportConfig, isImportOpen]);
+
   const handleRowAction = useCallback(
     async (action, row) => {
       if (!accessToken) {
@@ -527,30 +672,66 @@ const AdminResourcePage = () => {
       setError("");
 
       try {
-        await requestJson(action.endpoint(row), {
+        const endpoint = action.endpoint(row);
+        await requestJson(endpoint, {
           token: accessToken,
           method: action.method || "POST",
           body: action.body ? action.body(row) : undefined,
         });
 
+        if (String(endpoint).startsWith("/api/currency-settings")) {
+          await loadCurrencySettings({ token: accessToken, force: true });
+        }
+
+        showToast({
+          title: "Operation reussie",
+          message: `${action.label} execute avec succes.`,
+          variant: "success",
+        });
         setRefreshTick((current) => current + 1);
       } catch (requestError) {
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible d'executer cette action.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible d'executer cette action.",
+          variant: "danger",
+        });
       } finally {
         setPendingActionKey("");
       }
     },
-    [accessToken, logout, navigate],
+    [accessToken, loadCurrencySettings, logout, navigate, showToast],
   );
+
+  const openDeleteConfirm = useCallback((row) => {
+    if (!tableActionConfig.deleteRequest) return;
+    setHardDeleteTarget(null);
+    setDeleteTarget(row);
+    setError("");
+  }, [tableActionConfig]);
+
+  const closeDeleteConfirm = useCallback(() => {
+    if (pendingActionKey.startsWith("delete:")) return;
+    setDeleteTarget(null);
+  }, [pendingActionKey]);
+
+  const openHardDeleteConfirm = useCallback((row) => {
+    if (!tableActionConfig.hardDeleteRequest) return;
+    setDeleteTarget(null);
+    setHardDeleteTarget(row);
+    setError("");
+  }, [tableActionConfig]);
+
+  const closeHardDeleteConfirm = useCallback(() => {
+    if (pendingActionKey.startsWith("hard-delete:")) return;
+    setHardDeleteTarget(null);
+  }, [pendingActionKey]);
 
   const handleDelete = useCallback(
     async (row) => {
@@ -566,23 +747,79 @@ const AdminResourcePage = () => {
           method: request.method || "DELETE",
           body: request.body,
         });
+        if (String(request.endpoint).startsWith("/api/currency-settings")) {
+          await loadCurrencySettings({ token: accessToken, force: true });
+        }
+        showToast({
+          title: tableActionConfig.deleteLabel || "Suppression reussie",
+          message: `${resolveDeleteLabel(row)} a ete traite avec succes.`,
+          variant: "success",
+        });
+        setDeleteTarget(null);
         setRefreshTick((current) => current + 1);
       } catch (requestError) {
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible de supprimer cette ligne.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible de supprimer cette ligne.",
+          variant: "danger",
+        });
       } finally {
         setPendingActionKey("");
       }
     },
-    [accessToken, logout, navigate, tableActionConfig],
+    [accessToken, loadCurrencySettings, logout, navigate, showToast, tableActionConfig],
+  );
+
+  const handleHardDelete = useCallback(
+    async (row) => {
+      if (!tableActionConfig.hardDeleteRequest || !accessToken) return;
+
+      setPendingActionKey(`hard-delete:${row.id}`);
+      setError("");
+
+      try {
+        const request = tableActionConfig.hardDeleteRequest(row.id, row);
+        await requestJson(request.endpoint, {
+          token: accessToken,
+          method: request.method || "DELETE",
+          body: request.body,
+        });
+        showToast({
+          title: tableActionConfig.hardDeleteLabel || "Suppression definitive reussie",
+          message: `${resolveDeleteLabel(row)} a ete supprime definitivement.`,
+          variant: "success",
+        });
+        setHardDeleteTarget(null);
+        setRefreshTick((current) => current + 1);
+      } catch (requestError) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
+          await logout();
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        setError(
+          requestError.message || "Impossible de supprimer definitivement cette ligne.",
+        );
+        showToast({
+          title: "Erreur",
+          message:
+            requestError.message ||
+            "Impossible de supprimer definitivement cette ligne.",
+          variant: "danger",
+        });
+      } finally {
+        setPendingActionKey("");
+      }
+    },
+    [accessToken, logout, navigate, showToast, tableActionConfig],
   );
 
   const handlePdfOpen = useCallback(
@@ -609,21 +846,23 @@ const AdminResourcePage = () => {
         if (openedWindow) {
           openedWindow.close();
         }
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible d'ouvrir le PDF.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible d'ouvrir le PDF.",
+          variant: "danger",
+        });
       } finally {
         setPendingActionKey("");
       }
     },
-    [accessToken, logout, navigate, tableActionConfig],
+    [accessToken, logout, navigate, showToast, tableActionConfig],
   );
 
   const handleExport = useCallback(
@@ -646,6 +885,11 @@ const AdminResourcePage = () => {
             query: buildQuery({ includePagination: false, exportType: item.id }),
           });
           downloadBlob(blob, `${slugify(currentRoute.name)}.${item.id}`);
+          showToast({
+            title: "Export termine",
+            message: `Le fichier ${item.label} a ete genere.`,
+            variant: "success",
+          });
           return;
         }
 
@@ -659,31 +903,210 @@ const AdminResourcePage = () => {
           new Blob([`\uFEFF${csv}`], { type: "text/csv;charset=utf-8;" }),
           `${slugify(currentRoute.name)}.csv`,
         );
+        showToast({
+          title: "Export termine",
+          message: "Le fichier CSV a ete genere.",
+          variant: "success",
+        });
       } catch (requestError) {
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible d'exporter les donnees.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible d'exporter les donnees.",
+          variant: "danger",
+        });
       }
     },
-    [accessToken, buildQuery, currentRoute.name, displayedRows, logout, navigate, resource],
+    [
+      accessToken,
+      buildQuery,
+      currentRoute.name,
+      displayedRows,
+      logout,
+      navigate,
+      resource,
+      showToast,
+    ],
+  );
+
+  const handleTemplateDownload = useCallback(async (importConfig) => {
+    const targetImportConfig = importConfig || activeImportConfig || resource?.importConfig;
+    if (!targetImportConfig?.templatePath) {
+      return;
+    }
+
+    if (!accessToken) {
+      setError("Session manquante.");
+      return;
+    }
+
+    setTemplateLoading(true);
+    setError("");
+
+    try {
+      const blob = await requestBlob(targetImportConfig.templatePath, {
+        token: accessToken,
+        query:
+          targetImportConfig.selectionConfig?.fieldName && importSelectionValue
+            ? { [targetImportConfig.selectionConfig.fieldName]: importSelectionValue }
+            : undefined,
+      });
+      downloadBlob(blob, targetImportConfig.templateFileName || "template.xlsx");
+      showToast({
+        title: "Template telecharge",
+        message:
+          targetImportConfig.templateSuccessMessage ||
+          "Le template XLSX a ete telecharge.",
+        variant: "success",
+      });
+    } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        await logout();
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      setError(requestError.message || "Impossible de telecharger le template.");
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible de telecharger le template.",
+        variant: "danger",
+      });
+    } finally {
+      setTemplateLoading(false);
+    }
+  }, [
+    accessToken,
+    activeImportConfig,
+    importSelectionValue,
+    logout,
+    navigate,
+    resource?.importConfig,
+    showToast,
+  ]);
+
+  const handleImportSubmit = useCallback(
+    async (file, importConfig, selectionValue) => {
+      const targetImportConfig = importConfig || activeImportConfig || resource?.importConfig;
+      if (!targetImportConfig?.importPath || !file) {
+        return;
+      }
+
+      if (!accessToken) {
+        setError("Session manquante.");
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append(targetImportConfig.fileField || "file", file);
+      if (targetImportConfig.selectionConfig?.fieldName && selectionValue) {
+        formData.append(targetImportConfig.selectionConfig.fieldName, selectionValue);
+      }
+
+      setImportLoading(true);
+      setError("");
+      setImportResult(null);
+
+      try {
+        const payload = await requestFormData(targetImportConfig.importPath, {
+          token: accessToken,
+          formData,
+        });
+        setImportResult(payload);
+
+        const created = Number(payload?.created || 0);
+        const failed = Number(payload?.failed || 0);
+        const message =
+          failed > 0
+            ? `${created} ligne(s) importee(s), ${failed} en erreur.`
+            : targetImportConfig.importSuccessMessage ||
+              `${created} ligne(s) importee(s) avec succes.`;
+
+        showToast({
+          title: failed > 0 ? "Import termine avec erreurs" : "Import termine",
+          message,
+          variant: failed > 0 ? "warning" : "success",
+          duration: failed > 0 ? 5200 : 3600,
+        });
+
+        if (Array.isArray(payload?.errors) && payload.errors.length) {
+          const firstError = payload.errors[0];
+          showToast({
+            title: "Premiere erreur detectee",
+            message:
+              firstError?.message ||
+              "Certaines lignes n'ont pas pu etre importees.",
+            variant: "danger",
+            duration: 5200,
+          });
+        }
+
+        if (!failed) {
+          setIsImportOpen(false);
+          setActiveImportConfig(null);
+        }
+        setRefreshTick((current) => current + 1);
+      } catch (requestError) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
+          await logout();
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        setError(requestError.message || "Impossible d'importer le fichier.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible d'importer le fichier.",
+          variant: "danger",
+        });
+      } finally {
+        setImportLoading(false);
+      }
+    },
+    [accessToken, activeImportConfig, logout, navigate, resource?.importConfig, showToast],
   );
 
   const renderActions = useCallback(
     (row) => {
       const customActions = (resource?.rowActions || []).filter(
-        (action) => !action.visible || action.visible(row),
+        (action) =>
+          (!action.visible || action.visible(row)) &&
+          hasAnyPermission(user, action.requiredPermissions || []),
       );
-      const canEdit = tableActionConfig.canEdit?.(row);
-      const canDelete = tableActionConfig.canDelete?.(row);
+      const canEdit =
+        tableActionConfig.canEdit?.(row) &&
+        hasAnyPermission(
+          user,
+          tableActionConfig.editPermissions ||
+            getRouteActionPermissions(currentRoute.path, "edit"),
+        );
+      const canDelete =
+        tableActionConfig.canDelete?.(row) &&
+        hasAnyPermission(
+          user,
+          tableActionConfig.deletePermissions ||
+            getRouteActionPermissions(currentRoute.path, "delete"),
+        );
+      const canHardDelete =
+        tableActionConfig.canHardDelete?.(row) &&
+        hasAnyPermission(
+          user,
+          tableActionConfig.hardDeletePermissions ||
+            getRouteActionPermissions(currentRoute.path, "delete"),
+        );
       const detailPath = tableActionConfig.detailPath;
-      const pdfPath = tableActionConfig.pdfUrl?.(row);
+      const canViewDetail = hasAnyPermission(
+        user,
+        tableActionConfig.detailPermissions ||
+          getRouteActionPermissions(currentRoute.path, "detail"),
+      );
+      const pdfPath = canViewDetail ? tableActionConfig.pdfUrl?.(row) : null;
       const items = [];
 
       if (pdfPath) {
@@ -712,15 +1135,26 @@ const AdminResourcePage = () => {
       if (canDelete && tableActionConfig.deleteRequest) {
         items.push({
           id: `delete:${row.id}`,
-          label: "Supprimer",
+          label: tableActionConfig.deleteLabel || "Supprimer",
           icon: Trash2,
           variant: "danger",
           disabled: Boolean(pendingActionKey),
-          onClick: () => handleDelete(row),
+          onClick: () => openDeleteConfirm(row),
         });
       }
 
-      if (detailPath) {
+      if (canHardDelete && tableActionConfig.hardDeleteRequest) {
+        items.push({
+          id: `hard-delete:${row.id}`,
+          label: tableActionConfig.hardDeleteLabel || "Supprimer definitivement",
+          icon: Trash2,
+          variant: "danger",
+          disabled: Boolean(pendingActionKey),
+          onClick: () => openHardDeleteConfirm(row),
+        });
+      }
+
+      if (detailPath && canViewDetail) {
         items.push({
           id: `detail:${row.id}`,
           label: "Detail",
@@ -765,20 +1199,66 @@ const AdminResourcePage = () => {
     },
     [
       handleDelete,
+      handleHardDelete,
       handlePdfOpen,
       handleRowAction,
       navigate,
+      openDeleteConfirm,
+      openHardDeleteConfirm,
       pendingActionKey,
       resource?.rowActions,
+      showToast,
       tableActionConfig,
+      user,
+      currentRoute.path,
     ],
   );
 
   const actionSlot =
-    resource?.actionSlot || createConfig ? (
+    resource?.actionSlot || canCreate || canUseImport ? (
       <div className="flex flex-wrap items-center gap-2">
         {resource?.actionSlot}
-        {createConfig ? (
+        {canUseImport
+          ? importConfigs.map((importConfig) => {
+              const importKey =
+                importConfig.importPath || importConfig.templatePath || importConfig.modalTitle;
+              const isCurrentImportConfig = activeImportConfig === importConfig;
+
+              return (
+                <div key={importKey} className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveImportConfig(importConfig);
+                      handleTemplateDownload(importConfig);
+                    }}
+                    disabled={templateLoading || importLoading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <FileText size={16} />
+                    {templateLoading && isCurrentImportConfig
+                      ? "Template..."
+                      : importConfig.templateButtonLabel || "Template XLSX"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveImportConfig(importConfig);
+                      setImportResult(null);
+                      setImportSelectionValue("");
+                      setIsImportOpen(true);
+                    }}
+                    disabled={templateLoading || importLoading}
+                    className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    <Plus size={16} />
+                    {importConfig.importButtonLabel || "Importer XLSX"}
+                  </button>
+                </div>
+              );
+            })
+          : null}
+        {canCreate ? (
           <Link
             to={createConfig.createPath}
             className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
@@ -789,6 +1269,18 @@ const AdminResourcePage = () => {
         ) : null}
       </div>
     ) : null;
+
+  if (!canAccessPage) {
+    return (
+      <div className="layoutSection flex flex-col gap-4">
+        <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+          <p className="text-sm font-medium text-danger">
+            Vous n'avez pas la permission d'acceder a cette page.
+          </p>
+        </section>
+      </div>
+    );
+  }
 
   return (
     <div className="layoutSection flex flex-col gap-4">
@@ -814,7 +1306,6 @@ const AdminResourcePage = () => {
         columns={resource?.columns || []}
         rows={displayedRows}
         loading={loading}
-        error={error}
         emptyMessage={
           resource?.emptyMessage || "Aucune donnee disponible pour cette vue."
         }
@@ -854,6 +1345,102 @@ const AdminResourcePage = () => {
         enableSelection
         renderActions={renderActions}
         actionsHeader="Actions"
+      />
+
+      <ImportXlsxModal
+        isOpen={isImportOpen}
+        title={activeImportConfig?.modalTitle || resource?.importConfig?.modalTitle}
+        description={
+          activeImportConfig?.modalDescription || resource?.importConfig?.modalDescription
+        }
+        templateLabel={
+          activeImportConfig?.templateButtonLabel ||
+          resource?.importConfig?.templateButtonLabel
+        }
+        importLabel={
+          activeImportConfig?.importButtonLabel || resource?.importConfig?.importButtonLabel
+        }
+        selectionConfig={
+          activeImportConfig?.selectionConfig
+            ? {
+                ...activeImportConfig.selectionConfig,
+                options: importSelectionOptions,
+              }
+            : null
+        }
+        selectionValue={importSelectionValue}
+        onSelectionChange={setImportSelectionValue}
+        loading={importLoading}
+        templateLoading={templateLoading}
+        result={importResult}
+        onClose={() => {
+          if (importLoading) return;
+          setImportResult(null);
+          setIsImportOpen(false);
+          setActiveImportConfig(null);
+          setImportSelectionValue("");
+        }}
+        onDownloadTemplate={() =>
+          handleTemplateDownload(activeImportConfig || resource?.importConfig)
+        }
+        onImport={(file, selectionValue) =>
+          handleImportSubmit(
+            file,
+            activeImportConfig || resource?.importConfig,
+            selectionValue,
+          )
+        }
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(deleteTarget)}
+        title={
+          typeof tableActionConfig.deleteConfirmTitle === "function"
+            ? tableActionConfig.deleteConfirmTitle(deleteTarget)
+            : tableActionConfig.deleteConfirmTitle || "Confirmer la suppression"
+        }
+        description={
+          typeof tableActionConfig.deleteConfirmDescription === "function"
+            ? tableActionConfig.deleteConfirmDescription(deleteTarget)
+            : tableActionConfig.deleteConfirmDescription ||
+              `Voulez-vous vraiment supprimer ${resolveDeleteLabel(
+                deleteTarget,
+              )} ? Cette action peut etre irreversible.`
+        }
+        confirmLabel={tableActionConfig.deleteLabel || "Supprimer"}
+        cancelLabel="Annuler"
+        loading={pendingActionKey === `delete:${deleteTarget?.id}`}
+        onCancel={closeDeleteConfirm}
+        onConfirm={() => {
+          if (!deleteTarget) return;
+          handleDelete(deleteTarget);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(hardDeleteTarget)}
+        title={
+          typeof tableActionConfig.hardDeleteConfirmTitle === "function"
+            ? tableActionConfig.hardDeleteConfirmTitle(hardDeleteTarget)
+            : tableActionConfig.hardDeleteConfirmTitle ||
+              "Confirmer la suppression definitive"
+        }
+        description={
+          typeof tableActionConfig.hardDeleteConfirmDescription === "function"
+            ? tableActionConfig.hardDeleteConfirmDescription(hardDeleteTarget)
+            : tableActionConfig.hardDeleteConfirmDescription ||
+              `Voulez-vous vraiment supprimer definitivement ${resolveDeleteLabel(
+                hardDeleteTarget,
+              )} ? Cette action est irreversible.`
+        }
+        confirmLabel={tableActionConfig.hardDeleteLabel || "Supprimer definitivement"}
+        cancelLabel="Annuler"
+        loading={pendingActionKey === `hard-delete:${hardDeleteTarget?.id}`}
+        onCancel={closeHardDeleteConfirm}
+        onConfirm={() => {
+          if (!hardDeleteTarget) return;
+          handleHardDelete(hardDeleteTarget);
+        }}
       />
     </div>
   );

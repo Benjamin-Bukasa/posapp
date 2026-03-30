@@ -1,6 +1,7 @@
 import { create } from "zustand";
+import { translateMessage } from "../utils/translateMessage";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
 const TOKEN_KEY = "token";
 const REFRESH_KEY = "refreshToken";
 const USER_KEY = "user";
@@ -89,9 +90,12 @@ const useAuthStore = create((set, get) => ({
             requirePasswordChange: true,
             pendingIdentifier: identifier || null,
           });
-          return { requirePasswordChange: true, message: data.message };
+          return {
+            requirePasswordChange: true,
+            message: translateMessage(data.message, "Changement de mot de passe requis."),
+          };
         }
-        throw new Error(data.message || "Connexion echouee.");
+        throw new Error(translateMessage(data.message, "Connexion echouee."));
       }
 
       const accessToken = data.accessToken;
@@ -112,8 +116,9 @@ const useAuthStore = create((set, get) => ({
 
       return { success: true };
     } catch (error) {
-      set({ loading: false, error: error.message || "Connexion echouee." });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Connexion echouee.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 
@@ -152,13 +157,16 @@ const useAuthStore = create((set, get) => ({
       });
       const data = await parseJson(response);
       if (!response.ok) {
-        throw new Error(data.message || "Erreur lors de la demande.");
+        throw new Error(
+          translateMessage(data.message, "Erreur lors de la demande."),
+        );
       }
       set({ loading: false });
       return { success: true, message: data.message };
     } catch (error) {
-      set({ loading: false, error: error.message });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Erreur lors de la demande.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 
@@ -172,13 +180,16 @@ const useAuthStore = create((set, get) => ({
       });
       const data = await parseJson(response);
       if (!response.ok) {
-        throw new Error(data.message || "Erreur lors du reset.");
+        throw new Error(
+          translateMessage(data.message, "Erreur lors du reset."),
+        );
       }
       set({ loading: false });
       return { success: true, message: data.message };
     } catch (error) {
-      set({ loading: false, error: error.message });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Erreur lors du reset.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 
@@ -199,7 +210,9 @@ const useAuthStore = create((set, get) => ({
       );
       const data = await parseJson(response);
       if (!response.ok) {
-        throw new Error(data.message || "Erreur de mise a jour.");
+        throw new Error(
+          translateMessage(data.message, "Erreur de mise a jour."),
+        );
       }
 
       if (typeof window !== "undefined") {
@@ -213,8 +226,9 @@ const useAuthStore = create((set, get) => ({
       });
       return { success: true, message: data.message };
     } catch (error) {
-      set({ loading: false, error: error.message });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Erreur de mise a jour.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 
@@ -231,13 +245,16 @@ const useAuthStore = create((set, get) => ({
       });
       const data = await parseJson(response);
       if (!response.ok) {
-        throw new Error(data.message || "Erreur de modification.");
+        throw new Error(
+          translateMessage(data.message, "Erreur de modification."),
+        );
       }
       set({ loading: false });
       return { success: true, message: data.message };
     } catch (error) {
-      set({ loading: false, error: error.message });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Erreur de modification.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 

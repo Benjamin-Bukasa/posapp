@@ -2,6 +2,7 @@ require("dotenv").config();
 
 const express = require("express");
 const http = require("http");
+const path = require("path");
 const cors = require("cors");
 
 const authRoutes = require("./routes/authRoutes");
@@ -13,7 +14,9 @@ const productRoutes = require("./routes/productRoutes");
 const supplierRoutes = require("./routes/supplierRoutes");
 const customerRoutes = require("./routes/customerRoutes");
 const productCategoryRoutes = require("./routes/productCategoryRoutes");
+const productCollectionRoutes = require("./routes/productCollectionRoutes");
 const productFamilyRoutes = require("./routes/productFamilyRoutes");
+const productSubFamilyRoutes = require("./routes/productSubFamilyRoutes");
 const storageZoneRoutes = require("./routes/storageZoneRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const inventoryMovementRoutes = require("./routes/inventoryMovementRoutes");
@@ -27,14 +30,31 @@ const stockEntryRoutes = require("./routes/stockEntryRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
+const currencySettingsRoutes = require("./routes/currencySettingsRoutes");
+const customerBonusProgramRoutes = require("./routes/customerBonusProgramRoutes");
+const taxRateRoutes = require("./routes/taxRateRoutes");
+const permissionProfileRoutes = require("./routes/permissionProfileRoutes");
 const { startSubscriptionCron } = require("./services/subscriptionCron");
 const { initSocket } = require("./socket");
+const prisma = require("./config/prisma");
+const { normalizeManagementUnits } = require("./utils/normalizeManagementUnits");
+const { ensureCustomerBonusProgramsTable } = require("./utils/customerBonusProgramStore");
+const { ensureTaxRatesTable } = require("./utils/taxRateStore");
+const { ensurePermissionProfileTables } = require("./utils/permissionProfileStore");
+const { ensureTenantCurrencyColumns } = require("./utils/currencySettings");
 
 const app = express();
 const server = http.createServer(app);
 
-app.use(cors());
+const corsOptions = {
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
 app.use(express.json());
+app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
@@ -49,7 +69,9 @@ app.use("/api/products", productRoutes);
 app.use("/api/suppliers", supplierRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/product-categories", productCategoryRoutes);
+app.use("/api/product-collections", productCollectionRoutes);
 app.use("/api/product-families", productFamilyRoutes);
+app.use("/api/product-subfamilies", productSubFamilyRoutes);
 app.use("/api/storage-zones", storageZoneRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/inventory-movements", inventoryMovementRoutes);
@@ -63,6 +85,10 @@ app.use("/api/stock-entries", stockEntryRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
+app.use("/api/currency-settings", currencySettingsRoutes);
+app.use("/api/customer-bonus-programs", customerBonusProgramRoutes);
+app.use("/api/tax-rates", taxRateRoutes);
+app.use("/api/permission-profiles", permissionProfileRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
@@ -72,8 +98,32 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 5000;
 initSocket(server);
 
-server.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-});
+const bootstrap = async () => {
+  await ensureTenantCurrencyColumns(prisma);
+  console.log("Currency settings ready.");
 
-startSubscriptionCron();
+  await ensureTaxRatesTable();
+  console.log("Tax rates ready.");
+
+  await ensureCustomerBonusProgramsTable();
+  console.log("Customer bonus programs ready.");
+
+  const managementSummary = await normalizeManagementUnits(prisma);
+  console.log(
+    `Management units normalized: ${managementSummary.mergedUnits} unit(s) merged, ${managementSummary.normalizedProducts} product(s) aligned.`,
+  );
+
+  await ensurePermissionProfileTables();
+  console.log("Permission profiles ready.");
+
+  server.listen(port, () => {
+    console.log(`Server running on port ${port}`);
+  });
+
+  startSubscriptionCron();
+};
+
+bootstrap().catch((error) => {
+  console.error("Unable to bootstrap server.", error);
+  process.exit(1);
+});

@@ -4,6 +4,7 @@ import {
   ChevronDown,
   ChevronRight,
   MessageCircle,
+  Menu,
   Moon,
   Search,
   Settings,
@@ -17,6 +18,7 @@ import DropdownAction from "../../ui/dropdownAction";
 import useThemeStore from "../../../stores/themeStore";
 import useRealtimeStore from "../../../stores/realtimeStore";
 import useAuthStore from "../../../stores/authStore";
+import useUiStore from "../../../stores/uiStore";
 import { formatName } from "../../../utils/formatters";
 import { findRouteByPath, getBreadcrumbItems } from "../../../routes/router";
 
@@ -28,6 +30,7 @@ const Navbar = () => {
   const [searchSort, setSearchSort] = useState("Pertinence");
   const location = useLocation();
   const navigate = useNavigate();
+  const openMobileSidebar = useUiStore((state) => state.openMobileSidebar);
   const authUser = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const currentRoute = findRouteByPath(location.pathname);
@@ -82,39 +85,53 @@ const Navbar = () => {
   const breadcrumbItems = getBreadcrumbItems(currentRoute.path);
 
   return (
-    <nav className="sticky top-0 z-[80] border-b border-border bg-surface px-6 py-4">
+    <nav className="sticky top-0 z-[80] border-b border-border bg-surface px-4 py-4 sm:px-6">
       <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-        <div className="flex flex-col gap-1">
-          <div className="flex items-baseline gap-2">
-            <p className="text-xl font-semibold text-text-secondary">Bienvenue</p>
-            <h1 className="text-xl font-semibold text-text-primary">{firstName}</h1>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-text-secondary">
-            {breadcrumbItems.map((item, index) => {
-              const isLast = index === breadcrumbItems.length - 1;
-              return (
-                <div key={`${item.path}-${item.label}`} className="flex items-center gap-2">
-                  {isLast ? (
-                    <span className="text-text-primary">{item.label}</span>
-                  ) : (
-                    <Link to={item.path} className="hover:text-text-primary">
-                      {item.label}
-                    </Link>
-                  )}
-                  {!isLast ? <ChevronRight size={14} strokeWidth={1.5} /> : null}
-                </div>
-              );
-            })}
+        <div className="flex min-w-0 items-start gap-3">
+          <button
+            type="button"
+            onClick={openMobileSidebar}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-text-primary transition hover:bg-surface lg:hidden"
+            aria-label="Ouvrir le menu"
+          >
+            <Menu size={20} strokeWidth={1.8} />
+          </button>
+
+          <div className="min-w-0 flex flex-col gap-1">
+            <div className="flex flex-wrap items-baseline gap-2">
+              <p className="text-xl font-semibold text-text-secondary">Bienvenue</p>
+              <h1 className="truncate text-xl font-semibold text-text-primary">{firstName}</h1>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-text-secondary">
+              {breadcrumbItems.map((item, index) => {
+                const isLast = index === breadcrumbItems.length - 1;
+                return (
+                  <div
+                    key={`${item.path}-${item.label}`}
+                    className="flex min-w-0 items-center gap-2"
+                  >
+                    {isLast ? (
+                      <span className="truncate text-text-primary">{item.label}</span>
+                    ) : (
+                      <Link to={item.path} className="truncate hover:text-text-primary">
+                        {item.label}
+                      </Link>
+                    )}
+                    {!isLast ? <ChevronRight size={14} strokeWidth={1.5} /> : null}
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
 
         <div className="w-full md:max-w-md">
-          <div className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2">
             <Search size={18} strokeWidth={1.5} className="text-text-secondary" />
             <input
               type="text"
               placeholder={`Rechercher (${searchScope.toLowerCase()})`}
-              className="w-full bg-transparent text-sm text-text-primary outline-none"
+              className="min-w-0 flex-1 bg-transparent text-sm text-text-primary outline-none"
             />
             <DropdownAction
               label={
@@ -142,7 +159,7 @@ const Navbar = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar md:gap-3 md:overflow-visible md:pb-0">
           <DropdownAction
             label={
               <div className="relative rounded-lg p-2">
@@ -260,11 +277,11 @@ const Navbar = () => {
                     <User size={18} strokeWidth={1.5} />
                   )}
                 </div>
-                <div className="flex flex-col items-start leading-tight">
+                <div className="hidden min-w-0 flex-col items-start leading-tight sm:flex">
                   <span className="text-sm font-semibold text-text-primary">{fullName}</span>
                   <span className="text-xs text-text-secondary">{roleLabel}</span>
                 </div>
-                <ChevronDown size={16} strokeWidth={1.5} />
+                <ChevronDown size={16} strokeWidth={1.5} className="hidden sm:block" />
               </div>
             }
             items={[

@@ -1,34 +1,49 @@
 const express = require("express");
+const multer = require("multer");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const userController = require("../controllers/userController");
 
+const upload = multer({ storage: multer.memoryStorage() });
 const router = express.Router();
 
-router.get("/", auth, requireRole("SUPERADMIN", "ADMIN"), userController.listUsers);
-router.get("/:id", auth, requireRole("SUPERADMIN", "ADMIN"), userController.getUser);
+router.get("/", auth, requirePermission("users.read"), userController.listUsers);
+router.get(
+  "/template",
+  auth,
+  requirePermission("users.create"),
+  userController.downloadUsersTemplate
+);
+router.post(
+  "/import",
+  auth,
+  requirePermission("users.create"),
+  upload.single("file"),
+  userController.importUsers
+);
+router.get("/:id", auth, userController.getUser);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("users.create"),
   userController.createUser
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("users.update"),
   userController.updateUser
 );
 router.patch(
   "/:id/permissions",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("users.update"),
   userController.updateUserPermissions
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("users.delete"),
   userController.deactivateUser
 );
 

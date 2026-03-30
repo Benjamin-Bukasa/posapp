@@ -16,6 +16,11 @@ const auth = async (req, res, next) => {
     const user = await prisma.user.findUnique({
       where: { id: payload.sub },
       include: {
+        tenant: {
+          select: {
+            name: true,
+          },
+        },
         permissions: { include: { permission: true } },
       },
     });
@@ -27,10 +32,13 @@ const auth = async (req, res, next) => {
     req.user = {
       id: user.id,
       tenantId: user.tenantId,
+      tenantName: user.tenant?.name || null,
       role: user.role,
       storeId: user.storeId,
+      defaultStorageZoneId: user.defaultStorageZoneId,
       permissions: user.permissions.map((item) => item.permission.code),
     };
+    res.locals.tenantName = user.tenant?.name || null;
 
     return next();
   } catch (error) {

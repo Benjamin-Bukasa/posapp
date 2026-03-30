@@ -1,4 +1,12 @@
 const prisma = require("../config/prisma");
+const {
+  convertAmount,
+  loadTenantCurrencySettings,
+} = require("../utils/currencySettings");
+const {
+  attachCurrencyCodes,
+  getCurrencyCodeMap,
+} = require("../utils/moneyCurrency");
 
 const toNumber = (value) => {
   const amount = Number(value || 0);
@@ -31,7 +39,7 @@ const getBucketKey = (value) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 };
 
-const buildCostHistory = (entries = []) => {
+const buildCostHistory = (entries = [], currencySettings = {}) => {
   const history = new Map();
 
   entries.forEach((entry) => {
@@ -41,7 +49,14 @@ const buildCostHistory = (entries = []) => {
 
     (entry.items || []).forEach((item) => {
       const quantity = toNumber(item.quantity);
-      const unitCost = toNumber(item.unitCost);
+      const unitCost = toNumber(
+        convertAmount(
+          item.unitCost,
+          item.currencyCode,
+          currencySettings.primaryCurrencyCode,
+          currencySettings,
+        ),
+      );
 
       if (quantity <= 0 || unitCost <= 0 || !item.productId) {
         return;
@@ -90,6 +105,10 @@ const resolveUnitCostAt = (costHistory, productId, referenceDate) => {
 };
 
 const getAdminDashboard = async (req, res) => {
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
   const months = buildLastMonths(3);
   const startDate = new Date(months[0].year, months[0].month, 1);
   const monthMap = Object.fromEntries(
@@ -159,15 +178,32 @@ const getAdminDashboard = async (req, res) => {
     }),
   ]);
 
-  const costHistory = buildCostHistory(postedEntries);
+  const stockEntryItemCurrencyMap = await getCurrencyCodeMap(
+    prisma,
+    "stockEntryItems",
+    postedEntries.flatMap((entry) => entry.items || []).map((item) => item.id),
+  );
+  const hydratedEntries = postedEntries.map((entry) => ({
+    ...entry,
+    items: attachCurrencyCodes(entry.items || [], stockEntryItemCurrencyMap),
+  }));
 
-  postedEntries.forEach((entry) => {
+  const costHistory = buildCostHistory(hydratedEntries, currencySettings);
+
+  hydratedEntries.forEach((entry) => {
     const bucket = monthMap[getBucketKey(entry.postedAt || entry.createdAt)];
     if (!bucket) return;
 
     (entry.items || []).forEach((item) => {
       const quantity = Math.abs(toNumber(item.quantity));
-      const unitCost = toNumber(item.unitCost);
+      const unitCost = toNumber(
+        convertAmount(
+          item.unitCost,
+          item.currencyCode,
+          currencySettings.primaryCurrencyCode,
+          currencySettings,
+        ),
+      );
 
       if (toNumber(item.quantity) > 0) {
         bucket.entryQuantity += quantity;
@@ -249,6 +285,7 @@ const getAdminDashboard = async (req, res) => {
     storeDistribution,
     soldCostVariation,
     summary,
+    currencySettings,
   });
 };
 

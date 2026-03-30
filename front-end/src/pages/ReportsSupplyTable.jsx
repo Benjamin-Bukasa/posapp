@@ -5,6 +5,7 @@ import { getCurrentUser } from "../utils/currentUser";
 import { apiGet } from "../services/apiClient";
 import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
 import useToastStore from "../stores/toastStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 
 const resolveSupplyVariant = (status) => {
@@ -29,6 +30,9 @@ const mapSupplierLabel = (sourceType) => {
 
 function ReportsSupplyTable() {
   const currentUser = useMemo(() => getCurrentUser(), []);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const refreshTick = useRealtimeRefetch([
     "stock:entry:created",
     "stock:entry:posted",
@@ -118,7 +122,10 @@ function ReportsSupplyTable() {
         quantity: Number(item.quantity || 0),
         cost:
           item.unitCost !== null && item.unitCost !== undefined
-            ? formatAmount(Number(item.unitCost || 0) * Number(item.quantity || 0))
+            ? formatAmount(
+                Number(item.unitCost || 0) * Number(item.quantity || 0),
+                item.currencyCode,
+              )
             : "-",
         receivedBy,
         requestedBy,
@@ -146,7 +153,7 @@ function ReportsSupplyTable() {
     });
 
     return [...stockRows, ...requestRows];
-  }, [entries, requests, purchaseOrderById]);
+  }, [entries, requests, purchaseOrderById, displayCurrencyCode]);
 
   const filteredSupplies = useMemo(() => {
     let results = [...supplyRows];

@@ -1,27 +1,27 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const storageZoneController = require("../controllers/storageZoneController");
 
 const router = express.Router();
 
-router.get("/", auth, storageZoneController.listStorageZones);
+router.get("/", auth, requirePermission("settings.read"), storageZoneController.listStorageZones);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.create"),
   storageZoneController.createStorageZone
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.update"),
   storageZoneController.updateStorageZone
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.delete"),
   storageZoneController.deleteStorageZone
 );
 

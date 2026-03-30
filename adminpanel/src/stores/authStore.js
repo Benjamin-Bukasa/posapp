@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { translateMessage } from "../utils/translateMessage";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
 const TOKEN_KEY = "adminpanel.token";
@@ -131,7 +132,7 @@ const useAuthStore = create((set, get) => ({
       const data = await parseJson(response);
 
       if (!response.ok) {
-        throw new Error(data.message || "Connexion echouee.");
+        throw new Error(translateMessage(data.message, "Connexion echouee."));
       }
 
       if (!hasAdminAccess(data.user?.role)) {
@@ -157,15 +158,16 @@ const useAuthStore = create((set, get) => ({
       return { success: true };
     } catch (error) {
       clearState(set);
-      set({ loading: false, error: error.message || "Connexion echouee." });
-      return { success: false, message: error.message };
+      const message = translateMessage(error.message, "Connexion echouee.");
+      set({ loading: false, error: message });
+      return { success: false, message };
     }
   },
 
   refreshSession: async () => {
     const refreshToken = get().refreshToken;
     if (!refreshToken) {
-      throw new Error("Refresh token missing.");
+      throw new Error("Jeton de rafraichissement manquant.");
     }
 
     const response = await fetch(`${API_URL}/api/auth/refresh`, {
@@ -176,7 +178,7 @@ const useAuthStore = create((set, get) => ({
     const data = await parseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || "Session expiree.");
+      throw new Error(translateMessage(data.message, "Session expiree."));
     }
 
     persistAuth({
@@ -197,7 +199,7 @@ const useAuthStore = create((set, get) => ({
   refreshCurrentUser: async () => {
     const { accessToken, user } = get();
     if (!accessToken || !user?.id) {
-      throw new Error("Missing session.");
+      throw new Error("Session manquante.");
     }
 
     const response = await fetch(`${API_URL}/api/users/${user.id}`, {
@@ -208,7 +210,9 @@ const useAuthStore = create((set, get) => ({
     const data = await parseJson(response);
 
     if (!response.ok) {
-      throw new Error(data.message || "Impossible de charger le profil.");
+      throw new Error(
+        translateMessage(data.message, "Impossible de charger le profil."),
+      );
     }
 
     if (!hasAdminAccess(data.role)) {

@@ -7,7 +7,7 @@ const parseListParams = (query = {}) => {
   const sortBy = query.sortBy ? String(query.sortBy) : null;
   const sortDir = String(query.sortDir).toLowerCase() === "asc" ? "asc" : "desc";
   const search = query.search ? String(query.search).trim() : "";
-  const exportType = query.export && ["csv", "xlsx"].includes(query.export)
+  const exportType = query.export && ["csv", "xlsx", "pdf"].includes(query.export)
     ? query.export
     : null;
 

@@ -1,47 +1,42 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const purchaseRequestController = require("../controllers/purchaseRequestController");
 
 const router = express.Router();
 
-router.get("/", auth, purchaseRequestController.listPurchaseRequests);
-router.get("/:id", auth, purchaseRequestController.getPurchaseRequest);
-router.get("/:id/pdf", auth, purchaseRequestController.getPurchaseRequestPdf);
+router.get("/", auth, requirePermission("purchase_requests.read"), purchaseRequestController.listPurchaseRequests);
+router.get("/:id", auth, requirePermission("purchase_requests.read"), purchaseRequestController.getPurchaseRequest);
+router.get("/:id/pdf", auth, requirePermission("purchase_requests.read"), purchaseRequestController.getPurchaseRequestPdf);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("purchase_requests.create"),
   purchaseRequestController.createPurchaseRequest
 );
-router.patch(
-  "/:id",
-  auth,
-  requireRole("SUPERADMIN", "ADMIN"),
-  purchaseRequestController.updatePurchaseRequest
-);
+router.patch("/:id", auth, purchaseRequestController.updatePurchaseRequest);
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("purchase_requests.delete"),
   purchaseRequestController.deletePurchaseRequest
 );
 router.post(
   "/:id/submit",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("purchase_requests.update"),
   purchaseRequestController.submitPurchaseRequest
 );
 router.post(
   "/:id/approve",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("purchase_requests.update"),
   purchaseRequestController.approvePurchaseRequest
 );
 router.post(
   "/:id/reject",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("purchase_requests.update"),
   purchaseRequestController.rejectPurchaseRequest
 );
 

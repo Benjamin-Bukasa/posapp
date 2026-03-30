@@ -45,6 +45,7 @@ const getPaginationItems = (current, total) => {
 const defaultExportItems = [
   { id: "xlsx", label: "Excel", icon: FileSpreadsheet },
   { id: "csv", label: "CSV", icon: FileText },
+  { id: "pdf", label: "PDF", icon: FileText },
 ];
 
 const AdminDataTable = ({
@@ -124,7 +125,7 @@ const AdminDataTable = ({
   }, [getRowKey, onSelectionChange, rows, selectedKeys]);
 
   return (
-    <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm">
+    <section className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5">
       <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
         <div className="max-w-3xl">
           {title ? (
@@ -140,9 +141,9 @@ const AdminDataTable = ({
           ) : null}
         </div>
 
-        <div className="flex w-full flex-wrap items-center gap-3 xl:w-auto xl:justify-end">
+        <div className="flex w-full flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center xl:w-auto xl:justify-end">
           {onSearchChange ? (
-            <label className="relative min-w-[260px] flex-1 xl:flex-none">
+            <label className="relative w-full sm:min-w-[260px] sm:flex-1 xl:w-[320px] xl:flex-none">
               <Search
                 size={16}
                 strokeWidth={1.5}
@@ -189,7 +190,7 @@ const AdminDataTable = ({
           ) : null}
 
           {pagination ? (
-            <label className="flex items-center gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary">
+            <label className="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary sm:w-auto sm:justify-start">
               <span>Afficher</span>
               <select
                 value={pagination.pageSize}
@@ -217,8 +218,8 @@ const AdminDataTable = ({
         </div>
       ) : null}
 
-      <div className="table-scroll mt-4 overflow-y-auto rounded-xl border border-border bg-surface">
-        <table className="w-full border-collapse text-sm">
+      <div className="table-scroll mt-4 overflow-auto rounded-xl border border-border bg-surface">
+        <table className="min-w-[780px] w-full border-collapse text-sm xl:min-w-full">
           <thead className="sticky top-0 z-10 bg-[#b0bbb7] dark:bg-[#1D473F]">
             <tr>
               {showSelection ? (
@@ -337,8 +338,8 @@ const AdminDataTable = ({
       </div>
 
       {pagination ? (
-        <div className="mt-4 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
-          <div className="text-sm text-text-secondary">
+        <div className="mt-4 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="text-sm text-text-secondary sm:max-w-[60%]">
             {pagination.total
               ? `${pagination.total} element(s) - page ${pagination.page} / ${pagination.totalPages}`
               : `Page ${pagination.page} / ${pagination.totalPages}`}
@@ -348,7 +349,7 @@ const AdminDataTable = ({
               : ""}
           </div>
 
-          <div className="flex flex-wrap items-center justify-end gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:justify-end">
             {getPaginationItems(
               pagination.page ?? 1,
               pagination.totalPages ?? 1,

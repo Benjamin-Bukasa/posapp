@@ -4,7 +4,7 @@ const PLAN_CONFIG = {
   STARTER: {
     price: 24.9,
     maxStores: 1,
-    maxUsers: 3,
+    maxUsers: 5,
   },
   BASIC: {
     price: 49.9,
@@ -14,7 +14,7 @@ const PLAN_CONFIG = {
   PREMIUM: {
     price: 99.9,
     maxStores: 10,
-    maxUsers: 30,
+    maxUsers: 45,
   },
 };
 

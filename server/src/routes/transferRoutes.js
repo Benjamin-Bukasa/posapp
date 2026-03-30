@@ -1,34 +1,35 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const transferController = require("../controllers/transferController");
 
 const router = express.Router();
 
-router.get("/", auth, transferController.listTransfers);
-router.get("/:id", auth, transferController.getTransfer);
+router.get("/", auth, requirePermission("transfers.read"), transferController.listTransfers);
+router.get("/:id/pdf", auth, requirePermission("transfers.read"), transferController.getTransferPdf);
+router.get("/:id", auth, requirePermission("transfers.read"), transferController.getTransfer);
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("transfers.update"),
   transferController.updateTransfer
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("transfers.delete"),
   transferController.deleteTransfer
 );
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("transfers.create"),
   transferController.createTransfer
 );
 router.post(
   "/:id/complete",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("transfers.update"),
   transferController.completeTransfer
 );
 

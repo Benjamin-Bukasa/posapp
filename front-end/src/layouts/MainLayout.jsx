@@ -5,9 +5,9 @@ import Sidebar from "./../components/blocs/sidebar/Sidebar";
 const MainLayout = () => {
   return (
     <>
-      <section className="fontFamilyPoppins w-full h-screen  bg-background text-text-primary">
+      <section className="fontFamilyPoppins h-screen w-full overflow-hidden bg-background text-text-primary">
         <Sidebar />
-        <main className="main overflow-y-auto">
+        <main className="main min-w-0 overflow-x-hidden overflow-y-auto">
             <Navbar />
             <Outlet />
         </main>

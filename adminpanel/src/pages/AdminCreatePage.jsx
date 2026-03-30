@@ -1,13 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError, requestJson } from "../api/client";
+import { API_URL, ApiError, requestFormData, requestJson } from "../api/client";
+import SearchSelect from "../components/ui/SearchSelect";
+import PermissionMatrix from "../components/ui/PermissionMatrix";
+import ImageUploadField from "../components/ui/ImageUploadField";
 import {
   findRouteByPath,
   getCreatePageConfig,
   getEditPageConfig,
+  getRouteActionPermissions,
 } from "../routes/router";
 import useAuthStore from "../stores/authStore";
+import useCurrencyStore from "../stores/currencyStore";
+import useToastStore from "../stores/toastStore";
+import { hasAnyPermission } from "../utils/permissions";
 
 const pickRows = (payload) => {
   if (Array.isArray(payload)) return payload;
@@ -36,7 +43,9 @@ const getDefaultFieldValue = (field, index = 0) => {
     return field.initialValue;
   }
 
-  return field.type === "checkbox" ? false : "";
+  if (field.type === "checkbox") return false;
+  if (field.type === "permission-matrix") return {};
+  return "";
 };
 
 const buildRow = (repeater, index = 0) => {
@@ -81,16 +90,36 @@ const collectOptionFields = (config) => {
   return [...topFields, ...repeaterFields].filter((field) => field.optionsEndpoint);
 };
 
-const normalizeOptions = (field, rows) =>
-  rows
+const normalizeOptions = (field, rows) => {
+  if (field.type === "permission-matrix") {
+    return Array.isArray(rows?.modules) ? rows.modules : Array.isArray(rows) ? rows : [];
+  }
+
+  return rows
     .map((item) => ({
       value: resolvePath(item, field.optionValue || "id"),
       label: resolvePath(item, field.optionLabel || "name"),
     }))
     .filter((item) => item.value !== undefined && item.value !== null);
+};
 
 const inputClassName =
   "w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary";
+
+const resolveMediaUrl = (value) => {
+  if (!value) return "";
+  if (
+    String(value).startsWith("http://") ||
+    String(value).startsWith("https://") ||
+    String(value).startsWith("blob:") ||
+    String(value).startsWith("data:")
+  ) {
+    return value;
+  }
+  return value.startsWith("/")
+    ? `${API_URL}${value}`
+    : `${API_URL}/${String(value).replace(/^\/+/, "")}`;
+};
 
 const renderFieldInput = ({
   field,
@@ -98,6 +127,9 @@ const renderFieldInput = ({
   onChange,
   options = [],
   disabled = false,
+  uploading = false,
+  onFileSelect,
+  onClear,
 }) => {
   const commonProps = {
     name: field.name,
@@ -134,6 +166,20 @@ const renderFieldInput = ({
         </select>
       );
 
+    case "search-select":
+      return (
+        <SearchSelect
+          name={field.name}
+          value={value ?? ""}
+          onChange={onChange}
+          options={options}
+          required={field.required}
+          placeholder={field.placeholder || "Rechercher..."}
+          disabled={disabled}
+          emptyMessage={field.emptyMessage}
+        />
+      );
+
     case "checkbox":
       return (
         <label className="inline-flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary">
@@ -144,6 +190,30 @@ const renderFieldInput = ({
           />
           {field.checkboxLabel || field.label}
         </label>
+      );
+
+    case "permission-matrix":
+      return (
+        <PermissionMatrix
+          value={value ?? {}}
+          onChange={onChange}
+          catalog={options}
+          disabled={disabled}
+        />
+      );
+
+    case "image-upload":
+      return (
+        <ImageUploadField
+          value={resolveMediaUrl(value)}
+          onFileSelect={onFileSelect}
+          onClear={onClear}
+          disabled={disabled}
+          uploading={uploading}
+          accept={field.accept || "image/*"}
+          maxSizeMb={field.maxSizeMb || 5}
+          helper={field.helper}
+        />
       );
 
     default:
@@ -173,15 +243,26 @@ const AdminCreatePage = () => {
   const isEditing = Boolean(editConfig);
   const recordId = searchParams.get("id") || "";
   const accessToken = useAuthStore((state) => state.accessToken);
+  const user = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
+  const showToast = useToastStore((state) => state.showToast);
+  const loadCurrencySettings = useCurrencyStore((state) => state.loadSettings);
 
   const [values, setValues] = useState(() => buildInitialValues(formConfig));
   const [optionStore, setOptionStore] = useState({});
   const [loadingOptions, setLoadingOptions] = useState(false);
   const [loadingRecord, setLoadingRecord] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadingFields, setUploadingFields] = useState({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const requiredPermissions = isEditing
+    ? formConfig?.editPermissions ||
+      formConfig?.requiredPermissions ||
+      getRouteActionPermissions(formConfig?.resourcePath || currentRoute.path, "edit")
+    : formConfig?.requiredPermissions ||
+      getRouteActionPermissions(formConfig?.resourcePath || currentRoute.path, "create");
+  const canAccessPage = hasAnyPermission(user, requiredPermissions);
 
   useEffect(() => {
     setValues(buildInitialValues(formConfig));
@@ -193,7 +274,7 @@ const AdminCreatePage = () => {
     let ignore = false;
 
     const loadOptions = async () => {
-      if (!formConfig || !accessToken) {
+      if (!formConfig || !accessToken || !canAccessPage) {
         setOptionStore({});
         return;
       }
@@ -222,7 +303,13 @@ const AdminCreatePage = () => {
               query: field.query,
             });
 
-            return [key, normalizeOptions(field, pickRows(payload))];
+            return [
+              key,
+              normalizeOptions(
+                field,
+                field.type === "permission-matrix" ? payload : pickRows(payload),
+              ),
+            ];
           }),
         );
 
@@ -231,16 +318,18 @@ const AdminCreatePage = () => {
       } catch (requestError) {
         if (ignore) return;
 
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible de charger les options.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible de charger les options.",
+          variant: "danger",
+        });
       } finally {
         if (!ignore) {
           setLoadingOptions(false);
@@ -253,13 +342,13 @@ const AdminCreatePage = () => {
     return () => {
       ignore = true;
     };
-  }, [accessToken, formConfig, logout, navigate]);
+  }, [accessToken, canAccessPage, formConfig, logout, navigate, showToast]);
 
   useEffect(() => {
     let ignore = false;
 
     const loadRecord = async () => {
-      if (!isEditing || !formConfig) return;
+      if (!isEditing || !formConfig || !canAccessPage) return;
 
       const stateRow = location.state?.row;
       if (stateRow && formConfig.buildFormValues) {
@@ -291,16 +380,18 @@ const AdminCreatePage = () => {
       } catch (requestError) {
         if (ignore) return;
 
-        if (
-          requestError instanceof ApiError &&
-          (requestError.status === 401 || requestError.status === 403)
-        ) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
           await logout();
           navigate("/login", { replace: true });
           return;
         }
 
         setError(requestError.message || "Impossible de charger cette fiche.");
+        showToast({
+          title: "Erreur",
+          message: requestError.message || "Impossible de charger cette fiche.",
+          variant: "danger",
+        });
       } finally {
         if (!ignore) {
           setLoadingRecord(false);
@@ -313,7 +404,17 @@ const AdminCreatePage = () => {
     return () => {
       ignore = true;
     };
-  }, [accessToken, formConfig, isEditing, location.state, logout, navigate, recordId]);
+  }, [
+    accessToken,
+    canAccessPage,
+    formConfig,
+    isEditing,
+    location.state,
+    logout,
+    navigate,
+    recordId,
+    showToast,
+  ]);
 
   const repeaterMap = useMemo(
     () =>
@@ -329,11 +430,66 @@ const AdminCreatePage = () => {
     return optionStore[fieldSourceKey(field)] || [];
   };
 
+  if (!formConfig) {
+    return null;
+  }
+
+  if (!canAccessPage) {
+    return (
+      <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <p className="text-sm font-medium text-danger">
+          Vous n'avez pas la permission d'acceder a cette page.
+        </p>
+      </section>
+    );
+  }
+
   const setFieldValue = (name, nextValue) => {
     setValues((current) => ({
       ...current,
       [name]: nextValue,
     }));
+  };
+
+  const setFieldUploading = (name, nextValue) => {
+    setUploadingFields((current) => ({
+      ...current,
+      [name]: nextValue,
+    }));
+  };
+
+  const uploadFieldFile = async (field, file) => {
+    if (!field?.uploadEndpoint || !file || !accessToken) {
+      return;
+    }
+
+    setFieldUploading(field.name, true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const payload = await requestFormData(field.uploadEndpoint, {
+        token: accessToken,
+        formData,
+      });
+
+      setFieldValue(field.name, payload?.imageUrl || payload?.url || "");
+    } catch (requestError) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        await logout();
+        navigate("/login", { replace: true });
+        return;
+      }
+
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible de telecharger cette image.",
+        variant: "danger",
+      });
+    } finally {
+      setFieldUploading(field.name, false);
+    }
   };
 
   const setRepeaterFieldValue = (repeaterName, rowIndex, fieldName, nextValue) => {
@@ -419,9 +575,14 @@ const AdminCreatePage = () => {
     const validRequests = requests.filter(
       (request) => request?.endpoint && request?.method !== undefined,
     );
+    const isUploadingAnyField = Object.values(uploadingFields).some(Boolean);
 
     if (!validRequests.length) {
       setError("Aucune ligne valide a envoyer.");
+      return;
+    }
+    if (isUploadingAnyField) {
+      setError("Patientez pendant le telechargement des images.");
       return;
     }
 
@@ -438,26 +599,44 @@ const AdminCreatePage = () => {
         });
       }
 
+      if (
+        validRequests.some((request) =>
+          String(request.endpoint || "").startsWith("/api/currency-settings"),
+        )
+      ) {
+        await loadCurrencySettings({ token: accessToken, force: true });
+      }
+
       setSuccess(
         isEditing
           ? formConfig.successMessage?.replace("cree", "mise a jour") ||
               "Modification enregistree."
           : formConfig.successMessage || "Creation enregistree.",
       );
+      showToast({
+        title: isEditing ? "Modification enregistree" : "Creation enregistree",
+        message:
+          isEditing
+            ? `La fiche ${currentRoute.name.toLowerCase()} a ete mise a jour.`
+            : `La fiche ${currentRoute.name.toLowerCase()} a ete creee.`,
+        variant: "success",
+      });
       window.setTimeout(() => {
         navigate(formConfig.resourcePath || "/dashboard", { replace: true });
       }, 500);
     } catch (requestError) {
-      if (
-        requestError instanceof ApiError &&
-        (requestError.status === 401 || requestError.status === 403)
-      ) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
         await logout();
         navigate("/login", { replace: true });
         return;
       }
 
       setError(requestError.message || "Impossible d'enregistrer ce formulaire.");
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible d'enregistrer ce formulaire.",
+        variant: "danger",
+      });
     } finally {
       setSubmitting(false);
     }
@@ -473,7 +652,7 @@ const AdminCreatePage = () => {
 
   return (
     <div className="layoutSection flex flex-col gap-4">
-      <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+      <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-4xl">
             <span className="inline-flex rounded-full bg-header/20 px-3 py-1 text-xs font-semibold uppercase tracking-[0.16em] text-text-secondary">
@@ -489,7 +668,7 @@ const AdminCreatePage = () => {
 
           <Link
             to={formConfig.resourcePath}
-            className="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background sm:w-auto"
           >
             <ArrowLeft size={16} />
             Retour
@@ -499,7 +678,7 @@ const AdminCreatePage = () => {
 
       <form
         onSubmit={handleSubmit}
-        className="rounded-2xl border border-border bg-surface p-5 shadow-sm"
+        className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-5"
       >
         {loadingRecord ? (
           <div className="mb-4 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
@@ -511,7 +690,11 @@ const AdminCreatePage = () => {
           {(formConfig.fields || []).map((field) => (
             <div
               key={field.name}
-              className={field.type === "textarea" ? "md:col-span-2" : ""}
+              className={
+                field.type === "textarea" || field.type === "image-upload"
+                  ? "md:col-span-2"
+                  : ""
+              }
             >
               {field.type !== "checkbox" ? (
                 <label className="mb-2 block text-sm font-medium text-text-primary">
@@ -523,7 +706,20 @@ const AdminCreatePage = () => {
                 value: values[field.name],
                 onChange: (nextValue) => setFieldValue(field.name, nextValue),
                 options: getFieldOptions(field),
-                disabled: loadingOptions || submitting,
+                disabled:
+                  loadingOptions ||
+                  submitting ||
+                  Boolean(field.disabled) ||
+                  (isEditing && Boolean(field.disableOnEdit)),
+                uploading: Boolean(uploadingFields[field.name]),
+                onFileSelect:
+                  field.type === "image-upload"
+                    ? (file) => uploadFieldFile(field, file)
+                    : undefined,
+                onClear:
+                  field.type === "image-upload"
+                    ? () => setFieldValue(field.name, "")
+                    : undefined,
               })}
               {field.description ? (
                 <p className="mt-2 text-xs text-text-secondary">{field.description}</p>
@@ -536,7 +732,10 @@ const AdminCreatePage = () => {
           const rows = values[repeater.name] || [];
 
           return (
-            <section key={repeater.name} className="mt-6 rounded-2xl border border-border bg-background/40 p-4">
+            <section
+              key={repeater.name}
+              className="mt-6 rounded-2xl border border-border bg-background/40 p-4"
+            >
               <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div>
                   <h3 className="text-base font-semibold text-text-primary">
@@ -552,7 +751,7 @@ const AdminCreatePage = () => {
                 <button
                   type="button"
                   onClick={() => addRepeaterRow(repeater.name)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 sm:w-auto"
                 >
                   <Plus size={16} />
                   {repeater.addLabel || "Ajouter"}
@@ -565,7 +764,7 @@ const AdminCreatePage = () => {
                     key={`${repeater.name}-${rowIndex}`}
                     className="rounded-2xl border border-border bg-surface p-4"
                   >
-                    <div className="mb-4 flex items-center justify-between gap-3">
+                    <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <h4 className="text-sm font-semibold text-text-primary">
                         Ligne {rowIndex + 1}
                       </h4>
@@ -573,7 +772,7 @@ const AdminCreatePage = () => {
                         type="button"
                         onClick={() => removeRepeaterRow(repeater.name, rowIndex)}
                         disabled={rows.length <= (repeater.minRows || 0)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-danger/20 px-3 py-2 text-sm text-danger disabled:cursor-not-allowed disabled:opacity-50"
+                        className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-danger/20 px-3 py-2 text-sm text-danger disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
                       >
                         <Trash2 size={15} />
                         Supprimer
@@ -602,7 +801,12 @@ const AdminCreatePage = () => {
                                 nextValue,
                               ),
                             options: getFieldOptions(field),
-                            disabled: loadingOptions || submitting,
+                            disabled:
+                              loadingOptions ||
+                              submitting ||
+                              Boolean(field.disabled) ||
+                              (isEditing && Boolean(field.disableOnEdit)),
+                            uploading: Boolean(uploadingFields[`${repeater.name}.${rowIndex}.${field.name}`]),
                           })}
                         </div>
                       ))}
@@ -620,22 +824,10 @@ const AdminCreatePage = () => {
           </div>
         ) : null}
 
-        {error ? (
-          <div className="mt-6 rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
-            {error}
-          </div>
-        ) : null}
-
-        {success ? (
-          <div className="mt-6 rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
-            {success}
-          </div>
-        ) : null}
-
         <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
           <Link
             to={formConfig.resourcePath}
-            className="inline-flex items-center justify-center rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background"
+            className="inline-flex w-full items-center justify-center rounded-xl border border-border px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background sm:w-auto"
           >
             Annuler
           </Link>
@@ -645,9 +837,10 @@ const AdminCreatePage = () => {
               submitting ||
               loadingOptions ||
               loadingRecord ||
+              Object.values(uploadingFields).some(Boolean) ||
               Boolean(formConfig.unavailableMessage)
             }
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
           >
             <Save size={16} />
             {submitting

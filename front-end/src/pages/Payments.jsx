@@ -14,8 +14,16 @@ import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
 import useToastStore from "../stores/toastStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { apiGet } from "../services/apiClient";
-import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
+import {
+  formatAmount,
+  formatDate,
+  formatDisplayAmount,
+  formatName,
+  shortId,
+  toDisplayAmount,
+} from "../utils/formatters";
 import {
   getMonthRange,
   getPreviousMonthRange,
@@ -53,6 +61,9 @@ const resolveMethodIcon = (method) => {
 };
 
 function Payments() {
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const showToast = useToastStore((state) => state.showToast);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -99,11 +110,11 @@ function Payments() {
           ? formatName(payment.order.customer)
           : "Client comptoir",
         method: mapPaymentMethod(payment.method),
-        amount: formatAmount(payment.amount),
+        amount: formatAmount(payment.amount, payment.currencyCode),
         status: mapPaymentStatus(payment.status),
         date: formatDate(payment.createdAt),
       })),
-    [payments]
+    [payments, displayCurrencyCode]
   );
 
   const filteredPayments = useMemo(() => {
@@ -195,7 +206,7 @@ function Payments() {
 
     const completed = payments.filter((p) => p.status === "COMPLETED");
     const completedAmount = completed.reduce(
-      (sum, p) => sum + Number(p.amount || 0),
+      (sum, p) => sum + toDisplayAmount(p.amount, p.currencyCode),
       0
     );
 
@@ -234,7 +245,7 @@ function Payments() {
         cash: percentChange(cashCurrent, cashPrevious),
       },
     };
-  }, [payments]);
+  }, [payments, displayCurrencyCode]);
 
   const paymentCards = useMemo(
     () => [
@@ -246,7 +257,7 @@ function Payments() {
         change: stats.change.total,
         highlight: true,
         amountLabel: "Montant collecte",
-        amountValue: formatAmount(stats.completedAmount),
+        amountValue: formatDisplayAmount(stats.completedAmount),
       },
       {
         title: "Paiements valides",
@@ -278,7 +289,7 @@ function Payments() {
         amountValue: stats.cash.toString(),
       },
     ],
-    [stats]
+    [stats, displayCurrencyCode]
   );
 
   const columns = useMemo(

@@ -13,8 +13,16 @@ import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
 import useToastStore from "../stores/toastStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { apiGet } from "../services/apiClient";
-import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
+import {
+  formatAmount,
+  formatDate,
+  formatDisplayAmount,
+  formatName,
+  shortId,
+  toDisplayAmount,
+} from "../utils/formatters";
 import {
   getMonthRange,
   getPreviousMonthRange,
@@ -54,7 +62,7 @@ const normalizeOrders = (orders = []) =>
         : "Client comptoir",
       date: formatDate(order.createdAt),
       products,
-      total: formatAmount(order.total),
+      total: formatAmount(order.total, order.currencyCode),
       paymentStatus,
       orderStatus,
     };
@@ -82,6 +90,9 @@ function Orders() {
     "order:updated",
     "payment:created",
   ]);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -116,7 +127,7 @@ function Orders() {
     };
   }, [refreshTick, showToast]);
 
-  const rows = useMemo(() => normalizeOrders(orders), [orders]);
+  const rows = useMemo(() => normalizeOrders(orders), [orders, displayCurrencyCode]);
 
   const filteredOrders = useMemo(() => {
     let results = [...rows];
@@ -207,7 +218,7 @@ function Orders() {
     );
 
     const totalRevenue = paidOrders.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
 
@@ -244,7 +255,7 @@ function Orders() {
         canceled: percentChange(currentStats.canceled, previousStats.canceled),
       },
     };
-  }, [orders]);
+  }, [orders, displayCurrencyCode]);
 
   const cards = useMemo(
     () => [
@@ -256,7 +267,7 @@ function Orders() {
         change: stats.change.total,
         highlight: true,
         amountLabel: "Revenus generes",
-        amountValue: formatAmount(stats.revenue),
+        amountValue: formatDisplayAmount(stats.revenue),
       },
       {
         title: "Commandes en cours",
@@ -274,7 +285,7 @@ function Orders() {
         icon: PackageCheck,
         change: stats.change.paidMonth,
         amountLabel: "Revenus generes",
-        amountValue: formatAmount(stats.revenue),
+        amountValue: formatDisplayAmount(stats.revenue),
       },
       {
         title: "Commandes annulees",
@@ -283,10 +294,10 @@ function Orders() {
         icon: PackageX,
         change: stats.change.canceled,
         amountLabel: "Revenus perdus",
-        amountValue: formatAmount(0),
+        amountValue: formatDisplayAmount(0),
       },
     ],
-    [stats]
+    [stats, displayCurrencyCode]
   );
 
   const columns = useMemo(

@@ -1,3 +1,5 @@
+/* eslint-disable react-hooks/set-state-in-effect */
+/* eslint-disable react-hooks/preserve-manual-memoization */
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Download, Trash2, FileSpreadsheet, FileBraces, FileText } from "lucide-react";
 import Button from "./button";
@@ -40,7 +42,6 @@ const DataTable = ({
   exportLabel = "Exporter",
   onExportSelect,
   exportButtonClassName = "",
-  tableMaxHeightClass = "",
   pageSizeSelect,
   pagination,
 }) => {
@@ -227,8 +228,7 @@ const DataTable = ({
 
        <div
         className={[
-          "table-scroll mt-4 overflow-y-auto rounded-xl border border-border bg-surface",
-          tableMaxHeightClass,
+          "table-scroll mt-4 max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-surface",
           tableContainerClassName,
         ].join(" ")}
       >

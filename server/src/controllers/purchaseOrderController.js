@@ -1,4 +1,10 @@
 const prisma = require("../config/prisma");
+const { loadTenantCurrencySettings } = require("../utils/currencySettings");
+const {
+  attachCurrencyCodes,
+  getCurrencyCodeMap,
+  setCurrencyCodes,
+} = require("../utils/moneyCurrency");
 const {
   parseListParams,
   buildOrderBy,
@@ -9,6 +15,32 @@ const {
 const { sendExport } = require("../utils/exporter");
 const { emitToStore, emitToTenant } = require("../socket");
 const { buildPurchaseOrderPdf } = require("../services/purchaseOrderPdf");
+const { generateNextDocumentCode } = require("../utils/documentCodeStore");
+
+const hydratePurchaseOrdersWithCurrencyCodes = async (records) => {
+  const list = Array.isArray(records)
+    ? records.filter(Boolean)
+    : records
+      ? [records]
+      : [];
+
+  if (!list.length) {
+    return Array.isArray(records) ? [] : records;
+  }
+
+  const itemCurrencyMap = await getCurrencyCodeMap(
+    prisma,
+    "purchaseOrderItems",
+    list.flatMap((order) => order.items || []).map((item) => item.id),
+  );
+
+  const hydrated = list.map((order) => ({
+    ...order,
+    items: attachCurrencyCodes(order.items || [], itemCurrencyMap),
+  }));
+
+  return Array.isArray(records) ? hydrated : hydrated[0];
+};
 
 const createPurchaseOrder = async (req, res) => {
   const {
@@ -53,13 +85,25 @@ const createPurchaseOrder = async (req, res) => {
     });
   }
 
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+  const resolvedCode =
+    String(code || "").trim() ||
+    (await generateNextDocumentCode({
+      tableName: "purchaseOrders",
+      tenantId: req.user.tenantId,
+      prefix: "CMD",
+    }));
+
   const purchaseOrder = await prisma.purchaseOrder.create({
     data: {
       tenantId: req.user.tenantId,
       storeId: storeId || purchaseRequest.storeId,
       supplierId,
       purchaseRequestId,
-      code,
+      code: resolvedCode,
       orderDate: orderDate ? new Date(orderDate) : undefined,
       expectedDate: expectedDate ? new Date(expectedDate) : undefined,
       note,
@@ -77,6 +121,12 @@ const createPurchaseOrder = async (req, res) => {
     },
     include: { items: true },
   });
+  await setCurrencyCodes(
+    prisma,
+    "purchaseOrderItems",
+    (purchaseOrder.items || []).map((item) => item.id),
+    currencySettings.primaryCurrencyCode,
+  );
 
   await prisma.purchaseRequest.update({
     where: { id: purchaseRequestId },
@@ -98,7 +148,13 @@ const createPurchaseOrder = async (req, res) => {
     });
   }
 
-  return res.status(201).json(purchaseOrder);
+  return res.status(201).json({
+    ...purchaseOrder,
+    items: (purchaseOrder.items || []).map((item) => ({
+      ...item,
+      currencyCode: currencySettings.primaryCurrencyCode,
+    })),
+  });
 };
 
 const listPurchaseOrders = async (req, res) => {
@@ -167,7 +223,7 @@ const listPurchaseOrders = async (req, res) => {
       },
       orderBy,
     });
-    return res.json(orders);
+    return res.json(await hydratePurchaseOrdersWithCurrencyCodes(orders));
   }
 
   const [total, orders] = await prisma.$transaction([
@@ -188,7 +244,7 @@ const listPurchaseOrders = async (req, res) => {
   ]);
 
   return res.json({
-    data: orders,
+    data: await hydratePurchaseOrdersWithCurrencyCodes(orders),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
 };
@@ -212,7 +268,7 @@ const getPurchaseOrder = async (req, res) => {
     return res.status(404).json({ message: "Purchase order not found." });
   }
 
-  return res.json(order);
+  return res.json(await hydratePurchaseOrdersWithCurrencyCodes(order));
 };
 
 const getPurchaseOrderPdf = async (req, res) => {
@@ -234,7 +290,16 @@ const getPurchaseOrderPdf = async (req, res) => {
     return res.status(404).json({ message: "Purchase order not found." });
   }
 
-  const pdfBuffer = await buildPurchaseOrderPdf(order);
+  const hydratedOrder = await hydratePurchaseOrdersWithCurrencyCodes(order);
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+  const pdfBuffer = await buildPurchaseOrderPdf(
+    hydratedOrder,
+    currencySettings,
+    req.user.tenantName,
+  );
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
@@ -324,6 +389,11 @@ const updatePurchaseOrder = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+
   const purchaseRequest = await prisma.purchaseRequest.findFirst({
     where: { id: purchaseRequestId, tenantId: req.user.tenantId },
   });
@@ -348,7 +418,10 @@ const updatePurchaseOrder = async (req, res) => {
       storeId: storeId || purchaseRequest.storeId,
       supplierId,
       purchaseRequestId,
-      code,
+      code:
+        code === undefined || code === null || String(code).trim() === ""
+          ? order.code
+          : code,
       orderDate: orderDate ? new Date(orderDate) : undefined,
       expectedDate: expectedDate ? new Date(expectedDate) : undefined,
       note,
@@ -370,6 +443,12 @@ const updatePurchaseOrder = async (req, res) => {
       orderedBy: true,
     },
   });
+  await setCurrencyCodes(
+    prisma,
+    "purchaseOrderItems",
+    (updated.items || []).map((item) => item.id),
+    currencySettings.primaryCurrencyCode,
+  );
 
   if (order.purchaseRequestId && order.purchaseRequestId !== purchaseRequestId) {
     await prisma.purchaseRequest.update({
@@ -383,7 +462,13 @@ const updatePurchaseOrder = async (req, res) => {
     data: { status: "ORDERED" },
   });
 
-  return res.json(updated);
+  return res.json({
+    ...updated,
+    items: (updated.items || []).map((item) => ({
+      ...item,
+      currencyCode: currencySettings.primaryCurrencyCode,
+    })),
+  });
 };
 
 const deletePurchaseOrder = async (req, res) => {

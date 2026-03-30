@@ -9,6 +9,28 @@ const {
 const { sendExport } = require("../utils/exporter");
 const { emitToStore, emitToTenant } = require("../socket");
 const { buildPurchaseRequestPdf } = require("../services/purchaseRequestPdf");
+const { hasPermission } = require("../utils/permissionAccess");
+const {
+  attachDocumentCodes,
+  assignGeneratedDocumentCode,
+} = require("../utils/documentCodeStore");
+
+const includesSearch = (value, search) =>
+  String(value || "")
+    .toLowerCase()
+    .includes(String(search || "").trim().toLowerCase());
+
+const matchesPurchaseRequestSearch = (item, search) => {
+  if (!search) return true;
+  return [
+    item.code,
+    item.title,
+    item.status,
+    item.store?.name,
+    item.requestedBy?.firstName,
+    item.requestedBy?.lastName,
+  ].some((value) => includesSearch(value, search));
+};
 
 const loadPurchaseRequestFlow = (tenantId) =>
   prisma.approvalFlow.findUnique({
@@ -115,6 +137,17 @@ const createPurchaseRequest = async (req, res) => {
     include: { items: true },
   });
 
+  purchaseRequest = {
+    ...purchaseRequest,
+    code: await assignGeneratedDocumentCode({
+      tableName: "purchaseRequests",
+      tenantId: req.user.tenantId,
+      id: purchaseRequest.id,
+      prefix: "DA",
+      currentCode: purchaseRequest.code,
+    }),
+  };
+
   const approvalCount = await ensurePurchaseRequestApprovals(
     req.user.tenantId,
     purchaseRequest.id
@@ -143,7 +176,7 @@ const createPurchaseRequest = async (req, res) => {
     });
   }
 
-  return res.status(201).json(purchaseRequest);
+  return res.status(201).json(await attachDocumentCodes("purchaseRequests", purchaseRequest));
 };
 
 const listPurchaseRequests = async (req, res) => {
@@ -152,24 +185,11 @@ const listPurchaseRequests = async (req, res) => {
     parseListParams(req.query);
   const createdAtFilter = buildDateRangeFilter(req.query, "createdAt");
 
-  const searchFilter = search
-    ? {
-        OR: [
-          { title: contains(search) },
-          { status: contains(search) },
-          { store: { name: contains(search) } },
-          { requestedBy: { firstName: contains(search) } },
-          { requestedBy: { lastName: contains(search) } },
-        ],
-      }
-    : {};
-
   const where = {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
     ...(storeId ? { storeId } : {}),
     ...createdAtFilter,
-    ...searchFilter,
   };
 
   const orderBy =
@@ -186,8 +206,12 @@ const listPurchaseRequests = async (req, res) => {
       orderBy,
     });
 
-    const rows = data.map((item) => ({
+    const hydratedData = (await attachDocumentCodes("purchaseRequests", data)).filter((item) =>
+      matchesPurchaseRequestSearch(item, search),
+    );
+    const rows = hydratedData.map((item) => ({
       id: item.id,
+      code: item.code || "",
       title: item.title,
       status: item.status,
       store: item.store?.name || "",
@@ -213,28 +237,31 @@ const listPurchaseRequests = async (req, res) => {
       },
       orderBy,
     });
-    return res.json(requests);
+    return res.json(
+      (await attachDocumentCodes("purchaseRequests", requests)).filter((item) =>
+        matchesPurchaseRequestSearch(item, search),
+      ),
+    );
   }
 
-  const [total, requests] = await prisma.$transaction([
-    prisma.purchaseRequest.count({ where }),
-    prisma.purchaseRequest.findMany({
-      where,
-      include: {
-        items: { include: { product: true, unit: true } },
-        approvals: true,
-        store: true,
-        requestedBy: true,
-        supplyRequest: true,
-      },
-      orderBy,
-      skip: (page - 1) * pageSize,
-      take: pageSize,
-    }),
-  ]);
+  const requests = await prisma.purchaseRequest.findMany({
+    where,
+    include: {
+      items: { include: { product: true, unit: true } },
+      approvals: true,
+      store: true,
+      requestedBy: true,
+      supplyRequest: true,
+    },
+    orderBy,
+  });
+  const filteredRequests = (await attachDocumentCodes("purchaseRequests", requests)).filter(
+    (item) => matchesPurchaseRequestSearch(item, search),
+  );
+  const total = filteredRequests.length;
 
   return res.json({
-    data: requests,
+    data: filteredRequests.slice((page - 1) * pageSize, page * pageSize),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
 };
@@ -257,7 +284,7 @@ const getPurchaseRequest = async (req, res) => {
     return res.status(404).json({ message: "Purchase request not found." });
   }
 
-  return res.json(request);
+  return res.json(await attachDocumentCodes("purchaseRequests", request));
 };
 
 const getPurchaseRequestPdf = async (req, res) => {
@@ -277,12 +304,13 @@ const getPurchaseRequestPdf = async (req, res) => {
     return res.status(404).json({ message: "Purchase request not found." });
   }
 
-  const pdfBuffer = await buildPurchaseRequestPdf(request);
+  const requestWithCode = await attachDocumentCodes("purchaseRequests", request);
+  const pdfBuffer = await buildPurchaseRequestPdf(requestWithCode, req.user.tenantName);
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
     "Content-Disposition",
-    `inline; filename="purchase-request-${id}.pdf"`,
+    `inline; filename="${requestWithCode.code || `purchase-request-${id}`}.pdf"`,
   );
 
   return res.send(pdfBuffer);
@@ -336,7 +364,7 @@ const submitPurchaseRequest = async (req, res) => {
     });
   }
 
-  return res.json(updated);
+  return res.json(await attachDocumentCodes("purchaseRequests", updated));
 };
 
 const approvePurchaseRequest = async (req, res) => {
@@ -475,6 +503,19 @@ const updatePurchaseRequest = async (req, res) => {
 
   if (!request) {
     return res.status(404).json({ message: "Purchase request not found." });
+  }
+
+  const canUpdateAny = hasPermission(req.user, "purchase_requests.update");
+  const canUpdateOwnDraft =
+    hasPermission(req.user, "purchase_requests.update_own_draft") &&
+    request.requestedById === req.user.id &&
+    request.status === "DRAFT";
+
+  if (!canUpdateAny && !canUpdateOwnDraft) {
+    return res.status(403).json({
+      message:
+        "Vous n'avez pas la permission de modifier cette demande d'achat.",
+    });
   }
 
   if (request.status !== "DRAFT") {

@@ -14,8 +14,16 @@ import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
 import useToastStore from "../stores/toastStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { apiGet } from "../services/apiClient";
-import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
+import {
+  formatAmount,
+  formatDate,
+  formatDisplayAmount,
+  formatName,
+  shortId,
+  toDisplayAmount,
+} from "../utils/formatters";
 import {
   getMonthRange,
   getPreviousMonthRange,
@@ -54,6 +62,9 @@ function Sales() {
     "sale:updated",
     "payment:created",
   ]);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -114,12 +125,12 @@ function Sales() {
             : "Client comptoir",
           date: formatDate(order.createdAt),
           items,
-          total: formatAmount(order.total),
+          total: formatAmount(order.total, order.currencyCode),
           paymentMethod,
           status: mapSaleStatus(order.status),
         };
       }),
-    [orders]
+    [orders, displayCurrencyCode]
   );
 
   const filteredSales = useMemo(() => {
@@ -209,15 +220,15 @@ function Sales() {
     );
 
     const revenueTotal = paidOrders.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
     const revenueMonth = paidOrdersCurrent.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
     const revenuePrevious = paidOrdersPrevious.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
 
@@ -282,7 +293,7 @@ function Sales() {
         ),
       },
     };
-  }, [orders]);
+  }, [orders, displayCurrencyCode]);
 
   const salesCards = useMemo(
     () => [
@@ -294,11 +305,11 @@ function Sales() {
         change: stats.change.totalSales,
         highlight: true,
         amountLabel: "Revenus generes",
-        amountValue: formatAmount(stats.revenueTotal),
+        amountValue: formatDisplayAmount(stats.revenueTotal),
       },
       {
         title: "Revenus du mois",
-        value: formatAmount(stats.revenueMonth),
+        value: formatDisplayAmount(stats.revenueMonth),
         subtitle: "Ce mois-ci",
         icon: TrendingUp,
         change: stats.change.revenueMonth,
@@ -324,7 +335,7 @@ function Sales() {
         amountValue: "92%",
       },
     ],
-    [stats]
+    [stats, displayCurrencyCode]
   );
 
   const columns = useMemo(

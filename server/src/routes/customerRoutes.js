@@ -10,7 +10,7 @@ router.get("/:id", auth, customerController.getCustomer);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requireRole("SUPERADMIN", "ADMIN", "USER"),
   customerController.createCustomer
 );
 router.patch(

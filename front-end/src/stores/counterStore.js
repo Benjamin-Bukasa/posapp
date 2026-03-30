@@ -24,7 +24,7 @@ const useCounterStore = create(
         const maxQty = Number.isFinite(product.quantity)
           ? Number(product.quantity)
           : Number.POSITIVE_INFINITY;
-        if (maxQty <= 0 || product.stock?.toLowerCase() === "épuisé") return;
+        if (maxQty <= 0) return;
 
         set((state) => {
           const existing = state.cartItems.find((item) => item.id === product.id);
@@ -32,7 +32,13 @@ const useCounterStore = create(
             const nextQty = Math.min(existing.cartQty + 1, maxQty);
             return {
               cartItems: state.cartItems.map((item) =>
-                item.id === product.id ? { ...item, cartQty: nextQty } : item
+                item.id === product.id
+                  ? {
+                      ...item,
+                      cartQty: nextQty,
+                      currencyCode: product.currencyCode || item.currencyCode,
+                    }
+                  : item,
               ),
             };
           }
@@ -47,6 +53,7 @@ const useCounterStore = create(
                 stock: product.stock,
                 quantity: product.quantity,
                 price: product.price,
+                currencyCode: product.currencyCode,
                 cartQty: 1,
               },
             ],
@@ -76,8 +83,8 @@ const useCounterStore = create(
     }),
     {
       name: "counter-filters",
-    }
-  )
+    },
+  ),
 );
 
 export default useCounterStore;

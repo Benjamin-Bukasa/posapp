@@ -1,27 +1,27 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const storeController = require("../controllers/storeController");
 
 const router = express.Router();
 
-router.get("/", auth, storeController.listStores);
+router.get("/", auth, requirePermission("settings.read"), storeController.listStores);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.create"),
   storeController.createStore
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.update"),
   storeController.updateStore
 );
 router.delete(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("settings.delete"),
   storeController.deleteStore
 );
 

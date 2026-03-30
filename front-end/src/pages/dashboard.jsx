@@ -12,9 +12,16 @@ import ProductsList from "./../features/ProductsList";
 import StatCard from "../components/ui/statCard";
 import useToastStore from "../stores/toastStore";
 import { apiGet, buildQuery } from "../services/apiClient";
-import { formatAmount, formatName, shortId } from "../utils/formatters";
+import {
+  formatAmount,
+  formatDisplayAmount,
+  formatName,
+  shortId,
+  toDisplayAmount,
+} from "../utils/formatters";
 import { useProductsData } from "../hooks/useProductsData";
 import useAuthStore from "../stores/authStore";
+import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 
 const sumOrderItems = (order) =>
@@ -52,6 +59,9 @@ const mapRequestStatus = (status) => {
 function Dashboard() {
   const showToast = useToastStore((state) => state.showToast);
   const user = useAuthStore((state) => state.user);
+  const displayCurrencyCode = useCurrencyStore(
+    (state) => state.settings.primaryCurrencyCode,
+  );
   const storeId = user?.storeId || null;
   const refreshTick = useRealtimeRefetch([
     "sale:created",
@@ -154,11 +164,11 @@ function Dashboard() {
       0
     );
     const monthRevenue = paidMonth.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
     const weekRevenue = paidWeek.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
     const userOrders = paidOrders.filter(
@@ -166,7 +176,7 @@ function Dashboard() {
         order.createdById === user?.id || order.createdBy?.id === user?.id
     );
     const userRevenue = userOrders.reduce(
-      (sum, order) => sum + Number(order.total || 0),
+      (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
       0
     );
 
@@ -176,7 +186,9 @@ function Dashboard() {
     );
     const totalValue = products.reduce(
       (sum, product) =>
-        sum + Number(product.quantity || 0) * Number(product.price || 0),
+        sum +
+        Number(product.quantity || 0) *
+          toDisplayAmount(product.price || 0, product.currencyCode),
       0
     );
 
@@ -192,7 +204,7 @@ function Dashboard() {
       userOrders: userOrders.length,
       userRevenue,
     };
-  }, [orders, products, user?.id]);
+  }, [orders, products, user?.id, displayCurrencyCode]);
 
   const productCards = useMemo(
     () => [
@@ -203,7 +215,7 @@ function Dashboard() {
         icon: Boxes,
         change: 0,
         amountLabel: "Valeur estimée",
-        amountValue: formatAmount(stats.totalValue),
+        amountValue: formatDisplayAmount(stats.totalValue),
       },
       {
         title: "Produits vendus (mois)",
@@ -212,7 +224,7 @@ function Dashboard() {
         icon: TrendingUp,
         change: calcChange(stats.monthSold, stats.prevMonthSold),
         amountLabel: "Revenus générés",
-        amountValue: formatAmount(stats.monthRevenue),
+        amountValue: formatDisplayAmount(stats.monthRevenue),
       },
       {
         title: "Produits vendus (semaine)",
@@ -221,7 +233,7 @@ function Dashboard() {
         icon: CalendarDays,
         change: calcChange(stats.weekSold, stats.prevWeekSold),
         amountLabel: "Revenus générés",
-        amountValue: formatAmount(stats.weekRevenue),
+        amountValue: formatDisplayAmount(stats.weekRevenue),
       },
       {
         title: "Ventes par utilisateur",
@@ -230,10 +242,10 @@ function Dashboard() {
         icon: UserRound,
         change: 0,
         amountLabel: "Revenus générés",
-        amountValue: formatAmount(stats.userRevenue),
+        amountValue: formatDisplayAmount(stats.userRevenue),
       },
     ],
-    [stats, storeId]
+    [stats, storeId, displayCurrencyCode]
   );
 
   const recentActivities = useMemo(() => {
@@ -246,7 +258,10 @@ function Dashboard() {
         id: `order-${order.id}`,
         date: order.createdAt,
         title: `Vente #SALE-${shortId(order.id)}`,
-        subtitle: `${customerName} • ${formatAmount(order.total)}`,
+        subtitle: `${customerName} • ${formatAmount(
+          order.total,
+          order.currencyCode,
+        )}`,
       });
     });
     stockEntries.forEach((entry) => {
@@ -277,7 +292,7 @@ function Dashboard() {
         ...item,
         time: formatRelativeTime(item.date),
       }));
-  }, [orders, stockEntries, supplyRequests]);
+  }, [orders, stockEntries, supplyRequests, displayCurrencyCode]);
 
   const pendingRequisitions = useMemo(() => {
     const pending = supplyRequests.filter((request) =>

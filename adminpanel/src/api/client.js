@@ -1,3 +1,5 @@
+import { translateMessage } from "../utils/translateMessage";
+
 export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
 
 export class ApiError extends Error {
@@ -46,7 +48,7 @@ export const requestJson = async (
 
   if (!response.ok) {
     throw new ApiError(
-      payload.message || "Une erreur est survenue.",
+      translateMessage(payload.message, "Une erreur est survenue."),
       response.status,
       payload,
     );
@@ -72,11 +74,37 @@ export const requestBlob = async (
   if (!response.ok) {
     const payload = await parseJson(response);
     throw new ApiError(
-      payload.message || "Une erreur est survenue.",
+      translateMessage(payload.message, "Une erreur est survenue."),
       response.status,
       payload,
     );
   }
 
   return response.blob();
+};
+
+export const requestFormData = async (
+  path,
+  { method = "POST", token, headers = {}, formData, query } = {},
+) => {
+  const response = await fetch(buildUrl(path, query), {
+    method,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...headers,
+    },
+    body: formData,
+  });
+
+  const payload = await parseJson(response);
+
+  if (!response.ok) {
+    throw new ApiError(
+      translateMessage(payload.message, "Une erreur est survenue."),
+      response.status,
+      payload,
+    );
+  }
+
+  return payload;
 };

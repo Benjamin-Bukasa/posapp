@@ -1,3 +1,5 @@
+import { translateMessage } from "../utils/translateMessage";
+
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
 
 const buildUrl = (path) => {
@@ -49,7 +51,9 @@ const apiRequest = async (path, options = {}) => {
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    const error = new Error(data?.message || "Request failed.");
+    const error = new Error(
+      translateMessage(data?.message, "La requete a echoue."),
+    );
     error.status = response.status;
     error.data = data;
     throw error;
@@ -63,4 +67,4 @@ const apiPost = (path, body) => apiRequest(path, { method: "POST", body });
 const apiPatch = (path, body) => apiRequest(path, { method: "PATCH", body });
 const apiDelete = (path) => apiRequest(path, { method: "DELETE" });
 
-export { apiGet, apiPost, apiPatch, apiDelete, buildQuery };
+export { apiGet, apiPost, apiPatch, apiDelete, buildQuery, buildUrl, API_URL };

@@ -1,4 +1,10 @@
 const prisma = require("../config/prisma");
+const { loadTenantCurrencySettings } = require("../utils/currencySettings");
+const {
+  attachCurrencyCodes,
+  getCurrencyCodeMap,
+  setCurrencyCodes,
+} = require("../utils/moneyCurrency");
 const {
   parseListParams,
   buildOrderBy,
@@ -11,6 +17,31 @@ const { emitToStore } = require("../socket");
 const { buildStockEntryPdf } = require("../services/stockEntryPdf");
 
 const toNumber = (value) => Number(value || 0);
+
+const hydrateStockEntriesWithCurrencyCodes = async (records) => {
+  const list = Array.isArray(records)
+    ? records.filter(Boolean)
+    : records
+      ? [records]
+      : [];
+
+  if (!list.length) {
+    return Array.isArray(records) ? [] : records;
+  }
+
+  const itemCurrencyMap = await getCurrencyCodeMap(
+    prisma,
+    "stockEntryItems",
+    list.flatMap((entry) => entry.items || []).map((item) => item.id),
+  );
+
+  const hydrated = list.map((entry) => ({
+    ...entry,
+    items: attachCurrencyCodes(entry.items || [], itemCurrencyMap),
+  }));
+
+  return Array.isArray(records) ? hydrated : hydrated[0];
+};
 
 const normalizeStockEntryItems = (items = [], operationType = "IN") =>
   items.map((item) => {
@@ -86,6 +117,10 @@ const createStockEntry = async (req, res) => {
 
   let resolvedStoreId = storeId;
   let deliveryNotePayload = null;
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
 
   if (sourceType === "PURCHASE_ORDER") {
     if (!sourceId) {
@@ -178,6 +213,12 @@ const createStockEntry = async (req, res) => {
     },
     include: { items: true },
   });
+  await setCurrencyCodes(
+    prisma,
+    "stockEntryItems",
+    (entry.items || []).map((item) => item.id),
+    currencySettings.primaryCurrencyCode,
+  );
 
   if (deliveryNotePayload?.supplierId) {
     await prisma.deliveryNote.create({
@@ -205,7 +246,13 @@ const createStockEntry = async (req, res) => {
     });
   }
 
-  return res.status(201).json(entry);
+  return res.status(201).json({
+    ...entry,
+    items: (entry.items || []).map((item) => ({
+      ...item,
+      currencyCode: currencySettings.primaryCurrencyCode,
+    })),
+  });
 };
 
 const listStockEntries = async (req, res) => {
@@ -304,7 +351,7 @@ const listStockEntries = async (req, res) => {
       orderBy,
     });
 
-    return res.json(entries);
+    return res.json(await hydrateStockEntriesWithCurrencyCodes(entries));
   }
 
   const [total, entries] = await prisma.$transaction([
@@ -325,7 +372,7 @@ const listStockEntries = async (req, res) => {
   ]);
 
   return res.json({
-    data: entries,
+    data: await hydrateStockEntriesWithCurrencyCodes(entries),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
 };
@@ -348,7 +395,7 @@ const getStockEntry = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
-  return res.json(entry);
+  return res.json(await hydrateStockEntriesWithCurrencyCodes(entry));
 };
 
 const getStockEntryPdf = async (req, res) => {
@@ -369,7 +416,16 @@ const getStockEntryPdf = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
-  const pdfBuffer = await buildStockEntryPdf(entry);
+  const hydratedEntry = await hydrateStockEntriesWithCurrencyCodes(entry);
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+  const pdfBuffer = await buildStockEntryPdf(
+    hydratedEntry,
+    currencySettings,
+    req.user.tenantName,
+  );
 
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader(
@@ -419,6 +475,10 @@ const updateStockEntry = async (req, res) => {
   }
 
   const normalizedItems = normalizeStockEntryItems(items, operationType === "OUT" ? "OUT" : "IN");
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
 
   await prisma.stockEntryItem.deleteMany({
     where: { stockEntryId: id },
@@ -449,8 +509,20 @@ const updateStockEntry = async (req, res) => {
       items: { include: { product: true, unit: true } },
     },
   });
+  await setCurrencyCodes(
+    prisma,
+    "stockEntryItems",
+    (updated.items || []).map((item) => item.id),
+    currencySettings.primaryCurrencyCode,
+  );
 
-  return res.json(updated);
+  return res.json({
+    ...updated,
+    items: (updated.items || []).map((item) => ({
+      ...item,
+      currencyCode: currencySettings.primaryCurrencyCode,
+    })),
+  });
 };
 
 const deleteStockEntry = async (req, res) => {

@@ -10,8 +10,16 @@ import {
 } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, requestBlob, requestJson } from "../api/client";
-import { findRouteByPath, getDetailPageConfig } from "../routes/router";
+import {
+  findRouteByPath,
+  getDetailPageConfig,
+  getRouteActionPermissions,
+} from "../routes/router";
 import useAuthStore from "../stores/authStore";
+import useCurrencyStore from "../stores/currencyStore";
+import useToastStore from "../stores/toastStore";
+import { formatMoney } from "../utils/currencyDisplay";
+import { hasAnyPermission } from "../utils/permissions";
 
 const formatDate = (value) => {
   if (!value) return "--";
@@ -27,12 +35,6 @@ const toNumber = (value) => {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
 };
-
-const formatMoney = (value) =>
-  new Intl.NumberFormat("fr-FR", {
-    style: "currency",
-    currency: "USD",
-  }).format(toNumber(value));
 
 const formatPerson = (person) =>
   [person?.firstName, person?.lastName].filter(Boolean).join(" ") ||
@@ -91,7 +93,7 @@ const renderPill = (value) => (
 );
 
 const DetailSection = ({ title, children }) => (
-  <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+  <section className="rounded-2xl border border-border bg-surface p-5 shadow-sm sm:p-6">
     <h3 className="text-lg font-semibold text-text-primary">{title}</h3>
     <div className="mt-4">{children}</div>
   </section>
@@ -100,9 +102,12 @@ const DetailSection = ({ title, children }) => (
 const DetailList = ({ items = [] }) => (
   <dl className="grid gap-3 text-sm">
     {items.map((item) => (
-      <div key={item.label} className="flex items-start justify-between gap-4">
+      <div
+        key={item.label}
+        className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+      >
         <dt className="text-text-secondary">{item.label}</dt>
-        <dd className="max-w-[60%] text-right font-medium text-text-primary">
+        <dd className="max-w-full text-left font-medium text-text-primary sm:max-w-[60%] sm:text-right">
           {item.render ? item.render(item.value) : item.value || "--"}
         </dd>
       </div>
@@ -112,7 +117,7 @@ const DetailList = ({ items = [] }) => (
 
 const DataTable = ({ columns = [], rows = [], emptyMessage = "Aucune donnee." }) => (
   <div className="overflow-auto rounded-xl border border-border">
-    <table className="w-full border-collapse text-sm">
+    <table className="min-w-[640px] w-full border-collapse text-sm xl:min-w-full">
       <thead className="bg-[#b0bbb7] dark:bg-[#1D473F]">
         <tr>
           {columns.map((column) => (
@@ -213,12 +218,16 @@ const purchaseOrderItemsColumns = [
   {
     key: "unitPrice",
     label: "Prix unitaire",
-    render: (row) => formatMoney(row.unitPrice),
+    render: (row) => formatMoney(row.unitPrice, row.currencyCode),
   },
   {
     key: "lineTotal",
     label: "Total ligne",
-    render: (row) => formatMoney(toNumber(row.quantity) * toNumber(row.unitPrice)),
+    render: (row) =>
+      formatMoney(
+        toNumber(row.quantity) * toNumber(row.unitPrice),
+        row.currencyCode,
+      ),
   },
 ];
 
@@ -241,12 +250,16 @@ const stockEntryItemsColumns = [
   {
     key: "unitCost",
     label: "Cout unitaire",
-    render: (row) => formatMoney(row.unitCost),
+    render: (row) => formatMoney(row.unitCost, row.currencyCode),
   },
   {
     key: "lineTotal",
     label: "Total ligne",
-    render: (row) => formatMoney(toNumber(row.quantity) * toNumber(row.unitCost)),
+    render: (row) =>
+      formatMoney(
+        toNumber(row.quantity) * toNumber(row.unitCost),
+        row.currencyCode,
+      ),
   },
 ];
 
@@ -290,10 +303,12 @@ const AdminDetailPage = () => {
   const [searchParams] = useSearchParams();
   const currentRoute = findRouteByPath(location.pathname);
   const detailConfig = getDetailPageConfig(location.pathname);
+  useCurrencyStore((state) => state.settings.primaryCurrencyCode);
   const recordId = searchParams.get("id") || "";
   const accessToken = useAuthStore((state) => state.accessToken);
   const logout = useAuthStore((state) => state.logout);
   const currentUser = useAuthStore((state) => state.user);
+  const showToast = useToastStore((state) => state.showToast);
   const [record, setRecord] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -302,6 +317,12 @@ const AdminDetailPage = () => {
   const [pendingAction, setPendingAction] = useState("");
 
   const detailKind = detailConfig?.detailKind || null;
+  const canAccessPage = hasAnyPermission(
+    currentUser,
+    detailConfig?.detailPermissions ||
+      detailConfig?.requiredPermissions ||
+      getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "detail"),
+  );
   const isApprovalRequest = detailKind === "approval-request";
   const isPurchaseOrder = detailKind === "purchase-order";
   const isStockEntry = detailKind === "stock-entry";
@@ -336,10 +357,7 @@ const AdminDetailPage = () => {
       });
       setRecord(payload);
     } catch (requestError) {
-      if (
-        requestError instanceof ApiError &&
-        (requestError.status === 401 || requestError.status === 403)
-      ) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
         await logout();
         navigate("/login", { replace: true });
         return;
@@ -347,14 +365,24 @@ const AdminDetailPage = () => {
 
       setError(requestError.message || "Impossible de charger le detail.");
       setRecord(null);
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible de charger le detail.",
+        variant: "danger",
+      });
     } finally {
       setLoading(false);
     }
-  }, [accessToken, detailConfig, logout, navigate, recordId]);
+  }, [accessToken, detailConfig, logout, navigate, recordId, showToast]);
 
   useEffect(() => {
+    if (!canAccessPage) {
+      setLoading(false);
+      setError("");
+      return undefined;
+    }
     loadRecord();
-  }, [loadRecord]);
+  }, [canAccessPage, loadRecord]);
 
   const currentApproval = useMemo(() => {
     if (!isApprovalRequest) return null;
@@ -377,7 +405,13 @@ const AdminDetailPage = () => {
     );
   }, [currentApproval, currentUser, isApprovalRequest]);
 
-  const canEdit = detailConfig?.canEdit?.(record);
+  const canEdit =
+    detailConfig?.canEdit?.(record) &&
+    hasAnyPermission(
+      currentUser,
+      detailConfig?.editPermissions ||
+        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
+    );
   const canSendPurchaseOrder = isPurchaseOrder && record?.status === "DRAFT" && isAdminUser;
   const canApproveStockEntry =
     isStockEntry &&
@@ -404,25 +438,42 @@ const AdminDetailPage = () => {
         body,
       });
       setSuccess(successMessage);
+      showToast({
+        title: "Operation reussie",
+        message: successMessage,
+        variant: "success",
+      });
       if (key === "approve" || key === "reject") {
         setDecisionNote("");
       }
       await loadRecord();
     } catch (requestError) {
-      if (
-        requestError instanceof ApiError &&
-        (requestError.status === 401 || requestError.status === 403)
-      ) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
         await logout();
         navigate("/login", { replace: true });
         return;
       }
 
       setError(requestError.message || "Impossible d'executer cette action.");
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible d'executer cette action.",
+        variant: "danger",
+      });
     } finally {
       setPendingAction("");
     }
   };
+
+  if (!canAccessPage) {
+    return (
+      <section className="rounded-2xl border border-border bg-surface p-6 shadow-sm">
+        <p className="text-sm font-medium text-danger">
+          Vous n'avez pas la permission d'acceder a cette page.
+        </p>
+      </section>
+    );
+  }
 
   const handleOpenPdf = async () => {
     if (!detailConfig?.pdfUrl || !record || !accessToken) return;
@@ -446,16 +497,18 @@ const AdminDetailPage = () => {
       if (openedWindow) {
         openedWindow.close();
       }
-      if (
-        requestError instanceof ApiError &&
-        (requestError.status === 401 || requestError.status === 403)
-      ) {
+      if (requestError instanceof ApiError && requestError.status === 401) {
         await logout();
         navigate("/login", { replace: true });
         return;
       }
 
       setError(requestError.message || "Impossible d'ouvrir le PDF.");
+      showToast({
+        title: "Erreur",
+        message: requestError.message || "Impossible d'ouvrir le PDF.",
+        variant: "danger",
+      });
     } finally {
       setPendingAction("");
     }
@@ -553,7 +606,7 @@ const AdminDetailPage = () => {
           <div className="flex flex-wrap items-center gap-2">
             <Link
               to={detailConfig?.resourcePath || "/dashboard"}
-              className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background"
+              className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background sm:w-auto"
             >
               <ArrowLeft size={16} />
               Retour
@@ -564,7 +617,7 @@ const AdminDetailPage = () => {
                 type="button"
                 onClick={handleOpenPdf}
                 disabled={Boolean(pendingAction)}
-                className="inline-flex items-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-background disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
               >
                 <Download size={16} />
                 PDF
@@ -575,7 +628,7 @@ const AdminDetailPage = () => {
               <Link
                 to={`${detailConfig.editPath}?id=${record?.id}`}
                 state={{ row: record }}
-                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90"
+                className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 sm:w-auto"
               >
                 <Pencil size={16} />
                 Modifier
@@ -584,18 +637,6 @@ const AdminDetailPage = () => {
           </div>
         </div>
       </section>
-
-      {error ? (
-        <div className="rounded-xl border border-danger/20 bg-danger/10 px-4 py-3 text-sm text-danger">
-          {error}
-        </div>
-      ) : null}
-
-      {success ? (
-        <div className="rounded-xl border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
-          {success}
-        </div>
-      ) : null}
 
       {record ? (
         <>

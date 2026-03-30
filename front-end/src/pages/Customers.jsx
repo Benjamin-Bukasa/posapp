@@ -13,8 +13,9 @@ import DataTable from "../components/ui/datatable";
 import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
+import CustomerCreateModal from "../components/ui/customerCreateModal";
 import useToastStore from "../stores/toastStore";
-import { apiGet } from "../services/apiClient";
+import { apiGet, apiPost } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { getMonthRange, percentChange } from "../utils/metrics";
 
@@ -61,6 +62,7 @@ function Customers() {
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -207,6 +209,8 @@ function Customers() {
       };
     };
 
+    
+
     const currentSnapshot = buildSnapshot(now);
     const previousSnapshot = buildSnapshot(previousReference);
 
@@ -307,14 +311,17 @@ function Customers() {
 
   return (
     <section className="w-full h-full flex flex-col gap-4 p-4">
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">Clients</h1>
           <p className="text-sm text-text-secondary">
             Suivez vos clients et leur niveau de fidelite.
           </p>
         </div>
-        <button className="inline-flex items-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90">
+        <button 
+          type="button"
+          onClick={() => setIsCreateOpen(true)}
+        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90 sm:w-auto">
           <Plus size={16} />
           Nouveau client
         </button>
@@ -380,6 +387,23 @@ function Customers() {
           label: "Afficher",
         }}
         tableMaxHeightClass="max-h-[46vh]"
+      />
+
+      <CustomerCreateModal
+        isOpen={isCreateOpen}
+        onClose={() => setIsCreateOpen(false)}
+        nextSequence={customers.length + 1}
+        onSubmit={async (payload) => {
+          const created = await apiPost("/api/customers", payload);
+          setCustomers((prev) => [created, ...prev]);
+          setIsCreateOpen(false);
+          showToast({
+            title: "Client cree",
+            message: "Le client a ete enregistre avec succes.",
+            variant: "success",
+          });
+          return created;
+        }}
       />
     </section>
   );
