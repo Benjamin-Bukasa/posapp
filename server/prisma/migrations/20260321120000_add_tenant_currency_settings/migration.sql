@@ -1,0 +1,4 @@
+ALTER TABLE "tenants"
+ADD COLUMN IF NOT EXISTS "primaryCurrencyCode" TEXT NOT NULL DEFAULT 'USD',
+ADD COLUMN IF NOT EXISTS "secondaryCurrencyCode" TEXT,
+ADD COLUMN IF NOT EXISTS "exchangeRate" DECIMAL(18, 6);
