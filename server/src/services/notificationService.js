@@ -44,11 +44,7 @@ const sendEmail = async ({ to, subject, text, html, message }) => {
   const from =
     process.env.SMTP_FROM ||
     process.env.COMPANY_SUPPORT_EMAIL ||
-<<<<<<< HEAD
     "no-reply@POSapp.local";
-=======
-    "no-reply@neopharma.local";
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 
   const finalText = text || message || "";
   const finalHtml =

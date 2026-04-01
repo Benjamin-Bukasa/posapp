@@ -93,11 +93,7 @@ const register = async (req, res) => {
   } else if (email) {
     await sendEmail({
       to: email,
-<<<<<<< HEAD
       subject: "Création de compte POSapp",
-=======
-      subject: "Création de compte NeoPharma",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       message,
     });
   }
@@ -425,11 +421,7 @@ const firstLoginChangePassword = async (req, res) => {
 
 const setup2fa = async (req, res) => {
   const secret = speakeasy.generateSecret({
-<<<<<<< HEAD
     name: "POSapp",
-=======
-    name: "NeoPharma",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   });
 
   await prisma.user.update({
