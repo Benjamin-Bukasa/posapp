@@ -47,11 +47,7 @@ const drawText = (doc, text, x, y, options = {}) => {
 const drawHeader = (doc, {
   title,
   reference,
-<<<<<<< HEAD
   companyName = "POSapp",
-=======
-  companyName = "NEOPHARMA",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   subtitleLines = [],
 }) => {
   doc

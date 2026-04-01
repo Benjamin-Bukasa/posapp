@@ -58,11 +58,7 @@ const renewSubscription = async (req, res) => {
 
   if (owner) {
     const emailPayload = buildSubscriptionRenewedEmail({
-<<<<<<< HEAD
       tenantName: tenant?.name || "POSapp",
-=======
-      tenantName: tenant?.name || "NeoPharma",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       plan: updated.plan,
       billingCycle: updated.billingCycle,
       price: updated.price,

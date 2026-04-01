@@ -195,11 +195,7 @@ const exportById = async (req, res) => {
   const filename = detail.code || `inventaire-${detail.id}`;
 
   return sendExport(res, rows, filename, exportType, {
-<<<<<<< HEAD
     companyName: req.user.tenantName || "POSapp",
-=======
-    companyName: req.user.tenantName || "NEOPHARMA",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   });
 };
 
