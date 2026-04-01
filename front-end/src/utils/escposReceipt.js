@@ -117,17 +117,10 @@ export const buildEscPosReceipt = ({
   bytes.push(ESC, 0x61, 0x01);
   bytes.push(ESC, 0x45, 0x01);
   bytes.push(GS, 0x21, 0x11);
-<<<<<<< HEAD
   pushText(bytes, `${storeName || businessName || "POSapp"}\n`);
   bytes.push(GS, 0x21, 0x00);
   bytes.push(ESC, 0x45, 0x00);
   pushText(bytes, `${businessName || "POSapp"}\n`);
-=======
-  pushText(bytes, `${storeName || businessName || "NEOPHARMA"}\n`);
-  bytes.push(GS, 0x21, 0x00);
-  bytes.push(ESC, 0x45, 0x00);
-  pushText(bytes, `${businessName || "NEOPHARMA"}\n`);
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   pushText(bytes, `Ticket ${shortId(order?.id)}\n`);
   pushText(bytes, `${formatDate(order?.createdAt)}\n`);
   pushText(bytes, `Caissier: ${cashierName || "--"}\n`);

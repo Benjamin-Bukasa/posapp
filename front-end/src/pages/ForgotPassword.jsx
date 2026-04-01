@@ -123,11 +123,7 @@ const ForgotPassword = () => {
               </div>
               <div>
                 <p className="text-lg font-semibold text-text-primary">
-<<<<<<< HEAD
                   POSapp
-=======
-                  NeoPharma
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
                 </p>
                 <p className="text-xs text-text-secondary">
                   Recuperation de compte
@@ -158,11 +154,7 @@ const ForgotPassword = () => {
                 label="Email ou telephone"
                 name="identifier"
                 type="text"
-<<<<<<< HEAD
                 placeholder="exemple@POSapp.com"
-=======
-                placeholder="exemple@neopharma.com"
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
                 register={registerRequestField}
                 errors={requestErrors}
               />

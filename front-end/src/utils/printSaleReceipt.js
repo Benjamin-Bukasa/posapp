@@ -124,13 +124,8 @@ const buildReceiptHtml = ({
       <body>
         <section class="receipt">
           <div class="center">
-<<<<<<< HEAD
             <div class="title">${escapeHtml(storeName || businessName || "POSapp")}</div>
             <div class="subtitle">${escapeHtml(businessName || "POSapp")}</div>
-=======
-            <div class="title">${escapeHtml(storeName || businessName || "NeoPharma")}</div>
-            <div class="subtitle">${escapeHtml(businessName || "NeoPharma")}</div>
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
             <div class="meta">Ticket: ${escapeHtml(shortId(order?.id))}</div>
             <div class="meta">Date: ${escapeHtml(formatDateTime(order?.createdAt))}</div>
             <div class="meta">Caissier: ${escapeHtml(cashierName || "--")}</div>
