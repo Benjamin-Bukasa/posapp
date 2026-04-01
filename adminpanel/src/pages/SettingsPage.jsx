@@ -72,7 +72,11 @@ const SettingsPage = () => {
       },
       {
         label: "Tenant",
+<<<<<<< HEAD
         value: user?.tenantName || "POSapp",
+=======
+        value: user?.tenantName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       },
     ],
     [user],

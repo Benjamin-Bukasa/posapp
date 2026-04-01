@@ -205,7 +205,11 @@ function Settings() {
         label: "Zone de stockage",
         value: displayValue(zoneName, "Zone non definie"),
       },
+<<<<<<< HEAD
       { label: "Tenant", value: displayValue(user?.tenantName, "POSapp") },
+=======
+      { label: "Tenant", value: displayValue(user?.tenantName, "NEOPHARMA") },
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     ],
     [user, zoneName],
   );

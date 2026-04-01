@@ -4,7 +4,11 @@ const buildPurchaseRequestPdf = (request, companyName) =>
   createStyledPdf({
     title: "DEMANDE D'ACHAT",
     reference: `DEMANDE N° : ${request.code || `DA-${String(request.id || "").slice(0, 8).toUpperCase()}`}`,
+<<<<<<< HEAD
     companyName: companyName || "POSapp",
+=======
+    companyName: companyName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     subtitleLines: [
       request.requestedBy
         ? `Demande faite ${[

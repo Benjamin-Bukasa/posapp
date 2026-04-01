@@ -113,7 +113,11 @@ const createUserRecord = async ({
 
   const identifier = email || phone;
   const { subject, text, html } = buildAccountCreationEmail({
+<<<<<<< HEAD
     tenantName: "POSapp",
+=======
+    tenantName: "NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     identifier,
     tempPassword,
   });

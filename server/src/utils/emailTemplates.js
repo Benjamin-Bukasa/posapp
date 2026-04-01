@@ -6,6 +6,7 @@ const buildAccountCreationEmail = ({
   const appUrl = process.env.APP_URL || "http://localhost:5173";
   const logoUrl =
     process.env.COMPANY_LOGO_URL ||
+<<<<<<< HEAD
     "https://via.placeholder.com/160x44?text=POSapp";
   const bannerUrl = process.env.EMAIL_BANNER_URL || "";
   const companyName = process.env.COMPANY_NAME || "POSapp";
@@ -15,6 +16,17 @@ const buildAccountCreationEmail = ({
   const year = new Date().getFullYear();
 
   const subject = "Création de compte POSapp";
+=======
+    "https://via.placeholder.com/160x44?text=NeoPharma";
+  const bannerUrl = process.env.EMAIL_BANNER_URL || "";
+  const companyName = process.env.COMPANY_NAME || "NeoPharma";
+  const companyAddress = process.env.COMPANY_ADDRESS || "Kinshasa, RDC";
+  const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@neopharma.com";
+  const supportPhone = process.env.COMPANY_SUPPORT_PHONE || "+243 000 000 000";
+  const year = new Date().getFullYear();
+
+  const subject = "Création de compte NeoPharma";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 
   const text = `Bonjour,
 
@@ -38,7 +50,11 @@ L'équipe ${companyName}`;
       <div style="height: 4px; background: #D8F274;"></div>
       ${
         bannerUrl
+<<<<<<< HEAD
           ? `<img src="${bannerUrl}" alt="POSapp" style="width: 100%; display: block;" />`
+=======
+          ? `<img src="${bannerUrl}" alt="NeoPharma" style="width: 100%; display: block;" />`
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
           : ""
       }
       <div style="padding: 26px 28px;">
@@ -98,6 +114,7 @@ const buildSubscriptionCreatedEmail = ({
   const appUrl = process.env.APP_URL || "http://localhost:5173";
   const logoUrl =
     process.env.COMPANY_LOGO_URL ||
+<<<<<<< HEAD
     "https://via.placeholder.com/160x44?text=POSapp";
   const companyName = process.env.COMPANY_NAME || "POSapp";
   const companyAddress = process.env.COMPANY_ADDRESS || "Kinshasa, RDC";
@@ -106,12 +123,26 @@ const buildSubscriptionCreatedEmail = ({
   const year = new Date().getFullYear();
 
   const subject = "Confirmation d'abonnement POSapp";
+=======
+    "https://via.placeholder.com/160x44?text=NeoPharma";
+  const companyName = process.env.COMPANY_NAME || "NeoPharma";
+  const companyAddress = process.env.COMPANY_ADDRESS || "Kinshasa, RDC";
+  const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@neopharma.com";
+  const supportPhone = process.env.COMPANY_SUPPORT_PHONE || "+243 000 000 000";
+  const year = new Date().getFullYear();
+
+  const subject = "Confirmation d'abonnement NeoPharma";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const endsAtLabel = endsAt ? new Date(endsAt).toLocaleDateString("fr-FR") : "";
   const cycleLabel = billingCycle === "ANNUAL" ? "Annuel" : "Mensuel";
 
   const text = `Bonjour,
 
+<<<<<<< HEAD
 Votre abonnement POSapp est actif.
+=======
+Votre abonnement NeoPharma est actif.
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 Pharmacie: ${tenantName}
 Plan: ${plan}
 Cycle: ${cycleLabel}
@@ -137,7 +168,11 @@ L'équipe ${companyName}`;
           Confirmation d'abonnement
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
+<<<<<<< HEAD
           Votre abonnement POSapp est actif pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong>.
+=======
+          Votre abonnement NeoPharma est actif pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong>.
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
         </p>
         <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px 18px; border-radius: 12px; margin-bottom: 18px;">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
@@ -182,17 +217,30 @@ const buildSubscriptionExpiredEmail = ({ tenantName, plan, endsAt }) => {
   const appUrl = process.env.APP_URL || "http://localhost:5173";
   const logoUrl =
     process.env.COMPANY_LOGO_URL ||
+<<<<<<< HEAD
     "https://via.placeholder.com/160x44?text=POSapp";
   const companyName = process.env.COMPANY_NAME || "POSapp";
   const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@POSapp.com";
+=======
+    "https://via.placeholder.com/160x44?text=NeoPharma";
+  const companyName = process.env.COMPANY_NAME || "NeoPharma";
+  const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@neopharma.com";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const supportPhone = process.env.COMPANY_SUPPORT_PHONE || "+243 000 000 000";
   const year = new Date().getFullYear();
   const endsAtLabel = endsAt ? new Date(endsAt).toLocaleDateString("fr-FR") : "";
 
+<<<<<<< HEAD
   const subject = "Abonnement expiré - POSapp";
   const text = `Bonjour,
 
 Votre abonnement POSapp pour la pharmacie ${tenantName} a expiré le ${endsAtLabel}.
+=======
+  const subject = "Abonnement expiré - NeoPharma";
+  const text = `Bonjour,
+
+Votre abonnement NeoPharma pour la pharmacie ${tenantName} a expiré le ${endsAtLabel}.
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 Plan: ${plan}
 
 Veuillez renouveler votre abonnement pour réactiver vos utilisateurs.
@@ -241,7 +289,11 @@ const buildSubscriptionPostExpiredEmail = ({ tenantName, plan, endsAt }) => {
   const payload = buildSubscriptionExpiredEmail({ tenantName, plan, endsAt });
   return {
     ...payload,
+<<<<<<< HEAD
     subject: "Rappel : abonnement expiré - POSapp",
+=======
+    subject: "Rappel : abonnement expiré - NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   };
 };
 
@@ -249,9 +301,15 @@ const buildSubscriptionWarningEmail = ({ tenantName, plan, endsAt, daysLeft }) =
   const appUrl = process.env.APP_URL || "http://localhost:5173";
   const logoUrl =
     process.env.COMPANY_LOGO_URL ||
+<<<<<<< HEAD
     "https://via.placeholder.com/160x44?text=POSapp";
   const companyName = process.env.COMPANY_NAME || "POSapp";
   const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@POSapp.com";
+=======
+    "https://via.placeholder.com/160x44?text=NeoPharma";
+  const companyName = process.env.COMPANY_NAME || "NeoPharma";
+  const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@neopharma.com";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const supportPhone = process.env.COMPANY_SUPPORT_PHONE || "+243 000 000 000";
   const year = new Date().getFullYear();
   const endsAtLabel = endsAt ? new Date(endsAt).toLocaleDateString("fr-FR") : "";
@@ -262,11 +320,19 @@ const buildSubscriptionWarningEmail = ({ tenantName, plan, endsAt, daysLeft }) =
       : `dans ${daysLeft} jour${daysLeft > 1 ? "s" : ""}`;
   const subject =
     daysLeft === 0
+<<<<<<< HEAD
       ? "Rappel : abonnement POSapp expire aujourd'hui"
       : `Rappel : abonnement POSapp expire ${reminderLabel}`;
   const text = `Bonjour,
 
 Votre abonnement POSapp pour la pharmacie ${tenantName} expire ${reminderLabel} (le ${endsAtLabel}).
+=======
+      ? "Rappel : abonnement NeoPharma expire aujourd'hui"
+      : `Rappel : abonnement NeoPharma expire ${reminderLabel}`;
+  const text = `Bonjour,
+
+Votre abonnement NeoPharma pour la pharmacie ${tenantName} expire ${reminderLabel} (le ${endsAtLabel}).
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 Plan: ${plan}
 
 Pour éviter toute interruption, veuillez renouveler votre abonnement.
@@ -322,15 +388,25 @@ const buildSubscriptionRenewedEmail = ({
   const appUrl = process.env.APP_URL || "http://localhost:5173";
   const logoUrl =
     process.env.COMPANY_LOGO_URL ||
+<<<<<<< HEAD
     "https://via.placeholder.com/160x44?text=POSapp";
   const companyName = process.env.COMPANY_NAME || "POSapp";
   const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@POSapp.com";
+=======
+    "https://via.placeholder.com/160x44?text=NeoPharma";
+  const companyName = process.env.COMPANY_NAME || "NeoPharma";
+  const supportEmail = process.env.COMPANY_SUPPORT_EMAIL || "support@neopharma.com";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const supportPhone = process.env.COMPANY_SUPPORT_PHONE || "+243 000 000 000";
   const year = new Date().getFullYear();
   const endsAtLabel = endsAt ? new Date(endsAt).toLocaleDateString("fr-FR") : "";
   const cycleLabel = billingCycle === "ANNUAL" ? "Annuel" : "Mensuel";
 
+<<<<<<< HEAD
   const subject = "Abonnement renouvelé - POSapp";
+=======
+  const subject = "Abonnement renouvelé - NeoPharma";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const text = `Bonjour,
 
 Votre abonnement a été renouvelé.

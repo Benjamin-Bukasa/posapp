@@ -54,7 +54,11 @@ const LoginLeft = () => {
     if (result?.success) {
       showToast({
         title: "Connexion reussie",
+<<<<<<< HEAD
         message: "Bienvenue dans POSapp.",
+=======
+        message: "Bienvenue dans NeoPharma.",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
         variant: "success",
       });
       navigate("/dashboard");
@@ -76,7 +80,11 @@ const LoginLeft = () => {
             NP
           </div>
           <span className="text-lg font-semibold text-text-primary">
+<<<<<<< HEAD
             POSapp
+=======
+            NeoPharma
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
           </span>
         </div>
         <div className="flex items-center gap-3 text-sm text-text-secondary">
@@ -101,7 +109,11 @@ const LoginLeft = () => {
               label="Email ou telephone"
               name="identifier"
               type="text"
+<<<<<<< HEAD
               placeholder="exemple@POSapp.com"
+=======
+              placeholder="exemple@neopharma.com"
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
               register={registerField}
               errors={errors}
               autoComplete="username"
@@ -159,7 +171,11 @@ const LoginLeft = () => {
       </div>
 
       <div className="border-t border-border px-6 py-4 text-center text-xs text-text-secondary">
+<<<<<<< HEAD
         www.POSapp.com
+=======
+        www.neopharma.com
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       </div>
     </div>
   );
