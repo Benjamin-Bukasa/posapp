@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import { translateMessage } from "../utils/translateMessage";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
+const API_URL = import.meta.env.VITE_API_URL || "https://posapp-server.onrender.com";
 const TOKEN_KEY = "token";
 const REFRESH_KEY = "refreshToken";
 const USER_KEY = "user";

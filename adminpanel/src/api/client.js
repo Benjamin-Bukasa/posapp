@@ -1,7 +1,7 @@
 import { translateMessage } from "../utils/translateMessage";
 import useAuthStore from "../stores/authStore";
 
-export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5001";
+export const API_URL = import.meta.env.VITE_API_URL || "https://posapp-server.onrender.com";
 
 export class ApiError extends Error {
   constructor(message, status, payload) {
