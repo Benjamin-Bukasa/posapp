@@ -346,7 +346,7 @@ const ProductsList = ({
     if (item?.id === "csv") {
       const csv = "\uFEFF" + buildCsvContent(exportRows, exportColumns);
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-      downloadBlob(blob, `neopharma-export-${timestamp}.csv`);
+      downloadBlob(blob, `POSapp-export-${timestamp}.csv`);
       return;
     }
 
@@ -355,7 +355,7 @@ const ProductsList = ({
       const blob = new Blob(["\uFEFF" + tableHtml], {
         type: "application/vnd.ms-excel;charset=utf-8;",
       });
-      downloadBlob(blob, `neopharma-export-${timestamp}.xls`);
+      downloadBlob(blob, `POSapp-export-${timestamp}.xls`);
       return;
     }
 
@@ -366,7 +366,7 @@ const ProductsList = ({
       printWindow.document.write(`
         <html>
           <head>
-            <title>Export NeoPharma</title>
+            <title>Export POSapp</title>
             <style>
               body { font-family: "Poppins", Arial, sans-serif; padding: 24px; }
               table { width: 100%; border-collapse: collapse; }
@@ -375,7 +375,7 @@ const ProductsList = ({
             </style>
           </head>
           <body>
-            <h2>Export NeoPharma</h2>
+            <h2>Export POSapp</h2>
             ${tableHtml}
           </body>
         </html>
