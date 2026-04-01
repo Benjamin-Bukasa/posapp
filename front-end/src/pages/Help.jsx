@@ -29,11 +29,7 @@ function Help() {
       <div>
         <h1 className="text-2xl font-semibold text-text-primary">Aide</h1>
         <p className="text-sm text-text-secondary">
-<<<<<<< HEAD
           Guides rapides pour utiliser POSapp.
-=======
-          Guides rapides pour utiliser NeoPharma.
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
         </p>
       </div>
 
