@@ -95,6 +95,11 @@ const formatPerson = (person) =>
 
 const formatBoolean = (value) => (value ? "Oui" : "Non");
 const formatCount = (items) => (Array.isArray(items) ? items.length : 0);
+const pickRows = (payload) => {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.data)) return payload.data;
+  return [];
+};
 const statusLabels = {
   DRAFT: "Non valide",
   SUBMITTED: "En cours",
@@ -2352,6 +2357,80 @@ const stockEntryForm = {
       ]),
     },
   ],
+  watchEffects: [
+    {
+      id: "stock-entry-purchase-order-prefill",
+      fields: ["sourceType", "sourceId"],
+      run: async ({ values, isEditing, token, requestJson }) => {
+        if (isEditing) {
+          return null;
+        }
+
+        if (values.sourceType !== "PURCHASE_ORDER") {
+          return {
+            sourceId: "",
+            storeId: "",
+            storageZoneId: "",
+            items: [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+          };
+        }
+
+        if (!values.sourceId) {
+          return {
+            storeId: "",
+            storageZoneId: "",
+            items: [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+          };
+        }
+
+        const order = await requestJson(`/api/purchase-orders/${values.sourceId}`, {
+          token,
+        });
+        const resolvedStoreId = order?.storeId || order?.store?.id || "";
+        const items = Array.isArray(order?.items)
+          ? order.items
+              .map((item) => {
+                const quantity = Number(item.quantity || 0);
+                return {
+                  productId: item.productId || item.product?.id || "",
+                  unitId: item.unitId || item.unit?.id || "",
+                  quantity: Number.isFinite(quantity) && quantity > 0 ? String(quantity) : "",
+                  unitCost:
+                    item.unitPrice !== undefined && item.unitPrice !== null
+                      ? String(item.unitPrice)
+                      : "",
+                  batchNumber: "",
+                  expiryDate: "",
+                  manufacturedAt: "",
+                };
+              })
+              .filter((item) => item.productId)
+          : [];
+        let storageZoneId = "";
+
+        if (resolvedStoreId) {
+          try {
+            const warehouseZonesPayload = await requestJson("/api/storage-zones", {
+              token,
+              query: { storeId: resolvedStoreId, zoneType: "WAREHOUSE" },
+            });
+            storageZoneId = pickRows(warehouseZonesPayload)[0]?.id || "";
+          } catch {
+            storageZoneId = "";
+          }
+        }
+
+        return {
+          storeId: resolvedStoreId,
+          storageZoneId,
+          note: order?.note || values.note || "",
+          items: items.length
+            ? items
+            : [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+        };
+      },
+    },
+  ],
   buildRequest: (values) => ({
     endpoint: "/api/stock-entries",
     method: "POST",
@@ -2442,6 +2521,71 @@ const stockOutputForm = {
       addLabel: "Ajouter une ligne",
       minRows: 1,
       fields: inventoryLineFields(),
+    },
+  ],
+  watchEffects: [
+    {
+      id: "stock-output-requisition-prefill",
+      fields: ["mode", "supplyRequestId"],
+      run: async ({ values, isEditing, token, requestJson }) => {
+        if (isEditing) {
+          return null;
+        }
+
+        if (values.mode !== "REQUISITION") {
+          return {
+            supplyRequestId: "",
+            fromZoneId: "",
+            toZoneId: "",
+            items: [repeaterRow(inventoryLineFields(), 0)],
+          };
+        }
+
+        if (!values.supplyRequestId) {
+          return {
+            fromZoneId: "",
+            toZoneId: "",
+            storageZoneId: "",
+            items: [repeaterRow(inventoryLineFields(), 0)],
+          };
+        }
+
+        const request = await requestJson(`/api/supply-requests/${values.supplyRequestId}`, {
+          token,
+        });
+        const items = Array.isArray(request?.items)
+          ? request.items
+              .map((item) => {
+                const quantity = Number(item.quantity || 0);
+                return {
+                  productId: item.productId || item.product?.id || "",
+                  quantity: Number.isFinite(quantity) && quantity > 0 ? String(quantity) : "",
+                  note: item.note || "",
+                };
+              })
+              .filter((item) => item.productId)
+          : [];
+        const targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
+        let fromZoneId = "";
+
+        try {
+          const warehouseZonesPayload = await requestJson("/api/storage-zones", {
+            token,
+            query: { zoneType: "WAREHOUSE" },
+          });
+          fromZoneId = pickRows(warehouseZonesPayload)[0]?.id || "";
+        } catch {
+          fromZoneId = "";
+        }
+
+        return {
+          fromZoneId,
+          toZoneId: targetZoneId,
+          storageZoneId: targetZoneId,
+          note: request?.note || values.note || "",
+          items: items.length ? items : [repeaterRow(inventoryLineFields(), 0)],
+        };
+      },
     },
   ],
   buildRequests: (values) => {

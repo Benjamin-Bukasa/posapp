@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ArrowLeft, Plus, Save, Trash2 } from "lucide-react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { API_URL, ApiError, requestFormData, requestJson } from "../api/client";
@@ -258,6 +258,7 @@ const AdminCreatePage = () => {
   const [uploadingFields, setUploadingFields] = useState({});
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const watchEffectSignaturesRef = useRef({});
   const requiredPermissions = isEditing
     ? formConfig?.editPermissions ||
       formConfig?.requiredPermissions ||
@@ -270,6 +271,7 @@ const AdminCreatePage = () => {
     setValues(buildInitialValues(formConfig));
     setError("");
     setSuccess("");
+    watchEffectSignaturesRef.current = {};
   }, [formConfig]);
 
   useEffect(() => {
@@ -445,6 +447,78 @@ const AdminCreatePage = () => {
     navigate,
     recordId,
     showToast,
+  ]);
+
+  useEffect(() => {
+    const watchEffects = formConfig?.watchEffects || [];
+    if (!watchEffects.length || !accessToken || !canAccessPage) {
+      return undefined;
+    }
+
+    let ignore = false;
+
+    const runEffects = async () => {
+      for (const effect of watchEffects) {
+        const effectId = effect.id || JSON.stringify(effect.fields || []);
+        const nextSignature = JSON.stringify(
+          (effect.fields || []).map((fieldName) => values[fieldName]),
+        );
+
+        if (watchEffectSignaturesRef.current[effectId] === nextSignature) {
+          continue;
+        }
+
+        watchEffectSignaturesRef.current[effectId] = nextSignature;
+
+        try {
+          const patch = await effect.run({
+            values,
+            isEditing,
+            token: accessToken,
+            requestJson,
+          });
+
+          if (ignore || !patch || typeof patch !== "object") {
+            continue;
+          }
+
+          setValues((current) => ({
+            ...current,
+            ...patch,
+          }));
+        } catch (requestError) {
+          if (ignore) return;
+
+          if (requestError instanceof ApiError && requestError.status === 401) {
+            await logout();
+            navigate("/login", { replace: true });
+            return;
+          }
+
+          setError(requestError.message || "Impossible de precharger ce formulaire.");
+          showToast({
+            title: "Erreur",
+            message: requestError.message || "Impossible de precharger ce formulaire.",
+            variant: "danger",
+          });
+          return;
+        }
+      }
+    };
+
+    runEffects();
+
+    return () => {
+      ignore = true;
+    };
+  }, [
+    accessToken,
+    canAccessPage,
+    formConfig,
+    logout,
+    navigate,
+    showToast,
+    values,
   ]);
 
   const repeaterMap = useMemo(
