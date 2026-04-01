@@ -6,7 +6,11 @@ const buildSupplyRequestPdf = (request, companyName) => {
   return createStyledPdf({
     title: "REQUISITION",
     reference: `REQUISITION N° : ${reference}`,
+<<<<<<< HEAD
+    companyName: companyName || "POSapp",
+=======
     companyName: companyName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     subtitleLines: [
       request.requestedBy
         ? `Demande faite ${[

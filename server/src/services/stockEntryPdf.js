@@ -39,7 +39,11 @@ const buildStockEntryPdf = (entry, currencySettings = {}, companyName) =>
   createStyledPdf({
     title: "ENTREE EN STOCK",
     reference: `ENTREE N° : SE-${String(entry.id || "").slice(0, 8).toUpperCase()}`,
+<<<<<<< HEAD
+    companyName: companyName || "POSapp",
+=======
     companyName: companyName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     subtitleLines: [
       `Date : ${formatDateTime(entry.createdAt)}`,
       `Statut : ${entry.status || "-"}`,

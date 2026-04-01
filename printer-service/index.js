@@ -141,7 +141,11 @@ public class RawPrinterHelper {
 
     try {
       var doc = new DOCINFOA();
+<<<<<<< HEAD
+      doc.pDocName = "POSapp ESC/POS";
+=======
       doc.pDocName = "NeoPharma ESC/POS";
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       doc.pDataType = "RAW";
 
       if (!StartDocPrinter(handle, 1, doc)) {
@@ -180,7 +184,11 @@ const sendWindowsPrint = (buffer, printerName) =>
   new Promise((resolve, reject) => {
     const tempFile = path.join(
       os.tmpdir(),
+<<<<<<< HEAD
+      `POSapp-receipt-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
+=======
       `neopharma-receipt-${Date.now()}-${Math.random().toString(16).slice(2)}.bin`,
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     );
 
     fs.writeFileSync(tempFile, buffer);
@@ -335,6 +343,10 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(
+<<<<<<< HEAD
+    `POSapp printer service listening on http://${HOST}:${PORT} (${PRINTER_MODE})`,
+=======
     `NeoPharma printer service listening on http://${HOST}:${PORT} (${PRINTER_MODE})`,
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   );
 });

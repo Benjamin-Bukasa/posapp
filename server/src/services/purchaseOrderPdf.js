@@ -44,7 +44,11 @@ const buildPurchaseOrderPdf = (order, currencySettings = {}, companyName) => {
   return createStyledPdf({
     title: "BON DE COMMANDE",
     reference: `BON N° : ${order.code || `PO-${String(order.id || "").slice(0, 8).toUpperCase()}`}`,
+<<<<<<< HEAD
+    companyName: companyName || "POSapp",
+=======
     companyName: companyName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     subtitleLines: [
       `Date : ${formatDateTime(order.orderDate || order.createdAt)}`,
       `Statut : ${order.status || "-"}`,

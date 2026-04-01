@@ -4,8 +4,14 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+<<<<<<< HEAD
+    "postinstall": "prisma generate",
+    "server": "nodemon src/server.js",
+    "start": "prisma migrate deploy && node src/server.js",
+=======
     "server": "nodemon src/server.js",
     "start": "node src/server.js",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     "prisma": "prisma",
     "fix:product-currency": "node src/scripts/fixTenantProductCurrency.js",
     "fix:sales-currency": "node src/scripts/fixTenantSalesCurrency.js",

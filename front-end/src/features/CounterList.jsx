@@ -374,7 +374,11 @@ const CounterList = () => {
                 user?.email ||
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
+<<<<<<< HEAD
+              businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+=======
               businessName: createdOrder?.store?.name || user?.storeName || "NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
               printerServiceUrl: userPreferences.printerServiceUrl || undefined,
               printerName: userPreferences.printerName || undefined,
             });
@@ -387,7 +391,11 @@ const CounterList = () => {
                 user?.email ||
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
+<<<<<<< HEAD
+              businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+=======
               businessName: createdOrder?.store?.name || user?.storeName || "NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
             });
           }
         } catch (printError) {
@@ -400,7 +408,11 @@ const CounterList = () => {
                 user?.email ||
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
+<<<<<<< HEAD
+              businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+=======
               businessName: createdOrder?.store?.name || user?.storeName || "NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
             });
             showToast({
               title: "Service local indisponible",

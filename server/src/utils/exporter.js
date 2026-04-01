@@ -31,7 +31,11 @@ const sendExport = async (res, rows, filename, type = "csv", options = {}) => {
     const pdfBuffer = await createStyledPdf({
       title: filename.replace(/-/g, " ").toUpperCase(),
       reference: `EXPORT : ${filename.toUpperCase()}`,
+<<<<<<< HEAD
+      companyName: options.companyName || res.locals?.tenantName || "POSapp",
+=======
       companyName: options.companyName || res.locals?.tenantName || "NEOPHARMA",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
       subtitleLines: ["Export systeme"],
       metaItems: [
         { label: "Nombre de lignes", value: String(safeRows.length) },

@@ -1,8 +1,15 @@
 {
+<<<<<<< HEAD
+  "name": "POSapp-printer-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Service local d'impression ESC/POS pour POSapp",
+=======
   "name": "neopharma-printer-service",
   "version": "1.0.0",
   "private": true,
   "description": "Service local d'impression ESC/POS pour NeoPharma",
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

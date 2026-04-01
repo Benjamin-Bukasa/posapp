@@ -1,4 +1,8 @@
+<<<<<<< HEAD
+# POSapp Server API Endpoints
+=======
 # NeoPharma Server API Endpoints
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 
 Base URL: `http://localhost:5000`
 
@@ -235,7 +239,11 @@ Response 200:
 ```json
 {
   "base32": "JBSWY3DPEHPK3PXP",
+<<<<<<< HEAD
+  "otpauthUrl": "otpauth://totp/POSapp:owner@pharma.com?secret=JBSWY3DPEHPK3PXP"
+=======
   "otpauthUrl": "otpauth://totp/NeoPharma:owner@pharma.com?secret=JBSWY3DPEHPK3PXP"
+>>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
 }
 ```
 
