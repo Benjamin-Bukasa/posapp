@@ -778,8 +778,6 @@ const listInventoryLots = async ({
       lot."updatedAt" AS "updatedAt",
       product."name" AS "productName",
       product."sku" AS "productSku",
-      product."minLevel" AS "productMinLevel",
-      product."maxLevel" AS "productMaxLevel",
       store."name" AS "storeName",
       zone."name" AS "storageZoneName",
       zone."zoneType" AS "zoneType"
@@ -817,8 +815,8 @@ const listInventoryLots = async ({
           id: row.productId,
           name: row.productName || "",
           sku: row.productSku || null,
-          minLevel: row.productMinLevel == null ? null : Number(row.productMinLevel),
-          maxLevel: row.productMaxLevel == null ? null : Number(row.productMaxLevel),
+          minLevel: null,
+          maxLevel: null,
         }
       : null,
   }));
