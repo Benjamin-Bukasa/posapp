@@ -673,19 +673,15 @@ const createTransferFromSupplyRequest = async (req, res) => {
     return res.status(400).json({ message: "Target store/zone required." });
   }
 
-  const transferItems = Array.isArray(items) && items.length
-    ? items.map((item) => ({
-        tenantId: req.user.tenantId,
-        productId: item.productId,
-        unitId: item.unitId,
-        quantity: item.quantity,
-      }))
-    : request.items.map((item) => ({
-        tenantId: req.user.tenantId,
-        productId: item.productId,
-        unitId: item.unitId,
-        quantity: item.quantity,
-      }));
+  const sourceItems = Array.isArray(items) && items.length ? items : request.items;
+  const transferItems = sourceItems
+    .map((item) => ({
+      tenantId: req.user.tenantId,
+      productId: item.productId,
+      unitId: item.unitId,
+      quantity: item.quantity,
+    }))
+    .filter((item) => item.productId && Number(item.quantity || 0) > 0);
 
   if (!transferItems.length) {
     return res.status(400).json({ message: "No items to transfer." });
