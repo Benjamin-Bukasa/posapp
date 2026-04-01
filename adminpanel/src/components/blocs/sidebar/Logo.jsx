@@ -7,11 +7,7 @@ const Logo = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
-<<<<<<< HEAD
   const tenantName = useAuthStore((state) => state.user?.tenantName || "POSapp");
-=======
-  const tenantName = useAuthStore((state) => state.user?.tenantName || "NEOPHARMA");
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
   const buttonRef = useRef(null);
   const tooltipRef = useRef(null);
   const [tooltipSide, setTooltipSide] = useState("right");
