@@ -53,11 +53,7 @@ const Login = () => {
               <p className="text-xs uppercase tracking-[0.18em] text-accent/80">
                 Administration
               </p>
-<<<<<<< HEAD
               <h1 className="text-3xl font-semibold">POSapp Admin</h1>
-=======
-              <h1 className="text-3xl font-semibold">NeoPharma Admin</h1>
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
             </div>
           </div>
 
