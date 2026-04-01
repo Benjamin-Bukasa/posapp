@@ -4,14 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-<<<<<<< HEAD
     "postinstall": "prisma generate",
     "server": "nodemon src/server.js",
     "start": "prisma migrate deploy && node src/server.js",
-=======
-    "server": "nodemon src/server.js",
-    "start": "node src/server.js",
->>>>>>> aed4c876093dd2e186d658b809f50bca4071b79d
     "prisma": "prisma",
     "fix:product-currency": "node src/scripts/fixTenantProductCurrency.js",
     "fix:sales-currency": "node src/scripts/fixTenantSalesCurrency.js",
@@ -36,12 +31,10 @@
     "nodemailer": "^6.9.16",
     "nodemon": "^3.1.14",
     "pdfkit": "^0.15.0",
+    "prisma": "^6.9.0",
     "socket.io": "^4.7.5",
     "speakeasy": "^2.0.0",
     "xlsx": "^0.18.5"
-  },
-  "devDependencies": {
-    "prisma": "^6.9.0"
   },
   "prisma": {
     "seed": "node prisma/seed.js"
