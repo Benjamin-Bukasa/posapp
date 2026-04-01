@@ -182,26 +182,9 @@ const createStockEntry = async (req, res) => {
   if (!sourceType || !storageZoneId) {
     return res.status(400).json({ message: "sourceType and storageZoneId required." });
   }
-  if (!Array.isArray(items) || !items.length) {
-    return res.status(400).json({ message: "items array required." });
-  }
 
   const normalizedOperationType = operationType === "OUT" ? "OUT" : "IN";
-  const normalizedItems = normalizeStockEntryItems(items, normalizedOperationType);
-  const hasNegativeItem = normalizedItems.some((item) => item.quantity < 0);
-  const hasPositiveItem = normalizedItems.some((item) => item.quantity > 0);
-
-  if (hasNegativeItem && hasPositiveItem) {
-    return res.status(400).json({
-      message: "All stock entry items must move in the same direction.",
-    });
-  }
-
-  if (sourceType !== "DIRECT" && hasNegativeItem) {
-    return res.status(400).json({
-      message: "Only direct operations can create stock outputs.",
-    });
-  }
+  let sourceItems = Array.isArray(items) ? items : [];
 
   let resolvedStoreId = storeId;
   let deliveryNotePayload = null;
@@ -244,6 +227,23 @@ const createStockEntry = async (req, res) => {
       });
     }
 
+    if (!sourceItems.length) {
+      sourceItems = purchaseOrder.items.map((item) => ({
+        productId: item.productId,
+        unitId: item.unitId,
+        quantity: item.quantity,
+        unitCost: item.unitPrice,
+      }));
+    }
+
+    if (!sourceItems.length) {
+      return res.status(400).json({
+        message: "No items available to receive from this purchase order.",
+      });
+    }
+
+    const normalizedItems = normalizeStockEntryItems(sourceItems, normalizedOperationType);
+
     if (hasQuantityMismatch(purchaseOrder.items, normalizedItems) && !note) {
       return res.status(400).json({
         message:
@@ -275,6 +275,26 @@ const createStockEntry = async (req, res) => {
     };
   }
 
+  if (!sourceItems.length) {
+    return res.status(400).json({ message: "items array required." });
+  }
+
+  const normalizedItems = normalizeStockEntryItems(sourceItems, normalizedOperationType);
+  const hasNegativeItem = normalizedItems.some((item) => item.quantity < 0);
+  const hasPositiveItem = normalizedItems.some((item) => item.quantity > 0);
+
+  if (hasNegativeItem && hasPositiveItem) {
+    return res.status(400).json({
+      message: "All stock entry items must move in the same direction.",
+    });
+  }
+
+  if (sourceType !== "DIRECT" && hasNegativeItem) {
+    return res.status(400).json({
+      message: "Only direct operations can create stock outputs.",
+    });
+  }
+
   await ensureInventoryLotTables();
   const approvalConfig = await getStockEntryApprovalConfig(
     req.user.tenantId,
@@ -293,7 +313,7 @@ const createStockEntry = async (req, res) => {
       note,
       createdById: req.user.id,
       status,
-      items: Array.isArray(items)
+      items: Array.isArray(sourceItems)
         ? {
             create: normalizedItems.map((item) => ({
               tenantId: req.user.tenantId,
