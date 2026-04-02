@@ -577,7 +577,7 @@ const CounterList = () => {
                         {product.hasTechnicalSheet === false
                           ? "Fiche requise"
                           : isOut
-                            ? "Epuise"
+                            ? "Épuisé"
                             : "Ajouter"}
                       </button>
                     </div>

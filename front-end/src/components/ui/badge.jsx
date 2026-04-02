@@ -6,7 +6,7 @@ const STATUS_TO_VARIANT = {
   faible: "warning",
   "faible stock": "warning",
   "épuisé": "danger",
-  epuisé: "danger",
+  epuise: "danger",
   rupture: "danger",
   actif: "active",
   active: "active",
