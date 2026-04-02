@@ -4,15 +4,15 @@ const LoginRight = () => {
   const slides = useMemo(
     () => [
       {
-        src: "https://i.pinimg.com/1200x/70/47/f4/7047f492e9a9614c7b548c54c8de9258.jpg",
+        src: "https://i.pinimg.com/736x/75/02/57/7502570463ce3e029a8cbc973267def0.jpg",
         alt: "Accueil client",
       },
       {
-        src: "https://i.pinimg.com/736x/27/06/d3/2706d3b6cb6b084b2d565d32d16e9dbb.jpg",
+        src: "https://i.pinimg.com/1200x/cd/8d/68/cd8d68f4f6f129f41d3e29a1b4e5bfaf.jpg",
         alt: "Equipe en réunion",
       },
       {
-        src: "https://i.pinimg.com/1200x/5d/92/58/5d92589d8659cf3f6c3d67727584df78.jpg",
+        src: "https://i.pinimg.com/1200x/d8/04/de/d804ded93c281f19ace7c1b6531a2735.jpg",
         alt: "Professionnels en entreprise",
       },
     ],
@@ -51,7 +51,7 @@ const LoginRight = () => {
 
       <div className="absolute bottom-8 left-8 right-8 flex items-center justify-between">
         <div className="max-w-xs rounded-2xl bg-surface/80 p-4 text-sm text-text-secondary shadow-lg">
-          Des équipes connectées, une Vendeur plus rapide.
+          Des équipes connectées, une Boutique plus rapide.
         </div>
         <div className="flex items-center gap-2">
           {slides.map((_, index) => (

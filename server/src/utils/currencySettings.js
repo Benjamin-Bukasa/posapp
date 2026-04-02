@@ -218,6 +218,7 @@ const loadTenantCurrencyState = async (prisma, tenantId) => {
   `;
 
   return {
+    tenantExists: Boolean(tenantRows[0]),
     tenant: tenantRows[0] || {},
     currencies: currencyRows.map(mapCurrencyRow),
     conversions: conversionRows.map(mapConversionRow),
@@ -226,6 +227,9 @@ const loadTenantCurrencyState = async (prisma, tenantId) => {
 
 const bootstrapTenantCurrencyCatalog = async (prisma, tenantId) => {
   const state = await loadTenantCurrencyState(prisma, tenantId);
+  if (!state.tenantExists) {
+    return;
+  }
   const currentCount = state.currencies.length;
 
   if (!currentCount) {
@@ -425,6 +429,10 @@ const syncTenantCurrencyColumns = async (prisma, tenantId) => {
   await bootstrapTenantCurrencyCatalog(prisma, tenantId);
   const state = await loadTenantCurrencyState(prisma, tenantId);
 
+  if (!state.tenantExists) {
+    return;
+  }
+
   let currentCurrency =
     state.currencies.find((currency) => currency.isCurrent && currency.isActive) ||
     state.currencies.find((currency) => currency.isCurrent) ||
@@ -622,6 +630,17 @@ const listTenantCurrencyConversions = async (
 const loadTenantCurrencySettings = async (prisma, tenantId) => {
   await syncTenantCurrencyColumns(prisma, tenantId);
   const state = await loadTenantCurrencyState(prisma, tenantId);
+
+  if (!state.tenantExists) {
+    return mapTenantCurrencySettings({
+      id: "currency-settings",
+      primaryCurrencyCode: DEFAULT_PRIMARY_CURRENCY,
+      secondaryCurrencyCode: null,
+      exchangeRate: null,
+      currencies: [],
+      conversions: [],
+    });
+  }
 
   return mapTenantCurrencySettings({
     ...state.tenant,
