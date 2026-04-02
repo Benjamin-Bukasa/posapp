@@ -14,6 +14,7 @@ const {
   attachDocumentCodes,
   assignGeneratedDocumentCode,
 } = require("../utils/documentCodeStore");
+const { expandArticleItems } = require("../utils/expandArticleItems");
 
 const includesSearch = (value, search) =>
   String(value || "")
@@ -116,6 +117,18 @@ const createPurchaseRequest = async (req, res) => {
     });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Impossible de preparer les lignes de demande d'achat.",
+    });
+  }
+
   let purchaseRequest = await prisma.purchaseRequest.create({
     data: {
       tenantId: req.user.tenantId,
@@ -125,7 +138,7 @@ const createPurchaseRequest = async (req, res) => {
       requestedById: req.user.id,
       status: "DRAFT",
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,
@@ -532,6 +545,18 @@ const updatePurchaseRequest = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Impossible de preparer les lignes de demande d'achat.",
+    });
+  }
+
   await prisma.purchaseRequestItem.deleteMany({
     where: { purchaseRequestId: id },
   });
@@ -543,7 +568,7 @@ const updatePurchaseRequest = async (req, res) => {
       storeId,
       note,
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,
