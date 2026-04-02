@@ -259,6 +259,7 @@ const AdminCreatePage = () => {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const watchEffectSignaturesRef = useRef({});
+  const fieldEffectRunsRef = useRef({});
   const requiredPermissions = isEditing
     ? formConfig?.editPermissions ||
       formConfig?.requiredPermissions ||
@@ -272,6 +273,7 @@ const AdminCreatePage = () => {
     setError("");
     setSuccess("");
     watchEffectSignaturesRef.current = {};
+    fieldEffectRunsRef.current = {};
   }, [formConfig]);
 
   useEffect(() => {
@@ -550,10 +552,65 @@ const AdminCreatePage = () => {
   }
 
   const setFieldValue = (name, nextValue) => {
-    setValues((current) => ({
-      ...current,
+    const nextValues = {
+      ...values,
       [name]: nextValue,
-    }));
+    };
+
+    setValues(nextValues);
+
+    const fieldEffects = (formConfig?.fieldEffects || []).filter(
+      (effect) => effect.field === name,
+    );
+
+    if (!fieldEffects.length || !accessToken || !canAccessPage) {
+      return;
+    }
+
+    fieldEffects.forEach((effect) => {
+      const effectId = effect.id || `${name}-change`;
+      const runKey = JSON.stringify(
+        (effect.fields || [name]).map((fieldName) => nextValues[fieldName]),
+      );
+      fieldEffectRunsRef.current[effectId] = runKey;
+
+      Promise.resolve(
+        effect.run({
+          values: nextValues,
+          isEditing,
+          token: accessToken,
+          requestJson,
+        }),
+      )
+        .then((patch) => {
+          if (
+            !patch ||
+            typeof patch !== "object" ||
+            fieldEffectRunsRef.current[effectId] !== runKey
+          ) {
+            return;
+          }
+
+          setValues((current) => ({
+            ...current,
+            ...patch,
+          }));
+        })
+        .catch(async (requestError) => {
+          if (requestError instanceof ApiError && requestError.status === 401) {
+            await logout();
+            navigate("/login", { replace: true });
+            return;
+          }
+
+          setError(requestError.message || "Impossible de precharger ce formulaire.");
+          showToast({
+            title: "Erreur",
+            message: requestError.message || "Impossible de precharger ce formulaire.",
+            variant: "danger",
+          });
+        });
+    });
   };
 
   const setFieldUploading = (name, nextValue) => {

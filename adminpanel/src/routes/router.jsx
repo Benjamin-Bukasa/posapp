@@ -2357,6 +2357,89 @@ const stockEntryForm = {
       ]),
     },
   ],
+  fieldEffects: [
+    {
+      id: "stock-entry-source-type-change",
+      field: "sourceType",
+      fields: ["sourceType"],
+      run: async ({ values, isEditing }) => {
+        if (isEditing || values.sourceType === "PURCHASE_ORDER") {
+          return null;
+        }
+
+        return {
+          sourceId: "",
+          storeId: "",
+          storageZoneId: "",
+          items: [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+        };
+      },
+    },
+    {
+      id: "stock-entry-source-id-change",
+      field: "sourceId",
+      fields: ["sourceType", "sourceId"],
+      run: async ({ values, isEditing, token, requestJson }) => {
+        if (isEditing || values.sourceType !== "PURCHASE_ORDER") {
+          return null;
+        }
+
+        if (!values.sourceId) {
+          return {
+            storeId: "",
+            storageZoneId: "",
+            items: [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+          };
+        }
+
+        const order = await requestJson(`/api/purchase-orders/${values.sourceId}`, {
+          token,
+        });
+        const resolvedStoreId = order?.storeId || order?.store?.id || "";
+        const items = Array.isArray(order?.items)
+          ? order.items
+              .map((item) => {
+                const quantity = Number(item.quantity || 0);
+                return {
+                  productId: item.productId || item.product?.id || "",
+                  unitId: item.unitId || item.unit?.id || "",
+                  quantity: Number.isFinite(quantity) && quantity > 0 ? String(quantity) : "",
+                  unitCost:
+                    item.unitPrice !== undefined && item.unitPrice !== null
+                      ? String(item.unitPrice)
+                      : "",
+                  batchNumber: "",
+                  expiryDate: "",
+                  manufacturedAt: "",
+                };
+              })
+              .filter((item) => item.productId)
+          : [];
+        let storageZoneId = "";
+
+        if (resolvedStoreId) {
+          try {
+            const warehouseZonesPayload = await requestJson("/api/storage-zones", {
+              token,
+              query: { storeId: resolvedStoreId, zoneType: "WAREHOUSE" },
+            });
+            storageZoneId = pickRows(warehouseZonesPayload)[0]?.id || "";
+          } catch {
+            storageZoneId = "";
+          }
+        }
+
+        return {
+          storeId: resolvedStoreId,
+          storageZoneId,
+          note: order?.note || values.note || "",
+          items: items.length
+            ? items
+            : [repeaterRow(stockEntryForm.repeaters[0].fields, 0)],
+        };
+      },
+    },
+  ],
   watchEffects: [
     {
       id: "stock-entry-purchase-order-prefill",
@@ -2521,6 +2604,81 @@ const stockOutputForm = {
       addLabel: "Ajouter une ligne",
       minRows: 1,
       fields: inventoryLineFields(),
+    },
+  ],
+  fieldEffects: [
+    {
+      id: "stock-output-mode-change",
+      field: "mode",
+      fields: ["mode"],
+      run: async ({ values, isEditing }) => {
+        if (isEditing || values.mode === "REQUISITION") {
+          return null;
+        }
+
+        return {
+          supplyRequestId: "",
+          fromZoneId: "",
+          toZoneId: "",
+          storageZoneId: "",
+          items: [repeaterRow(inventoryLineFields(), 0)],
+        };
+      },
+    },
+    {
+      id: "stock-output-requisition-change",
+      field: "supplyRequestId",
+      fields: ["mode", "supplyRequestId"],
+      run: async ({ values, isEditing, token, requestJson }) => {
+        if (isEditing || values.mode !== "REQUISITION") {
+          return null;
+        }
+
+        if (!values.supplyRequestId) {
+          return {
+            fromZoneId: "",
+            toZoneId: "",
+            storageZoneId: "",
+            items: [repeaterRow(inventoryLineFields(), 0)],
+          };
+        }
+
+        const request = await requestJson(`/api/supply-requests/${values.supplyRequestId}`, {
+          token,
+        });
+        const items = Array.isArray(request?.items)
+          ? request.items
+              .map((item) => {
+                const quantity = Number(item.quantity || 0);
+                return {
+                  productId: item.productId || item.product?.id || "",
+                  quantity: Number.isFinite(quantity) && quantity > 0 ? String(quantity) : "",
+                  note: item.note || "",
+                };
+              })
+              .filter((item) => item.productId)
+          : [];
+        const targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
+        let fromZoneId = "";
+
+        try {
+          const warehouseZonesPayload = await requestJson("/api/storage-zones", {
+            token,
+            query: { zoneType: "WAREHOUSE" },
+          });
+          fromZoneId = pickRows(warehouseZonesPayload)[0]?.id || "";
+        } catch {
+          fromZoneId = "";
+        }
+
+        return {
+          fromZoneId,
+          toZoneId: targetZoneId,
+          storageZoneId: targetZoneId,
+          note: request?.note || values.note || "",
+          items: items.length ? items : [repeaterRow(inventoryLineFields(), 0)],
+        };
+      },
     },
   ],
   watchEffects: [
