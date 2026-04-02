@@ -669,7 +669,22 @@ const createTransferFromSupplyRequest = async (req, res) => {
   const targetZoneId = toZoneId || request.storageZoneId;
   const targetStoreId = request.storeId;
 
-  if (!targetZoneId || !targetStoreId) {
+  let resolvedTargetZoneId = targetZoneId;
+
+  if (!resolvedTargetZoneId && targetStoreId) {
+    const targetZones = await prisma.storageZone.findMany({
+      where: { tenantId: req.user.tenantId, storeId: targetStoreId },
+      orderBy: { createdAt: "asc" },
+    });
+
+    resolvedTargetZoneId =
+      targetZones.find((zone) => zone.zoneType === "STORE")?.id ||
+      targetZones.find((zone) => zone.zoneType === "COUNTER")?.id ||
+      targetZones[0]?.id ||
+      null;
+  }
+
+  if (!resolvedTargetZoneId || !targetStoreId) {
     return res.status(400).json({ message: "Target store/zone required." });
   }
 
@@ -693,7 +708,7 @@ const createTransferFromSupplyRequest = async (req, res) => {
       fromStoreId: warehouseZone.storeId,
       toStoreId: targetStoreId,
       fromZoneId: warehouseZone.id,
-      toZoneId: targetZoneId,
+      toZoneId: resolvedTargetZoneId,
       requestedById: request.requestedById,
       status: "DRAFT",
       note: note || `Transfert depuis réquisition ${request.title}`,

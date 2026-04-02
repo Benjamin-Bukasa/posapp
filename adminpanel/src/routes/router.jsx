@@ -100,6 +100,11 @@ const pickRows = (payload) => {
   if (Array.isArray(payload?.data)) return payload.data;
   return [];
 };
+const pickPreferredTargetZone = (zones = []) =>
+  zones.find((zone) => zone?.zoneType === "STORE") ||
+  zones.find((zone) => zone?.zoneType === "COUNTER") ||
+  zones[0] ||
+  null;
 const statusLabels = {
   DRAFT: "Non valide",
   SUBMITTED: "En cours",
@@ -2658,8 +2663,20 @@ const stockOutputForm = {
               })
               .filter((item) => item.productId)
           : [];
-        const targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
+        let targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
         let fromZoneId = "";
+
+        if (!targetZoneId && request?.storeId) {
+          try {
+            const targetZonesPayload = await requestJson("/api/storage-zones", {
+              token,
+              query: { storeId: request.storeId },
+            });
+            targetZoneId = pickPreferredTargetZone(pickRows(targetZonesPayload))?.id || "";
+          } catch {
+            targetZoneId = "";
+          }
+        }
 
         try {
           const warehouseZonesPayload = await requestJson("/api/storage-zones", {
@@ -2723,8 +2740,20 @@ const stockOutputForm = {
               })
               .filter((item) => item.productId)
           : [];
-        const targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
+        let targetZoneId = request?.storageZoneId || request?.storageZone?.id || "";
         let fromZoneId = "";
+
+        if (!targetZoneId && request?.storeId) {
+          try {
+            const targetZonesPayload = await requestJson("/api/storage-zones", {
+              token,
+              query: { storeId: request.storeId },
+            });
+            targetZoneId = pickPreferredTargetZone(pickRows(targetZonesPayload))?.id || "";
+          } catch {
+            targetZoneId = "";
+          }
+        }
 
         try {
           const warehouseZonesPayload = await requestJson("/api/storage-zones", {
