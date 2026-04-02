@@ -29,6 +29,17 @@ const { expandArticleItems } = require("../utils/expandArticleItems");
 const TRANSFER_DOCUMENT_TYPE = "TRANSFER";
 const TRANSFER_FLOW_CODE = "TRANSFER";
 
+const queueTransferExpiryNotifications = (tenantId) => {
+  Promise.resolve()
+    .then(() => emitLotExpiryNotifications(tenantId))
+    .catch((error) => {
+      console.error("[TRANSFER_EXPIRY_NOTIFICATION_ERROR]", {
+        tenantId,
+        message: error?.message || "Lot expiry notification failed.",
+      });
+    });
+};
+
 const mapTransferStatus = (rawStatus, approvals = []) => {
   if (!approvals.length) return rawStatus;
   if (approvals.some((item) => item.status === "REJECTED")) return "REJECTED";
@@ -633,7 +644,7 @@ const executeTransferCompletion = async (transfer, userId) => {
     });
   }
 
-  await emitLotExpiryNotifications(transfer.tenantId);
+  queueTransferExpiryNotifications(transfer.tenantId);
   return updated;
 };
 

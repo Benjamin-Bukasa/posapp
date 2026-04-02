@@ -615,7 +615,9 @@ const AdminDetailPage = () => {
       if (key === "approve" || key === "reject") {
         setDecisionNote("");
       }
-      await loadRecord();
+      setPendingAction("");
+      loadRecord();
+      return;
     } catch (requestError) {
       if (requestError instanceof ApiError && requestError.status === 401) {
         await logout();
@@ -629,7 +631,6 @@ const AdminDetailPage = () => {
         message: requestError.message || "Impossible d'executer cette action.",
         variant: "danger",
       });
-    } finally {
       setPendingAction("");
     }
   };

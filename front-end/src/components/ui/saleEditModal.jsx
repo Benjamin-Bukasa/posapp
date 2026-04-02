@@ -224,7 +224,7 @@ const SaleEditModal = ({
       confirmLabel={submitting ? "Enregistrement..." : "Enregistrer"}
       cancelLabel="Annuler"
       onCancel={onClose}
-      dialogClassName="max-w-5xl"
+      dialogClassName="max-w-7xl xl:max-w-[92rem]"
       contentClassName="overflow-x-hidden"
       onConfirm={() =>
         canSubmit &&
