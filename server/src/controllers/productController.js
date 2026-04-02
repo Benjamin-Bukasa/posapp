@@ -1825,7 +1825,7 @@ const downloadProductTemplate = async (req, res) => {
       : {
           Article: "Paracetamol 500mg",
           "Code article": "ART0001",
-          Collection: "Pharmacie generale",
+          Collection: "Vendeur generale",
           Categorie: "Medicaments",
           Famille: "Antalgiques",
           "Sous famille": "Antalgiques legers",

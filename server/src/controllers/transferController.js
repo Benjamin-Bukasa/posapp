@@ -24,6 +24,7 @@ const {
   prepareDocumentApprovals,
   decideDocumentApproval,
 } = require("../utils/documentApprovalStore");
+const { expandArticleItems } = require("../utils/expandArticleItems");
 
 const TRANSFER_DOCUMENT_TYPE = "TRANSFER";
 const TRANSFER_FLOW_CODE = "TRANSFER";
@@ -222,10 +223,22 @@ const createTransfer = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Transfert invalide.",
+    });
+  }
+
   try {
     await buildTransferExecutionPlan({
       tenantId: req.user.tenantId,
-      items,
+      items: expandedItems,
     });
   } catch (error) {
     return res.status(error.status || 500).json({
@@ -244,7 +257,7 @@ const createTransfer = async (req, res) => {
       note,
       status: "DRAFT",
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,
@@ -438,10 +451,22 @@ const updateTransfer = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Transfert invalide.",
+    });
+  }
+
   try {
     await buildTransferExecutionPlan({
       tenantId: req.user.tenantId,
-      items,
+      items: expandedItems,
     });
   } catch (error) {
     return res.status(error.status || 500).json({
@@ -462,7 +487,7 @@ const updateTransfer = async (req, res) => {
       toZoneId,
       note,
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,

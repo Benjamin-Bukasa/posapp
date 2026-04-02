@@ -51,7 +51,7 @@ const LoginRight = () => {
 
       <div className="absolute bottom-8 left-8 right-8 flex items-center justify-between">
         <div className="max-w-xs rounded-2xl bg-surface/80 p-4 text-sm text-text-secondary shadow-lg">
-          Des équipes connectées, une pharmacie plus rapide.
+          Des équipes connectées, une Vendeur plus rapide.
         </div>
         <div className="flex items-center gap-2">
           {slides.map((_, index) => (

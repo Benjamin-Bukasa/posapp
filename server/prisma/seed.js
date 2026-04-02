@@ -8,7 +8,7 @@ const permissions = [
   { code: "MANAGE_PRODUCTS", label: "Produits", description: "CRUD produits." },
   { code: "MANAGE_CUSTOMERS", label: "Clients", description: "CRUD clients." },
   { code: "MANAGE_ORDERS", label: "Commandes", description: "CRUD commandes." },
-  { code: "MANAGE_STORES", label: "Pharmacies", description: "CRUD pharmacies." },
+  { code: "MANAGE_STORES", label: "Vendeurs", description: "CRUD Vendeurs." },
   { code: "VIEW_REPORTS", label: "Rapports", description: "Acces rapports." },
 ];
 
@@ -90,9 +90,9 @@ const run = async () => {
     tenantId,
     "Medicaments"
   );
-  const categoryParapharmacie = await findOrCreateCategory(
+  const categoryParaVendeur = await findOrCreateCategory(
     tenantId,
-    "Parapharmacie"
+    "ParaVendeur"
   );
   const familyGeneriques = await findOrCreateFamily(tenantId, "Generiques");
 
@@ -168,14 +168,14 @@ const run = async () => {
       name: "Gel Hydroalcoolique 250ml",
       description: "Hygiene des mains",
       unitPrice: 4.5,
-      categoryId: categoryParapharmacie.id,
+      categoryId: categoryParaVendeur.id,
     },
     {
       sku: "PARA-002",
       name: "Vitamine C 1000mg",
       description: "Complement alimentaire",
       unitPrice: 5.0,
-      categoryId: categoryParapharmacie.id,
+      categoryId: categoryParaVendeur.id,
     },
   ];
 

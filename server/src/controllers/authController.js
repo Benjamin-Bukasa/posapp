@@ -31,7 +31,7 @@ const register = async (req, res) => {
 
   if (!tenantName || !plan || (!email && !phone)) {
     return res.status(400).json({
-      message: "le nom de la pharmacie, le plan, email et phone sont obligatoire.",
+      message: "le nom de la Vendeur, le plan, email et phone sont obligatoire.",
     });
   }
 
@@ -84,7 +84,7 @@ const register = async (req, res) => {
     data: { ownerId: user.id },
   });
 
-  const message = `Votre compte pour la pharmacie ${tenantName} est créé. Identifiant: ${
+  const message = `Votre compte pour la Vendeur ${tenantName} est créé. Identifiant: ${
     email || phone
   }. Mot de passe temporaire: ${tempPassword}. Veuillez le changer à la première connexion.`;
 
