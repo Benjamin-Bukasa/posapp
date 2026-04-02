@@ -24,8 +24,106 @@ const {
   upsertUserPreferences,
 } = require("../utils/userPreferenceStore");
 
+const queueAccountCreationNotification = ({
+  email,
+  phone,
+  sendVia,
+  tenantName,
+  tempPassword,
+}) => {
+  const identifier = email || phone;
+  const { subject, text, html } = buildAccountCreationEmail({
+    tenantName: tenantName || "POSapp",
+    identifier,
+    tempPassword,
+  });
+
+  Promise.resolve()
+    .then(async () => {
+      if (sendVia === "sms" && phone) {
+        await sendSms({ to: phone, message: text });
+        return;
+      }
+
+      if (email) {
+        await sendEmail({
+          to: email,
+          subject,
+          text,
+          html,
+        });
+      }
+    })
+    .catch((error) => {
+      console.error("[USER_CREATE_NOTIFICATION_ERROR]", {
+        identifier,
+        message: error?.message || "Notification failed.",
+      });
+    });
+};
+
+const resolveUserScope = async ({
+  tenantId,
+  storeId,
+  defaultStorageZoneId,
+}) => {
+  let resolvedStoreId = storeId || null;
+  let resolvedDefaultStorageZoneId = defaultStorageZoneId || null;
+
+  let store = null;
+  if (resolvedStoreId) {
+    store = await prisma.store.findFirst({
+      where: {
+        id: resolvedStoreId,
+        tenantId,
+      },
+      select: { id: true },
+    });
+
+    if (!store) {
+      throw Object.assign(new Error("Boutique invalide."), { status: 400 });
+    }
+  }
+
+  if (resolvedDefaultStorageZoneId) {
+    const zone = await prisma.storageZone.findFirst({
+      where: {
+        id: resolvedDefaultStorageZoneId,
+        tenantId,
+      },
+      select: {
+        id: true,
+        storeId: true,
+      },
+    });
+
+    if (!zone) {
+      throw Object.assign(new Error("Zone par defaut invalide."), { status: 400 });
+    }
+
+    if (resolvedStoreId && zone.storeId && zone.storeId !== resolvedStoreId) {
+      throw Object.assign(
+        new Error("La zone par defaut doit appartenir a la boutique selectionnee."),
+        { status: 400 },
+      );
+    }
+
+    if (!resolvedStoreId && zone.storeId) {
+      resolvedStoreId = zone.storeId;
+    }
+
+    resolvedDefaultStorageZoneId = zone.id;
+  }
+
+  return {
+    storeId: resolvedStoreId,
+    defaultStorageZoneId: resolvedDefaultStorageZoneId,
+  };
+};
+
 const createUserRecord = async ({
   tenantId,
+  tenantName,
   email,
   phone,
   firstName,
@@ -74,6 +172,11 @@ const createUserRecord = async ({
 
   const tempPassword = generateTempPassword();
   const passwordHash = await hashPassword(tempPassword);
+  const userScope = await resolveUserScope({
+    tenantId,
+    storeId,
+    defaultStorageZoneId,
+  });
 
   const user = await prisma.user.create({
     data: {
@@ -83,8 +186,8 @@ const createUserRecord = async ({
       firstName,
       lastName,
       role: role || "USER",
-      storeId,
-      defaultStorageZoneId,
+      storeId: userScope.storeId,
+      defaultStorageZoneId: userScope.defaultStorageZoneId,
       passwordHash,
       mustChangePassword: true,
     },
@@ -111,23 +214,13 @@ const createUserRecord = async ({
     });
   }
 
-  const identifier = email || phone;
-  const { subject, text, html } = buildAccountCreationEmail({
-    tenantName: "POSapp",
-    identifier,
+  queueAccountCreationNotification({
+    email,
+    phone,
+    sendVia,
+    tenantName,
     tempPassword,
   });
-
-  if (sendVia === "sms" && phone) {
-    await sendSms({ to: phone, message: text });
-  } else if (email) {
-    await sendEmail({
-      to: email,
-      subject,
-      text,
-      html,
-    });
-  }
 
   return user;
 };
@@ -150,6 +243,7 @@ const createUser = async (req, res) => {
   try {
     user = await createUserRecord({
       tenantId: req.user.tenantId,
+      tenantName: req.user.tenantName,
       email,
       phone,
       firstName,
@@ -247,6 +341,7 @@ const importUsers = async (req, res) => {
       try {
         await createUserRecord({
           tenantId: req.user.tenantId,
+          tenantName: req.user.tenantName,
           email,
           phone,
           firstName,
@@ -479,6 +574,17 @@ const updateUser = async (req, res) => {
     return res.status(404).json({ message: "User not found." });
   }
 
+  let userScope;
+  try {
+    userScope = await resolveUserScope({
+      tenantId: req.user.tenantId,
+      storeId,
+      defaultStorageZoneId,
+    });
+  } catch (error) {
+    return res.status(error?.status || 500).json({ message: error.message });
+  }
+
   const updated = await prisma.user.update({
     where: { id },
     data: {
@@ -487,8 +593,8 @@ const updateUser = async (req, res) => {
       email,
       phone,
       role,
-      storeId,
-      defaultStorageZoneId,
+      storeId: userScope.storeId,
+      defaultStorageZoneId: userScope.defaultStorageZoneId,
       isActive,
     },
   });

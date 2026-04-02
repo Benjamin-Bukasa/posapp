@@ -775,6 +775,10 @@ const AdminCreatePage = () => {
               "Modification enregistree."
           : formConfig.successMessage || "Creation enregistree.",
       );
+      if (!isEditing) {
+        setValues(buildInitialValues(formConfig));
+        setError("");
+      }
       showToast({
         title: isEditing ? "Modification enregistree" : "Creation enregistree",
         message:

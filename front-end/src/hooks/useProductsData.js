@@ -18,7 +18,7 @@ const buildInventoryMap = (inventory = []) => {
 };
 
 const resolveStockLabel = (quantity, minLevel) => {
-  if (quantity <= 0) return "Epuis�";
+  if (quantity <= 0) return "Épuisé";
   if (minLevel && quantity <= minLevel) return "Faible";
   return "En stock";
 };

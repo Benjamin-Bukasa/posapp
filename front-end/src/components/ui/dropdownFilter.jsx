@@ -6,7 +6,7 @@ const defaultStocks = [
   { id: "all", label: "Tous" },
   { id: "en stock", label: "En stock" },
   { id: "faible", label: "Faible" },
-  { id: "epuise", label: "Epuise" },
+  { id: "epuise", label: "Épuisé" },
 ];
 
 const defaultCategories = [{ id: "all", label: "Toutes" }];
