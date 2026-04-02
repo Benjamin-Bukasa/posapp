@@ -667,7 +667,7 @@ const createTransferFromSupplyRequest = async (req, res) => {
   }
 
   const targetZoneId = toZoneId || request.storageZoneId;
-  const targetStoreId = request.storeId;
+  let targetStoreId = request.storeId;
 
   let resolvedTargetZoneId = targetZoneId;
 
@@ -682,6 +682,21 @@ const createTransferFromSupplyRequest = async (req, res) => {
       targetZones.find((zone) => zone.zoneType === "COUNTER")?.id ||
       targetZones[0]?.id ||
       null;
+  }
+
+  if (resolvedTargetZoneId && !targetStoreId) {
+    const targetZone = await prisma.storageZone.findFirst({
+      where: {
+        id: resolvedTargetZoneId,
+        tenantId: req.user.tenantId,
+      },
+      select: {
+        id: true,
+        storeId: true,
+      },
+    });
+
+    targetStoreId = targetZone?.storeId || null;
   }
 
   if (!resolvedTargetZoneId || !targetStoreId) {
