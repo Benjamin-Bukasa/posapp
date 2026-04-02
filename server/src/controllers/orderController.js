@@ -128,6 +128,7 @@ const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZone
         id: defaultStorageZoneId,
         tenantId,
         storeId,
+        zoneType: "STORE",
       },
     });
 
@@ -136,36 +137,11 @@ const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZone
     }
   }
 
-  const counterZone = await prisma.storageZone.findFirst({
-    where: {
-      tenantId,
-      storeId,
-      zoneType: "COUNTER",
-    },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (counterZone) {
-    return counterZone;
-  }
-
-  const storeZone = await prisma.storageZone.findFirst({
-    where: {
-      tenantId,
-      storeId,
-      zoneType: "STORE",
-    },
-    orderBy: { createdAt: "asc" },
-  });
-
-  if (storeZone) {
-    return storeZone;
-  }
-
   return prisma.storageZone.findFirst({
     where: {
       tenantId,
       storeId,
+      zoneType: "STORE",
     },
     orderBy: { createdAt: "asc" },
   });
@@ -1165,9 +1141,42 @@ const createOrder = async (req, res) => {
         defaultStorageZoneId: cashier.defaultStorageZoneId,
       });
 
-  if (!storageZone) {
+  let resolvedStorageZone = storageZone;
+
+  if (resolvedStorageZone?.zoneType !== "STORE") {
+    const boutiqueZone = await resolveCashierStorageZone({
+      tenantId: req.user.tenantId,
+      storeId: cashier.storeId,
+      defaultStorageZoneId: cashier.defaultStorageZoneId,
+    });
+
+    if (!boutiqueZone) {
+      return res.status(400).json({
+        message: "No boutique stock zone (STORE) is configured for this cashier.",
+      });
+    }
+
+    if (Number(cashSession.orderCount || 0) > 0) {
+      return res.status(400).json({
+        message:
+          "La caisse ouverte n'utilise pas le stock boutique. Fermez puis rouvrez la caisse avant de vendre.",
+      });
+    }
+
+    await prisma.$executeRawUnsafe(`
+      UPDATE "cashSessions"
+      SET
+        "storageZoneId" = ${JSON.stringify(boutiqueZone.id)},
+        "updatedAt" = NOW()
+      WHERE "id" = ${JSON.stringify(cashSession.id)}
+    `);
+
+    resolvedStorageZone = boutiqueZone;
+  }
+
+  if (!resolvedStorageZone) {
     return res.status(400).json({
-      message: "No stock zone is configured for this cashier.",
+      message: "No boutique stock zone (STORE) is configured for this cashier.",
     });
   }
 
@@ -1362,7 +1371,7 @@ const createOrder = async (req, res) => {
   const inventoryRows = await prisma.inventory.findMany({
     where: {
       tenantId: req.user.tenantId,
-      storageZoneId: storageZone.id,
+      storageZoneId: resolvedStorageZone.id,
       productId: { in: [...inventoryRequirements.keys()] },
     },
     select: {
@@ -1459,7 +1468,7 @@ const createOrder = async (req, res) => {
       await consumeInventoryLotsFefo(tx, {
         tenantId: req.user.tenantId,
         storeId: cashier.storeId,
-        storageZoneId: storageZone.id,
+        storageZoneId: resolvedStorageZone.id,
         productId,
         quantity: requiredQuantity,
       });
@@ -1468,7 +1477,7 @@ const createOrder = async (req, res) => {
         data: {
           tenantId: req.user.tenantId,
           productId,
-          storageZoneId: storageZone.id,
+          storageZoneId: resolvedStorageZone.id,
           quantity: requiredQuantity,
           movementType: "OUT",
           sourceType: "DIRECT",

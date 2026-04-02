@@ -26,39 +26,22 @@ const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZone
         id: defaultStorageZoneId,
         tenantId,
         storeId,
+        zoneType: "STORE",
       },
-      select: { id: true, name: true },
+      select: { id: true, name: true, zoneType: true },
     });
 
     if (zone) return zone;
   }
 
-  const counterZone = await prisma.storageZone.findFirst({
-    where: {
-      tenantId,
-      storeId,
-      zoneType: "COUNTER",
-    },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true },
-  });
-  if (counterZone) return counterZone;
-
-  const storeZone = await prisma.storageZone.findFirst({
+  return prisma.storageZone.findFirst({
     where: {
       tenantId,
       storeId,
       zoneType: "STORE",
     },
     orderBy: { createdAt: "asc" },
-    select: { id: true, name: true },
-  });
-  if (storeZone) return storeZone;
-
-  return prisma.storageZone.findFirst({
-    where: { tenantId, storeId },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, zoneType: true },
   });
 };
 
@@ -75,8 +58,44 @@ const getCurrent = async (req, res) => {
     return res.status(404).json({ message: "Aucune caisse ouverte." });
   }
 
+  const sessionZone = session.storageZoneId
+    ? await prisma.storageZone.findFirst({
+        where: {
+          id: session.storageZoneId,
+          tenantId: req.user.tenantId,
+          storeId: session.storeId,
+        },
+        select: { id: true, name: true, zoneType: true },
+      })
+    : null;
+
+  let currentSession = session;
+  if (sessionZone?.zoneType !== "STORE") {
+    const boutiqueZone = await resolveCashierStorageZone({
+      tenantId: req.user.tenantId,
+      storeId: session.storeId,
+      defaultStorageZoneId: req.user.defaultStorageZoneId,
+    });
+
+    if (boutiqueZone && Number(session.orderCount || 0) === 0) {
+      await prisma.$executeRawUnsafe(`
+        UPDATE "cashSessions"
+        SET
+          "storageZoneId" = ${JSON.stringify(boutiqueZone.id)},
+          "updatedAt" = NOW()
+        WHERE "id" = ${JSON.stringify(session.id)}
+      `);
+
+      currentSession = {
+        ...session,
+        storageZoneId: boutiqueZone.id,
+        storageZoneName: boutiqueZone.name || "",
+      };
+    }
+  }
+
   return res.json({
-    ...session,
+    ...currentSession,
     currencyCode: currencySettings.primaryCurrencyCode,
   });
 };
@@ -140,7 +159,7 @@ const open = async (req, res) => {
 
   if (!storageZone) {
     return res.status(400).json({
-      message: "Aucune zone de caisse n'est configuree pour cette boutique.",
+      message: "Aucune zone de stock boutique (STORE) n'est configuree pour cette boutique.",
     });
   }
 

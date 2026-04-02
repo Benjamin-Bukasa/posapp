@@ -57,8 +57,7 @@ const CounterList = () => {
     loading: productsLoading,
     refresh: refreshProducts,
   } = useProductsData({
-    storeId: user?.storeId,
-    storageZoneId: user?.defaultStorageZoneId,
+    storageZoneId: cashSession?.storageZoneId || "__cash_session_required__",
   });
 
   const productList = useMemo(() => products, [products]);
