@@ -121,7 +121,7 @@ const downloadCollectionsTemplate = async (_req, res) =>
   sendWorkbook(res, "template-collections", [
     {
       name: "Collections",
-      rows: [{ name: "Pharmacie" }],
+      rows: [{ name: "Vendeur" }],
     },
   ]);
 

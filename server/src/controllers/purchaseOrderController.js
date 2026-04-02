@@ -5,6 +5,7 @@ const {
   getCurrencyCodeMap,
   setCurrencyCodes,
 } = require("../utils/moneyCurrency");
+const { ensureComponentItems } = require("../utils/expandArticleItems");
 const {
   parseListParams,
   buildOrderBy,
@@ -111,6 +112,19 @@ const createPurchaseOrder = async (req, res) => {
   if (!purchaseRequestId) {
     return res.status(400).json({
       message: "purchaseRequestId is required to create a purchase order.",
+    });
+  }
+
+  try {
+    await ensureComponentItems({
+      tenantId: req.user.tenantId,
+      items,
+      message:
+        "Les commandes fournisseur doivent etre saisies sur des produits composants.",
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Commande fournisseur invalide.",
     });
   }
 
@@ -617,6 +631,19 @@ const updatePurchaseOrder = async (req, res) => {
   }
   if (!Array.isArray(items) || !items.length) {
     return res.status(400).json({ message: "items array required." });
+  }
+
+  try {
+    await ensureComponentItems({
+      tenantId: req.user.tenantId,
+      items,
+      message:
+        "Les commandes fournisseur doivent etre saisies sur des produits composants.",
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Commande fournisseur invalide.",
+    });
   }
 
   const currencySettings = await loadTenantCurrencySettings(

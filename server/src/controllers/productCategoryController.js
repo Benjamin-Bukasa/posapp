@@ -274,7 +274,7 @@ const downloadCategoriesTemplate = async (_req, res) =>
   sendWorkbook(res, "template-categories", [
     {
       name: "Categories",
-      rows: [{ name: "Medicaments", collectionName: "Pharmacie" }],
+      rows: [{ name: "Medicaments", collectionName: "Vendeur" }],
     },
   ]);
 

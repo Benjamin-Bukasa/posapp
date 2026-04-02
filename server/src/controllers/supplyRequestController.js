@@ -13,6 +13,7 @@ const {
   attachDocumentCodes,
   assignGeneratedDocumentCode,
 } = require("../utils/documentCodeStore");
+const { expandArticleItems } = require("../utils/expandArticleItems");
 
 const includesSearch = (value, search) =>
   String(value || "")
@@ -118,6 +119,18 @@ const createSupplyRequest = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Impossible de preparer les lignes de requisition.",
+    });
+  }
+
   let supplyRequest = await prisma.supplyRequest.create({
     data: {
       tenantId: req.user.tenantId,
@@ -128,7 +141,7 @@ const createSupplyRequest = async (req, res) => {
       requestedById: req.user.id,
       status: "DRAFT",
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,
@@ -580,6 +593,18 @@ const updateSupplyRequest = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
+  let expandedItems;
+  try {
+    expandedItems = await expandArticleItems({
+      tenantId: req.user.tenantId,
+      items,
+    });
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Impossible de preparer les lignes de requisition.",
+    });
+  }
+
   await prisma.supplyRequestItem.deleteMany({
     where: { supplyRequestId: id },
   });
@@ -592,7 +617,7 @@ const updateSupplyRequest = async (req, res) => {
       storageZoneId,
       note,
       items: {
-        create: items.map((item) => ({
+        create: expandedItems.map((item) => ({
           tenantId: req.user.tenantId,
           productId: item.productId,
           unitId: item.unitId,

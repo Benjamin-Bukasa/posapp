@@ -331,7 +331,7 @@ function Reports() {
     (state) => state.settings.primaryCurrencyCode,
   );
   const storeId = user?.storeId || null;
-  const storeName = user?.storeName || "Toutes pharmacies";
+  const storeName = user?.storeName || "Toutes Vendeurs";
   const refreshTick = useRealtimeRefetch([
     "sale:created",
     "sale:updated",
@@ -520,7 +520,7 @@ function Reports() {
       {
         title: "Ventes du mois",
         value: formatDisplayAmount(monthSales),
-        subtitle: storeId ? `Boutique: ${storeName}` : "Toutes pharmacies",
+        subtitle: storeId ? `Boutique: ${storeName}` : "Toutes Vendeurs",
         icon: BarChart3,
       },
       {
@@ -774,7 +774,7 @@ function Reports() {
               Entrées / sorties de stock
             </p>
             <p className="text-xs text-text-secondary">
-              {storeId ? `Boutique: ${storeName}` : "Toutes pharmacies"}
+              {storeId ? `Boutique: ${storeName}` : "Toutes Vendeurs"}
             </p>
           </div>
           <div className="flex items-center gap-4 text-xs text-text-secondary">

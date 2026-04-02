@@ -1935,13 +1935,14 @@ const zoneLabel = (item) =>
     .filter(Boolean)
     .join(" ");
 
-const productLineFields = (extraFields = []) => [
+const productLineFields = (extraFields = [], options = {}) => [
   {
     name: "productId",
     label: "Produit",
     type: "search-select",
     required: true,
     optionsEndpoint: "/api/products",
+    ...(options.query ? { query: options.query } : {}),
     optionValue: "id",
     optionLabel: productLabel,
     placeholder: "Rechercher un produit...",
@@ -1967,13 +1968,14 @@ const productLineFields = (extraFields = []) => [
   ...extraFields,
 ];
 
-const inventoryLineFields = () => [
+const inventoryLineFields = (options = {}) => [
   {
     name: "productId",
     label: "Produit",
     type: "search-select",
     required: true,
     optionsEndpoint: "/api/products",
+    ...(options.query ? { query: options.query } : {}),
     optionValue: "id",
     optionLabel: productLabel,
     placeholder: "Rechercher un produit...",
@@ -1993,6 +1995,12 @@ const inventoryLineFields = () => [
     placeholder: "Optionnel",
   },
 ];
+
+const componentProductQuery = { kind: "COMPONENT" };
+const componentProductLineFields = (extraFields = []) =>
+  productLineFields(extraFields, { query: componentProductQuery });
+const componentInventoryLineFields = () =>
+  inventoryLineFields({ query: componentProductQuery });
 
 const buildDocumentItems = (items, extras) =>
   mapItems(items, (item) => {
@@ -2236,10 +2244,10 @@ const purchaseOrderForm = {
   repeaters: [
     {
       name: "items",
-      label: "Articles commandes",
-      addLabel: "Ajouter un article",
+      label: "Produits commandes",
+      addLabel: "Ajouter un produit",
       minRows: 1,
-      fields: productLineFields([
+      fields: componentProductLineFields([
         {
           name: "unitPrice",
           label: "Prix unitaire",
@@ -2332,10 +2340,10 @@ const stockEntryForm = {
   repeaters: [
     {
       name: "items",
-      label: "Articles recus",
-      addLabel: "Ajouter un article",
+      label: "Produits recus",
+      addLabel: "Ajouter un produit",
       minRows: 1,
-      fields: productLineFields([
+      fields: componentProductLineFields([
         {
           name: "unitCost",
           label: "Cout unitaire",
@@ -2608,7 +2616,7 @@ const stockOutputForm = {
       label: "Lignes de sortie",
       addLabel: "Ajouter une ligne",
       minRows: 1,
-      fields: inventoryLineFields(),
+      fields: componentInventoryLineFields(),
     },
   ],
   fieldEffects: [
@@ -2626,7 +2634,7 @@ const stockOutputForm = {
           fromZoneId: "",
           toZoneId: "",
           storageZoneId: "",
-          items: [repeaterRow(inventoryLineFields(), 0)],
+          items: [repeaterRow(componentInventoryLineFields(), 0)],
         };
       },
     },
@@ -2644,7 +2652,7 @@ const stockOutputForm = {
             fromZoneId: "",
             toZoneId: "",
             storageZoneId: "",
-            items: [repeaterRow(inventoryLineFields(), 0)],
+            items: [repeaterRow(componentInventoryLineFields(), 0)],
           };
         }
 
@@ -2693,7 +2701,7 @@ const stockOutputForm = {
           toZoneId: targetZoneId,
           storageZoneId: targetZoneId,
           note: request?.note || values.note || "",
-          items: items.length ? items : [repeaterRow(inventoryLineFields(), 0)],
+          items: items.length ? items : [repeaterRow(componentInventoryLineFields(), 0)],
         };
       },
     },
@@ -2712,7 +2720,7 @@ const stockOutputForm = {
             supplyRequestId: "",
             fromZoneId: "",
             toZoneId: "",
-            items: [repeaterRow(inventoryLineFields(), 0)],
+            items: [repeaterRow(componentInventoryLineFields(), 0)],
           };
         }
 
@@ -2721,7 +2729,7 @@ const stockOutputForm = {
             fromZoneId: "",
             toZoneId: "",
             storageZoneId: "",
-            items: [repeaterRow(inventoryLineFields(), 0)],
+            items: [repeaterRow(componentInventoryLineFields(), 0)],
           };
         }
 
@@ -2770,7 +2778,7 @@ const stockOutputForm = {
           toZoneId: targetZoneId,
           storageZoneId: targetZoneId,
           note: request?.note || values.note || "",
-          items: items.length ? items : [repeaterRow(inventoryLineFields(), 0)],
+          items: items.length ? items : [repeaterRow(componentInventoryLineFields(), 0)],
         };
       },
     },
@@ -2912,7 +2920,7 @@ const transferForm = {
       label: "Produits a transferer",
       addLabel: "Ajouter un produit",
       minRows: 1,
-      fields: productLineFields(),
+      fields: componentProductLineFields(),
     },
   ],
   buildRequest: (values) => ({
@@ -4013,7 +4021,7 @@ const rolePermissionForm = {
       label: "Nom",
       type: "text",
       required: true,
-      placeholder: "Ex. Pharmacien chef",
+      placeholder: "Ex. Vendeur chef",
     },
     {
       name: "role",

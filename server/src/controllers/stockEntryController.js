@@ -30,6 +30,10 @@ const {
   prepareDocumentApprovals,
   decideDocumentApproval,
 } = require("../utils/documentApprovalStore");
+const {
+  expandArticleItems,
+  ensureComponentItems,
+} = require("../utils/expandArticleItems");
 
 const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
@@ -185,6 +189,34 @@ const createStockEntry = async (req, res) => {
 
   const normalizedOperationType = operationType === "OUT" ? "OUT" : "IN";
   let sourceItems = Array.isArray(items) ? items : [];
+
+  if (sourceType === "DIRECT" && normalizedOperationType === "OUT" && sourceItems.length) {
+    try {
+      sourceItems = await expandArticleItems({
+        tenantId: req.user.tenantId,
+        items: sourceItems,
+      });
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        message: error.message || "Invalid stock output.",
+      });
+    }
+  }
+
+  if (normalizedOperationType === "IN" && sourceItems.length) {
+    try {
+      sourceItems = await ensureComponentItems({
+        tenantId: req.user.tenantId,
+        items: sourceItems,
+        message:
+          "Les entrees en stock doivent etre saisies sur des produits composants.",
+      });
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        message: error.message || "Invalid stock entry.",
+      });
+    }
+  }
 
   let resolvedStoreId = storeId;
   let deliveryNotePayload = null;
@@ -603,7 +635,39 @@ const updateStockEntry = async (req, res) => {
     return res.status(400).json({ message: "items array required." });
   }
 
-  const normalizedItems = normalizeStockEntryItems(items, operationType === "OUT" ? "OUT" : "IN");
+  let sourceItems = items;
+  if (operationType === "OUT") {
+    try {
+      sourceItems = await expandArticleItems({
+        tenantId: req.user.tenantId,
+        items,
+      });
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        message: error.message || "Invalid stock entry.",
+      });
+    }
+  }
+
+  if (operationType !== "OUT") {
+    try {
+      sourceItems = await ensureComponentItems({
+        tenantId: req.user.tenantId,
+        items: sourceItems,
+        message:
+          "Les entrees en stock doivent etre saisies sur des produits composants.",
+      });
+    } catch (error) {
+      return res.status(error.status || 500).json({
+        message: error.message || "Invalid stock entry.",
+      });
+    }
+  }
+
+  const normalizedItems = normalizeStockEntryItems(
+    sourceItems,
+    operationType === "OUT" ? "OUT" : "IN",
+  );
   await ensureInventoryLotTables();
   const currencySettings = await loadTenantCurrencySettings(
     prisma,

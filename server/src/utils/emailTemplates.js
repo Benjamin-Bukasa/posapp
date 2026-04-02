@@ -18,7 +18,7 @@ const buildAccountCreationEmail = ({
 
   const text = `Bonjour,
 
-Votre compte pour la pharmacie ${tenantName} est créé.
+Votre compte pour la Vendeur ${tenantName} est créé.
 Identifiant: ${identifier}
 Mot de passe temporaire: ${tempPassword}
 
@@ -47,7 +47,7 @@ L'équipe ${companyName}`;
           Bienvenue sur ${companyName}
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
-          Votre compte pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong> est maintenant actif.
+          Votre compte pour la Vendeur <strong style="color:#1D473F;">${tenantName}</strong> est maintenant actif.
         </p>
         <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px 18px; border-radius: 12px; margin-bottom: 18px;">
           <div style="display: flex; flex-wrap: wrap; gap: 12px;">
@@ -112,7 +112,7 @@ const buildSubscriptionCreatedEmail = ({
   const text = `Bonjour,
 
 Votre abonnement POSapp est actif.
-Pharmacie: ${tenantName}
+Vendeur: ${tenantName}
 Plan: ${plan}
 Cycle: ${cycleLabel}
 Montant: $${price}
@@ -137,7 +137,7 @@ L'équipe ${companyName}`;
           Confirmation d'abonnement
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
-          Votre abonnement POSapp est actif pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong>.
+          Votre abonnement POSapp est actif pour la Vendeur <strong style="color:#1D473F;">${tenantName}</strong>.
         </p>
         <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px 18px; border-radius: 12px; margin-bottom: 18px;">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
@@ -192,7 +192,7 @@ const buildSubscriptionExpiredEmail = ({ tenantName, plan, endsAt }) => {
   const subject = "Abonnement expiré - POSapp";
   const text = `Bonjour,
 
-Votre abonnement POSapp pour la pharmacie ${tenantName} a expiré le ${endsAtLabel}.
+Votre abonnement POSapp pour la Vendeur ${tenantName} a expiré le ${endsAtLabel}.
 Plan: ${plan}
 
 Veuillez renouveler votre abonnement pour réactiver vos utilisateurs.
@@ -213,7 +213,7 @@ L'équipe ${companyName}`;
           Abonnement expiré
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
-          Votre abonnement pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong> a expiré le <strong>${endsAtLabel}</strong>.
+          Votre abonnement pour la Vendeur <strong style="color:#1D473F;">${tenantName}</strong> a expiré le <strong>${endsAtLabel}</strong>.
         </p>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
           Pour réactiver l'accès de vos utilisateurs, merci de renouveler votre abonnement.
@@ -266,7 +266,7 @@ const buildSubscriptionWarningEmail = ({ tenantName, plan, endsAt, daysLeft }) =
       : `Rappel : abonnement POSapp expire ${reminderLabel}`;
   const text = `Bonjour,
 
-Votre abonnement POSapp pour la pharmacie ${tenantName} expire ${reminderLabel} (le ${endsAtLabel}).
+Votre abonnement POSapp pour la Vendeur ${tenantName} expire ${reminderLabel} (le ${endsAtLabel}).
 Plan: ${plan}
 
 Pour éviter toute interruption, veuillez renouveler votre abonnement.
@@ -287,7 +287,7 @@ L'équipe ${companyName}`;
           Votre abonnement expire bientôt
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
-          L'abonnement de la pharmacie <strong style="color:#1D473F;">${tenantName}</strong> expire
+          L'abonnement de la Vendeur <strong style="color:#1D473F;">${tenantName}</strong> expire
           <strong>${reminderLabel}</strong> (le ${endsAtLabel}).
         </p>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
@@ -334,7 +334,7 @@ const buildSubscriptionRenewedEmail = ({
   const text = `Bonjour,
 
 Votre abonnement a été renouvelé.
-Pharmacie: ${tenantName}
+Vendeur: ${tenantName}
 Plan: ${plan}
 Cycle: ${cycleLabel}
 Montant: $${price}
@@ -357,7 +357,7 @@ L'équipe ${companyName}`;
           Merci pour votre confiance
         </h2>
         <p style="margin: 0 0 18px; line-height: 1.6; color: #374151;">
-          Votre abonnement pour la pharmacie <strong style="color:#1D473F;">${tenantName}</strong> a été renouvelé.
+          Votre abonnement pour la Vendeur <strong style="color:#1D473F;">${tenantName}</strong> a été renouvelé.
         </p>
         <div style="background: #f9fafb; border: 1px solid #e5e7eb; padding: 16px 18px; border-radius: 12px; margin-bottom: 18px;">
           <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 12px;">
