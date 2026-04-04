@@ -489,120 +489,128 @@ const disable2fa = async (req, res) => {
 };
 
 const googleLogin = async (req, res) => {
-  const { idToken, tenantName, plan, clientType } = req.body || {};
-  if (!idToken) {
-    return res.status(400).json({ message: "idToken required." });
-  }
+  try {
+    const { idToken, tenantName, plan, clientType } = req.body || {};
+    if (!idToken) {
+      return res.status(400).json({ message: "idToken required." });
+    }
 
-  const profile = await verifyGoogleIdToken(idToken);
-  let user = await prisma.user.findFirst({
-    where: {
-      OR: [{ googleId: profile.sub }, { email: profile.email }],
-    },
-    include: { store: true, tenant: true },
-  });
+    const profile = await verifyGoogleIdToken(idToken);
+    let user = await prisma.user.findFirst({
+      where: {
+        OR: [{ googleId: profile.sub }, { email: profile.email }],
+      },
+      include: { store: true, tenant: true },
+    });
 
-  if (!user) {
-    if (!tenantName || !plan) {
-      return res.status(400).json({
-        message: "tenantName and plan required for first Google login.",
+    if (!user) {
+      if (!tenantName || !plan) {
+        return res.status(400).json({
+          message: "tenantName and plan required for first Google login.",
+        });
+      }
+
+      const planConfig = getPlanConfig(plan);
+      if (!planConfig) {
+        return res.status(400).json({ message: "Invalid subscription plan." });
+      }
+
+      const tenant = await prisma.tenant.create({
+        data: { name: tenantName },
+      });
+
+      await prisma.subscription.create({
+        data: {
+          tenantId: tenant.id,
+          plan,
+          price: planConfig.price,
+          maxStores: planConfig.maxStores,
+          maxUsers: planConfig.maxUsers,
+        },
+      });
+
+      user = await prisma.user.create({
+        data: {
+          tenantId: tenant.id,
+          email: profile.email,
+          firstName: profile.givenName,
+          lastName: profile.familyName,
+          role: "SUPERADMIN",
+          googleId: profile.sub,
+          mustChangePassword: false,
+        },
+        include: {
+          tenant: true,
+        },
+      });
+
+      await prisma.tenant.update({
+        where: { id: tenant.id },
+        data: { ownerId: user.id },
+      });
+    } else if (!user.googleId) {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: { googleId: profile.sub },
+        include: { store: true, tenant: true },
       });
     }
 
-    const planConfig = getPlanConfig(plan);
-    if (!planConfig) {
-      return res.status(400).json({ message: "Invalid subscription plan." });
+    if (user.twoFactorEnabled) {
+      return res.status(401).json({
+        message: "Two-factor enabled. Use normal login flow.",
+        requiresTwoFactor: true,
+      });
     }
 
-    const tenant = await prisma.tenant.create({
-      data: { name: tenantName },
-    });
+    const normalizedClientType = getClientType(clientType);
+    const accessToken = signAccessToken(
+      {
+        sub: user.id,
+        tenantId: user.tenantId,
+        role: user.role,
+      },
+      getAccessTokenTtlByClient(normalizedClientType),
+    );
 
-    await prisma.subscription.create({
+    const refreshDays = Number(process.env.JWT_REFRESH_DAYS || 7);
+    const refreshToken = signRefreshToken(
+      { sub: user.id, clientType: normalizedClientType },
+      refreshDays,
+    );
+
+    await prisma.authSession.create({
       data: {
-        tenantId: tenant.id,
-        plan,
-        price: planConfig.price,
-        maxStores: planConfig.maxStores,
-        maxUsers: planConfig.maxUsers,
+        userId: user.id,
+        refreshTokenHash: hashToken(refreshToken),
+        expiresAt: addDays(new Date(), refreshDays),
       },
     });
 
-    user = await prisma.user.create({
-      data: {
-        tenantId: tenant.id,
-        email: profile.email,
-        firstName: profile.givenName,
-        lastName: profile.familyName,
-        role: "SUPERADMIN",
-        googleId: profile.sub,
-        mustChangePassword: false,
-      },
-      include: {
-        tenant: true,
+    return res.json({
+      accessToken,
+      refreshToken,
+      user: {
+        id: user.id,
+        tenantId: user.tenantId,
+        tenantName: user.tenant?.name || null,
+        role: user.role,
+        email: user.email,
+        phone: user.phone,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        storeId: user.storeId,
+        storeName: user.store?.name || null,
+        defaultStorageZoneId: user.defaultStorageZoneId || null,
       },
     });
+  } catch (error) {
+    if (error.message === "GOOGLE_CLIENT_ID not configured.") {
+      return res.status(500).json({ message: error.message });
+    }
 
-    await prisma.tenant.update({
-      where: { id: tenant.id },
-      data: { ownerId: user.id },
-    });
-  } else if (!user.googleId) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { googleId: profile.sub },
-      include: { store: true, tenant: true },
-    });
+    return res.status(401).json({ message: "Invalid Google token." });
   }
-
-  if (user.twoFactorEnabled) {
-    return res.status(401).json({
-      message: "Two-factor enabled. Use normal login flow.",
-      requiresTwoFactor: true,
-    });
-  }
-
-  const normalizedClientType = getClientType(clientType);
-  const accessToken = signAccessToken(
-    {
-      sub: user.id,
-      tenantId: user.tenantId,
-      role: user.role,
-    },
-    getAccessTokenTtlByClient(normalizedClientType),
-  );
-
-  const refreshDays = Number(process.env.JWT_REFRESH_DAYS || 7);
-  const refreshToken = signRefreshToken(
-    { sub: user.id, clientType: normalizedClientType },
-    refreshDays,
-  );
-
-  await prisma.authSession.create({
-    data: {
-      userId: user.id,
-      refreshTokenHash: hashToken(refreshToken),
-      expiresAt: addDays(new Date(), refreshDays),
-    },
-  });
-
-  return res.json({
-    accessToken,
-    refreshToken,
-    user: {
-      id: user.id,
-      tenantId: user.tenantId,
-      tenantName: user.tenant?.name || null,
-      role: user.role,
-      email: user.email,
-      phone: user.phone,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      storeId: user.storeId,
-      storeName: user.store?.name || null,
-      defaultStorageZoneId: user.defaultStorageZoneId || null,
-    },
-  });
 };
 
 module.exports = {

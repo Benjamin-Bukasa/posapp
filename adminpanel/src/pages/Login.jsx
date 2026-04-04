@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Pill } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import GoogleSignInButton from "../components/ui/googleSignInButton";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
 
@@ -8,6 +9,7 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const login = useAuthStore((state) => state.login);
+  const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
   const loading = useAuthStore((state) => state.loading);
   const error = useAuthStore((state) => state.error);
@@ -39,6 +41,33 @@ const Login = () => {
     showToast({
       title: "Connexion echouee",
       message: result?.message || "Impossible de se connecter.",
+      variant: "danger",
+    });
+  };
+
+  const handleGoogleLogin = async (credential) => {
+    const result = await loginWithGoogle({ idToken: credential });
+    if (result?.success) {
+      showToast({
+        title: "Connexion reussie",
+        message: "Bienvenue dans l'administration.",
+        variant: "success",
+      });
+      navigate(fromPath, { replace: true });
+      return;
+    }
+
+    showToast({
+      title: "Connexion Google echouee",
+      message: result?.message || "Impossible de se connecter avec Google.",
+      variant: "danger",
+    });
+  };
+
+  const handleGoogleError = (message) => {
+    showToast({
+      title: "Connexion Google indisponible",
+      message: message || "Impossible de charger Google pour le moment.",
       variant: "danger",
     });
   };
@@ -132,6 +161,19 @@ const Login = () => {
                 {loading ? "Connexion..." : "Se connecter"}
               </button>
             </form>
+
+            <div className="mt-6 flex items-center gap-3 text-xs text-text-secondary">
+              <span className="h-px flex-1 bg-border" />
+              ou continuer avec
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            <GoogleSignInButton
+              className="mt-5"
+              disabled={loading}
+              onCredential={handleGoogleLogin}
+              onError={handleGoogleError}
+            />
 
             <div className="mt-6 text-sm text-text-secondary">
               Retour a{" "}

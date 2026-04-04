@@ -436,6 +436,7 @@ model Product {
   dosageUnitId String?
   kind        ProductKind @default(ARTICLE)
   sku         String?  @unique
+  scanCode    String?
   name        String
   description String?
   unitPrice   Decimal  @db.Decimal(10, 2)
@@ -466,6 +467,7 @@ model Product {
 
   @@index([tenantId])
   @@index([tenantId, kind])
+  @@unique([tenantId, scanCode])
   @@map("products")
 }
 

@@ -26,6 +26,8 @@ import {
 import printReceiptViaLocalService from "../utils/localPrintService";
 import { printSaleReceipt } from "../utils/printSaleReceipt";
 
+const normalizeScanValue = (value) => String(value || "").trim().toLowerCase();
+
 const CounterList = () => {
   const cartItems = useCounterStore((state) => state.cartItems);
   const addToCart = useCounterStore((state) => state.addToCart);
@@ -141,6 +143,8 @@ const CounterList = () => {
       const collection = product.collection?.toLowerCase() ?? "";
       const status = product.status?.toLowerCase() ?? "";
       const stock = product.stock?.toLowerCase() ?? "";
+      const sku = product.sku?.toLowerCase() ?? "";
+      const scanCode = product.scanCode?.toLowerCase() ?? "";
 
       if (statusFilter && status !== statusFilter) return false;
       if (stockFilter && stock !== stockFilter) return false;
@@ -162,13 +166,26 @@ const CounterList = () => {
         if (collectionValue !== collectionFilter) return false;
       }
 
-      const haystack = `${productName} ${category} ${family} ${subFamily} ${collection} ${status} ${stock}`;
+      const haystack = `${productName} ${sku} ${scanCode} ${category} ${family} ${subFamily} ${collection} ${status} ${stock}`;
       if (hasSearch && !haystack.includes(searchQuery)) return false;
       if (hasKeyword && !haystack.includes(keywordQuery)) return false;
 
       return true;
     });
   }, [productList, search, filterValues]);
+
+  const scanLookup = useMemo(() => {
+    const lookup = new Map();
+    productList.forEach((product) => {
+      [product.scanCode, product.sku].forEach((code) => {
+        const normalized = normalizeScanValue(code);
+        if (normalized && !lookup.has(normalized)) {
+          lookup.set(normalized, product);
+        }
+      });
+    });
+    return lookup;
+  }, [productList]);
 
   const sortedProducts = useMemo(() => {
     const next = [...filteredProducts];
@@ -257,6 +274,45 @@ const CounterList = () => {
   useEffect(() => {
     setPage(1);
   }, [search, filterValues, sortValues]);
+
+  const handleSearchKeyDown = (event) => {
+    if (event.key !== "Enter") {
+      return;
+    }
+
+    const scannedValue = normalizeScanValue(event.currentTarget.value);
+    if (!scannedValue) {
+      return;
+    }
+
+    const matchedProduct = scanLookup.get(scannedValue);
+    if (!matchedProduct) {
+      return;
+    }
+
+    event.preventDefault();
+
+    if (!matchedProduct.hasTechnicalSheet) {
+      showToast({
+        title: "Scan impossible",
+        message: "La fiche technique de cet article est manquante.",
+        variant: "warning",
+      });
+      return;
+    }
+
+    if (Number(matchedProduct.quantity || 0) <= 0) {
+      showToast({
+        title: "Stock epuise",
+        message: `Aucun stock disponible pour ${matchedProduct.product}.`,
+        variant: "warning",
+      });
+      return;
+    }
+
+    addToCart(matchedProduct);
+    setSearch("");
+  };
 
   const totalItems = cartItems.reduce((sum, item) => sum + item.cartQty, 0);
   const totalAmount = cartItems.reduce(
@@ -470,14 +526,15 @@ const CounterList = () => {
 
           <div className="mt-4 rounded-xl bg-surface p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="w-full sm:max-w-xs">
-                <Input
-                  name="search"
-                  value={search}
-                  onChange={(event) => setSearch(event.target.value)}
-                  placeholder="Rechercher..."
-                  type="text"
-                />
+                <div className="w-full sm:max-w-xs">
+                  <Input
+                    name="search"
+                    value={search}
+                    onChange={(event) => setSearch(event.target.value)}
+                    onKeyDown={handleSearchKeyDown}
+                    placeholder="Rechercher..."
+                    type="text"
+                  />
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <DropdownFilter

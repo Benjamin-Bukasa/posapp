@@ -36,6 +36,7 @@ const currencySettingsRoutes = require("./routes/currencySettingsRoutes");
 const customerBonusProgramRoutes = require("./routes/customerBonusProgramRoutes");
 const taxRateRoutes = require("./routes/taxRateRoutes");
 const permissionProfileRoutes = require("./routes/permissionProfileRoutes");
+const { ensureProductExtendedFields } = require("./controllers/productController");
 const { startSubscriptionCron } = require("./services/subscriptionCron");
 const { initSocket } = require("./socket");
 const prisma = require("./config/prisma");
@@ -110,6 +111,9 @@ initSocket(server);
 const bootstrap = async () => {
   await ensureTenantCurrencyColumns(prisma);
   console.log("Currency settings ready.");
+
+  await ensureProductExtendedFields();
+  console.log("Product extended fields ready.");
 
   await ensureTaxRatesTable();
   console.log("Tax rates ready.");

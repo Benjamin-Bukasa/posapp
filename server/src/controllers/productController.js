@@ -62,6 +62,11 @@ const PRODUCT_IMAGE_MIME_TYPES = {
   "image/gif": ".gif",
 };
 
+const normalizeScanCode = (value) => {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+};
+
 const pickRowValue = (row, aliases = []) => {
   for (const alias of aliases) {
     if (row?.[alias] !== undefined && row?.[alias] !== null && row?.[alias] !== "") {
@@ -73,6 +78,10 @@ const pickRowValue = (row, aliases = []) => {
 
 const ensureProductExtendedFields = async () => {
   await ensureTaxRatesTable();
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "products"
+    ADD COLUMN IF NOT EXISTS "scanCode" TEXT NULL
+  `);
   await prisma.$executeRawUnsafe(`
     ALTER TABLE "products"
     ADD COLUMN IF NOT EXISTS "purchaseUnitPrice" DECIMAL(10, 2) NULL
@@ -105,6 +114,37 @@ const ensureProductExtendedFields = async () => {
     CREATE INDEX IF NOT EXISTS "products_subFamilyId_idx"
     ON "products" ("subFamilyId")
   `);
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "products_tenantId_scanCode_key"
+    ON "products" ("tenantId", "scanCode")
+  `);
+};
+
+const ensureScanCodeAvailable = async (
+  tenantId,
+  scanCode,
+  excludeProductId = null,
+) => {
+  const normalizedScanCode = normalizeScanCode(scanCode);
+  if (!normalizedScanCode) {
+    return;
+  }
+
+  const existing = await prisma.product.findFirst({
+    where: {
+      tenantId,
+      scanCode: normalizedScanCode,
+      ...(excludeProductId ? { id: { not: excludeProductId } } : {}),
+    },
+    select: { id: true },
+  });
+
+  if (existing) {
+    throw Object.assign(
+      new Error("Ce code de scan est deja utilise par un autre article."),
+      { status: 409 },
+    );
+  }
 };
 
 const getProductExtendedFieldMap = async (productIds = []) => {
@@ -798,6 +838,7 @@ const createProduct = async (req, res) => {
   const {
     name,
     sku,
+    scanCode,
     description,
     imageUrl,
     currencyCode,
@@ -835,6 +876,8 @@ const createProduct = async (req, res) => {
 
   try {
     await ensureProductExtendedFields();
+    const normalizedScanCode = normalizeScanCode(scanCode);
+    await ensureScanCodeAvailable(req.user.tenantId, normalizedScanCode);
     const resolvedManagementUnitId = managementUnitId || saleUnitId || stockUnitId || null;
     const category = await findCategoryById(req.user.tenantId, categoryId);
     if (categoryId && !category) {
@@ -912,6 +955,7 @@ const createProduct = async (req, res) => {
         kind: normalizedKind,
         name,
         sku,
+        scanCode: normalizedScanCode,
         description,
         unitPrice,
         categoryId,
@@ -997,6 +1041,7 @@ const listProducts = async (req, res) => {
         OR: [
           { name: contains(search) },
           { sku: contains(search) },
+          { scanCode: contains(search) },
           { description: contains(search) },
           { category: { name: contains(search) } },
           { family: { name: contains(search) } },
@@ -1020,6 +1065,7 @@ const listProducts = async (req, res) => {
       updatedAt: "updatedAt",
       name: "name",
       sku: "sku",
+      scanCode: "scanCode",
       unitPrice: "unitPrice",
       kind: "kind",
     }) || { createdAt: "desc" };
@@ -1037,6 +1083,7 @@ const listProducts = async (req, res) => {
       kind: item.kind,
       name: item.name,
       sku: item.sku,
+      scanCode: item.scanCode || "",
       imageUrl: item.imageUrl || "",
       purchaseUnitPrice: item.purchaseUnitPrice ?? "",
       unitPrice: item.unitPrice,
@@ -1124,6 +1171,7 @@ const updateProduct = async (req, res) => {
   const {
     name,
     sku,
+    scanCode,
     description,
     imageUrl,
     currencyCode,
@@ -1167,6 +1215,8 @@ const updateProduct = async (req, res) => {
   const resolvedManagementUnitId =
     managementUnitId || saleUnitId || stockUnitId || null;
   await ensureProductExtendedFields();
+  const normalizedScanCode = normalizeScanCode(scanCode);
+  await ensureScanCodeAvailable(req.user.tenantId, normalizedScanCode, id);
   const category = await findCategoryById(req.user.tenantId, categoryId);
   if (categoryId && !category) {
     return res.status(400).json({ message: "La categorie selectionnee est invalide." });
@@ -1232,6 +1282,7 @@ const updateProduct = async (req, res) => {
       kind: nextKind,
       name,
       sku,
+      scanCode: normalizedScanCode,
       description,
       unitPrice,
       categoryId,
@@ -1825,6 +1876,7 @@ const downloadProductTemplate = async (req, res) => {
       : {
           Article: "Paracetamol 500mg",
           "Code article": "ART0001",
+          "Code scan": "ART-PARACETAMOL-500",
           Collection: "Vendeur generale",
           Categorie: "Medicaments",
           Famille: "Antalgiques",
@@ -1980,6 +2032,21 @@ const importProducts = async (req, res) => {
       "code",
       "Code",
     ]) || null;
+    const scanCodeAliases = [
+      "Code scan",
+      "code scan",
+      "ScanCode",
+      "scanCode",
+      "Barcode",
+      "barcode",
+      "QR code",
+      "qr code",
+    ];
+    const scanCode = scanCodeAliases.some((alias) =>
+      Object.prototype.hasOwnProperty.call(row, alias),
+    )
+      ? normalizeScanCode(pickRowValue(row, scanCodeAliases))
+      : undefined;
     const description = pickRowValue(row, ["Description", "description"]) || null;
     const unitPrice = Number(
       pickRowValue(row, [
@@ -2066,9 +2133,19 @@ const importProducts = async (req, res) => {
     let product = await prisma.product.findFirst({
       where: {
         tenantId: req.user.tenantId,
-        ...(sku ? { sku } : { name }),
+        OR: [
+          ...(sku ? [{ sku }] : []),
+          ...(scanCode ? [{ scanCode }] : []),
+          { name },
+        ],
       },
     });
+
+    await ensureScanCodeAvailable(
+      req.user.tenantId,
+      scanCode,
+      product?.id || null,
+    );
 
     if (!product) {
       product = await createProductWithAutoSku({
@@ -2079,6 +2156,7 @@ const importProducts = async (req, res) => {
           kind: rowKind || "ARTICLE",
           name,
           sku,
+          ...(scanCode !== undefined ? { scanCode } : {}),
           description,
           unitPrice,
           categoryId: category?.id,
@@ -2101,7 +2179,15 @@ const importProducts = async (req, res) => {
     } else if (rowKind && product.kind !== rowKind) {
       product = await prisma.product.update({
         where: { id: product.id },
-        data: { kind: rowKind },
+        data: {
+          kind: rowKind,
+          ...(scanCode !== undefined ? { scanCode } : {}),
+        },
+      });
+    } else if (scanCode !== undefined && scanCode !== product.scanCode) {
+      product = await prisma.product.update({
+        where: { id: product.id },
+        data: { scanCode },
       });
     }
 
@@ -2233,6 +2319,7 @@ module.exports = {
   uploadProductImage,
   downloadProductTemplate,
   downloadTechnicalSheetTemplate,
+  ensureProductExtendedFields,
   listProducts,
   getProduct,
   updateProduct,
