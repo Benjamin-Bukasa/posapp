@@ -3,12 +3,14 @@ import { useForm } from "react-hook-form";
 import { Link, useNavigate } from "react-router-dom";
 import Button from "../../ui/button";
 import Input from "../../ui/input";
+import GoogleSignInButton from "../../ui/googleSignInButton";
 import useAuthStore from "../../../stores/authStore";
 import useToastStore from "../../../stores/toastStore";
 
 const LoginLeft = () => {
   const navigate = useNavigate();
   const login = useAuthStore((state) => state.login);
+  const loginWithGoogle = useAuthStore((state) => state.loginWithGoogle);
   const loading = useAuthStore((state) => state.loading);
   const showToast = useToastStore((state) => state.showToast);
 
@@ -64,6 +66,34 @@ const LoginLeft = () => {
     showToast({
       title: "Connexion echouee",
       message: result?.message || "Identifiants invalides.",
+      variant: "danger",
+    });
+  };
+
+  const handleGoogleLogin = async (credential) => {
+    const result = await loginWithGoogle({ idToken: credential });
+
+    if (result?.success) {
+      showToast({
+        title: "Connexion reussie",
+        message: "Bienvenue dans POSapp.",
+        variant: "success",
+      });
+      navigate("/dashboard");
+      return;
+    }
+
+    showToast({
+      title: "Connexion Google echouee",
+      message: result?.message || "Impossible de se connecter avec Google.",
+      variant: "danger",
+    });
+  };
+
+  const handleGoogleError = (message) => {
+    showToast({
+      title: "Connexion Google indisponible",
+      message: message || "Impossible de charger Google pour le moment.",
       variant: "danger",
     });
   };
@@ -148,12 +178,11 @@ const LoginLeft = () => {
               <span className="h-px flex-1 bg-border" />
             </div>
 
-            <button
-              type="button"
-              className="w-full rounded-lg border border-border bg-surface px-4 py-2 text-sm text-text-primary hover:bg-background"
-            >
-              Se connecter avec Google
-            </button>
+            <GoogleSignInButton
+              disabled={loading}
+              onCredential={handleGoogleLogin}
+              onError={handleGoogleError}
+            />
           </form>
         </div>
       </div>

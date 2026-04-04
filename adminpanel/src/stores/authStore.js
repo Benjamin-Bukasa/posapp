@@ -165,6 +165,59 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  loginWithGoogle: async ({ idToken }) => {
+    set({ loading: true, error: null });
+
+    try {
+      const response = await fetch(`${API_URL}/api/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          clientType: "adminpanel",
+        }),
+      });
+
+      const data = await parseJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          translateMessage(data.message, "Connexion Google echouee."),
+        );
+      }
+
+      if (!hasAdminAccess(data.user?.role)) {
+        throw new Error("Acces admin reserve aux administrateurs.");
+      }
+
+      persistAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      });
+
+      set({
+        user: data.user,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        isAuthenticated: true,
+        loading: false,
+        error: null,
+      });
+
+      await get().refreshCurrentUser();
+      return { success: true };
+    } catch (error) {
+      clearState(set);
+      const message = translateMessage(
+        error.message,
+        "Connexion Google echouee.",
+      );
+      set({ loading: false, error: message });
+      return { success: false, message };
+    }
+  },
+
   refreshSession: async () => {
     const refreshToken = get().refreshToken;
     if (!refreshToken) {

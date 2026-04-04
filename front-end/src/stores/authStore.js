@@ -129,6 +129,52 @@ const useAuthStore = create((set, get) => ({
     }
   },
 
+  loginWithGoogle: async ({ idToken }) => {
+    set({ loading: true, error: null, requirePasswordChange: false });
+    try {
+      const response = await fetch(`${API_URL}/api/auth/google`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          idToken,
+          clientType: "frontend",
+        }),
+      });
+      const data = await parseJson(response);
+
+      if (!response.ok) {
+        throw new Error(
+          translateMessage(data.message, "Connexion Google echouee."),
+        );
+      }
+
+      persistAuth({
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        user: data.user,
+      });
+
+      set({
+        loading: false,
+        user: data.user,
+        accessToken: data.accessToken,
+        refreshToken: data.refreshToken,
+        isAuthenticated: true,
+        requirePasswordChange: false,
+        pendingIdentifier: null,
+      });
+
+      return { success: true };
+    } catch (error) {
+      const message = translateMessage(
+        error.message,
+        "Connexion Google echouee.",
+      );
+      set({ loading: false, error: message });
+      return { success: false, message };
+    }
+  },
+
   refreshSession: async () => {
     const refreshToken = get().refreshToken;
     if (!refreshToken) {

@@ -1134,6 +1134,7 @@ const productColumns = [
   column("Image", "imageUrl", { render: renderProductThumbnail }),
   column("Produit", "name"),
   column("SKU", (row) => row.sku || "--", { sortBy: "sku" }),
+  column("Code scan", (row) => row.scanCode || "--", { sortBy: "scanCode" }),
   column("Categorie", "category.name"),
   column("Famille", "family.name"),
   column("TVA", (row) => row.tva?.code || row.tva?.name || "--"),
@@ -3109,6 +3110,13 @@ const productForm = {
       description: "Code genere automatiquement au format ART0001 ou PROD0001.",
     },
     {
+      name: "scanCode",
+      label: "Code scan",
+      type: "text",
+      placeholder: "QR code ou code-barres de l'article",
+      description: "Code exact utilise au scan pour ajouter rapidement l'article au panier.",
+    },
+    {
       name: "description",
       label: "Description",
       type: "textarea",
@@ -3225,6 +3233,7 @@ const productForm = {
     body: {
       name: values.name,
       sku: compactValue(values.sku),
+      scanCode: compactValue(values.scanCode),
       description: compactValue(values.description),
       imageUrl: compactValue(values.imageUrl),
       unitPrice: numericValue(values.unitPrice) ?? 0,
@@ -3248,6 +3257,7 @@ const buildProductRequest = (values, kind) => ({
   body: {
     name: values.name,
     sku: compactValue(values.sku),
+    scanCode: compactValue(values.scanCode),
     description: compactValue(values.description),
     imageUrl: compactValue(values.imageUrl),
     unitPrice: numericValue(values.unitPrice) ?? 0,
@@ -4212,6 +4222,7 @@ const productHardDeleteConfig = {
 const productFormValues = (row) => ({
   name: row.name || "",
   sku: row.sku || "",
+  scanCode: row.scanCode || "",
   description: row.description || "",
   imageUrl: row.imageUrl || "",
   unitPrice: toAmountInputValue(row.unitPrice),

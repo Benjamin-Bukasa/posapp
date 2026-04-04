@@ -74,6 +74,8 @@ const mapProducts = (products, inventoryMap) =>
     return {
       id: product.id,
       product: product.name,
+      sku: product.sku || "",
+      scanCode: product.scanCode || "",
       imageUrl: product.imageUrl || "",
       category: product.category?.name || "N/A",
       family: product.family?.name || "N/A",
