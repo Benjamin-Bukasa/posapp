@@ -1897,6 +1897,7 @@ const zoneTypeOptions = [
 const userRoleOptions = [
   { value: "SUPERADMIN", label: "Superadmin" },
   { value: "ADMIN", label: "Admin" },
+  { value: "DRIVER", label: "Livreur" },
   { value: "USER", label: "Utilisateur" },
 ];
 

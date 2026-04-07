@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "POSapp Driver",
+    "slug": "posapp-driver",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#f5f7f7"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "POSapp Driver utilise votre position pour afficher votre mission et partager votre trajet de livraison."
+        }
+      ]
+    ]
+  }
+}

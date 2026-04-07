@@ -1,220 +1,191 @@
 # Guide Utilisateur POSapp
 
-## 1. Objectif de l'application
+## Table des matieres
 
-POSapp est une application de gestion commerciale et de stock organisee autour de 2 idees simples :
+1. [Presentation generale](#1-presentation-generale)
+2. [Principes metier a retenir](#2-principes-metier-a-retenir)
+3. [Profils utilisateurs](#3-profils-utilisateurs)
+4. [Demarrage d'une nouvelle instance](#4-demarrage-dune-nouvelle-instance)
+5. [Configuration initiale pas a pas](#5-configuration-initiale-pas-a-pas)
+6. [Catalogue produits, articles et fiches techniques](#6-catalogue-produits-articles-et-fiches-techniques)
+7. [Flux achat](#7-flux-achat)
+8. [Flux ravitaillement depot-vers-boutique](#8-flux-ravitaillement-depot-vers-boutique)
+9. [Flux vente et caisse](#9-flux-vente-et-caisse)
+10. [Programme bonus client](#10-programme-bonus-client)
+11. [Inventaire, ajustements et retours](#11-inventaire-ajustements-et-retours)
+12. [Procedures par role](#12-procedures-par-role)
+13. [Bonnes pratiques d'exploitation](#13-bonnes-pratiques-dexploitation)
+14. [Erreurs frequentes et interpretation](#14-erreurs-frequentes-et-interpretation)
+15. [Resume operationnel](#15-resume-operationnel)
 
-- on vend des `articles`
-- on stocke, on achete, on transfere et on consomme des `produits composants`
+## 1. Presentation generale
+
+POSapp est une application de gestion commerciale, de stock et de caisse.
+
+Elle couvre principalement :
+
+- la configuration des boutiques et des zones de stock
+- la gestion des utilisateurs et des permissions
+- la creation des produits composants et des articles vendus
+- les demandes d'achat et les commandes fournisseur
+- les entrees, sorties, requisitions et transferts de stock
+- la caisse et les ventes
+- les rapports, tableaux de bord et suivis d'exploitation
+
+POSapp est generalement utilise avec 2 interfaces :
+
+- `Admin Panel` : interface de configuration, pilotage et gestion
+- `Front Office / Caisse` : interface de vente et d'operations boutique
+
+## 2. Principes metier a retenir
+
+### 2.1 Article et composant
+
+Dans POSapp :
+
+- un `article` est ce que le client voit et achete
+- un `produit composant` est ce qui existe physiquement en stock
 
 Exemple :
 
 - article : `Paquet de biscuit`
 - fiche technique : `1 paquet = 12 biscuits`
-- vente de `2 paquets` = sortie de `24 biscuits`
+- vente de `2 paquets` = consommation de `24 biscuits`
 
-L'application couvre principalement :
+Regle cle :
 
-- la configuration initiale
-- la gestion des utilisateurs
-- le catalogue articles et produits
-- les demandes d'achat
-- les commandes fournisseur
-- les entrees et sorties de stock
-- les requisitions et transferts depot -> boutique
-- la caisse et les ventes
-- les rapports et le suivi
+`On vend des articles, mais on stocke, on achete, on transfere et on consomme des composants.`
 
-## 2. Les espaces de travail
+### 2.2 Depot et boutique
 
-POSapp est generalement utilise avec 2 interfaces :
+Le stock est organise par zones.
 
-### Admin Panel
+Les types de zones les plus utiles sont :
 
-Utilise par :
+- `WAREHOUSE` : depot central
+- `STORE` : stock boutique de vente
+- `COUNTER` : zone caisse si votre organisation en utilise une
 
-- super administrateur
-- administrateur
-- gestionnaire
+Regle recommandee dans ce projet :
 
-Permet de :
-
-- configurer l'application
-- gerer le catalogue
-- creer les documents d'achat et de stock
-- suivre les workflows
-- consulter les rapports
-
-### Front Office / Caisse
-
-Utilise par :
-
-- vendeur
-- caissier
-
-Permet de :
-
-- ouvrir la caisse
-- vendre les articles
-- consulter les stocks utiles a la vente
-- creer une requisition de ravitaillement si besoin
-
-## 3. Logique metier a retenir
-
-Avant toute utilisation, il faut retenir ces regles :
-
-### 3.1 Articles et composants
-
-- un `article` est ce que le client achete
-- un `produit composant` est ce qui existe physiquement en stock
-
-### 3.2 Depot et boutique
-
-- le `depot` est le stock central
-- la `boutique` est le stock de vente
+- le depot central sert a ravitailler
+- la boutique vend depuis sa zone `STORE`
 - le caissier ne vend pas depuis le depot
-- le caissier vend uniquement depuis le stock `boutique`
 
-### 3.3 Requisition
+### 2.3 Requisition
 
-- quand la boutique manque de stock, elle fait une `requisition`
-- la requisition sert a demander un ravitaillement du depot vers la boutique
+Quand le stock boutique devient insuffisant :
 
-### 3.4 Vente
+- la boutique cree une requisition
+- le depot prepare le ravitaillement
+- un transfert de stock est ensuite effectue du depot vers la boutique
 
-- la vente part d'un article
-- le systeme convertit automatiquement l'article en composants selon la fiche technique
+### 2.4 Vente
 
-## 4. Demarrage et premiere connexion
+Lors d'une vente :
 
-### 4.1 Connexion
+- l'utilisateur selectionne un article
+- le systeme lit la fiche technique de cet article
+- le systeme calcule les composants necessaires
+- le stock est deduit dans la zone de vente de la boutique
 
-Lors de la premiere connexion :
+## 3. Profils utilisateurs
 
-- connectez-vous avec l'identifiant recu
-- utilisez le mot de passe temporaire
-- changez votre mot de passe si l'application le demande
+Les roles peuvent varier selon votre configuration, mais en pratique on retrouve :
 
-### 4.2 Verification apres connexion
+- `SUPERADMIN` : configuration globale et administration complete
+- `ADMIN` : gestion centralisee des parametres, du catalogue et des documents
+- `MANAGER` ou `GESTIONNAIRE` : suivi de boutique, validation et supervision operationnelle
+- `USER`, `VENDEUR` ou `CAISSIER` : operations de vente et taches quotidiennes en boutique
 
-Apres connexion, verifiez :
+## 4. Demarrage d'une nouvelle instance
 
-- votre role
-- votre boutique rattachee
-- votre zone de stock par defaut si elle est utilisee
-- vos permissions
+Pour une nouvelle mise en place, l'ordre recommande est le suivant :
 
-## 5. Configuration initiale
+1. Creer les boutiques
+2. Creer les zones de stock
+3. Creer les unites
+4. Configurer les devises
+5. Configurer les profils de permissions
+6. Creer les utilisateurs
+7. Creer les produits composants
+8. Creer les articles
+9. Definir les fiches techniques
+10. Creer les demandes d'achat si necessaire
+11. Creer les commandes fournisseur
+12. Enregistrer les entrees de stock depot
+13. Creer les requisitions boutique
+14. Finaliser les transferts depot vers boutique
+15. Ouvrir la caisse
+16. Commencer les ventes
 
-L'ordre conseille pour configurer POSapp est le suivant.
+## 5. Configuration initiale pas a pas
 
 ### 5.1 Creer les boutiques
 
-Menu conseille :
-
-- `Configurations`
-- `Parametres`
-- `Locale de vente`
-
 Creer :
 
-- le depot principal si vous le gerez comme boutique logistique
+- le depot principal si vous le gerez comme point logistique
 - les boutiques operationnelles
 
 ### 5.2 Creer les zones de stock
 
-Pour chaque boutique, creer les zones utiles.
+Pour chaque boutique, creer les zones necessaires.
 
-Types les plus importants :
+Exemple de structure simple :
 
-- `WAREHOUSE` : depot central
-- `STORE` : stock boutique
-- `COUNTER` : zone caisse si vous en utilisez une
-
-Regle recommandee :
-
-- depot central = zone `WAREHOUSE`
-- boutique de vente = zone `STORE`
+- depot principal : une zone `WAREHOUSE`
+- boutique de vente : une zone `STORE`
 
 ### 5.3 Creer les unites
 
-Creer les unites selon votre besoin :
+Configurer les unites selon vos besoins :
 
-- unite de vente
+- unite de gestion
 - unite de stock
 - unite de dosage
 
 ### 5.4 Configurer les devises
 
-Si vous travaillez avec plusieurs devises :
+Si vous utilisez plusieurs devises :
 
 - definir la devise principale
-- definir la devise secondaire
-- enregistrer les conversions si necessaire
+- definir la devise secondaire si necessaire
+- verifier les regles de conversion
 
-### 5.5 Configurer les profils de permissions et utilisateurs
+### 5.5 Configurer les permissions et utilisateurs
 
-Creer si besoin :
+Pour chaque utilisateur, verifier :
 
-- les profils de permissions
-- les utilisateurs
-- l'affectation par role et par boutique
+- son role
+- sa boutique
+- sa zone par defaut si elle est utilisee
+- son profil de permissions
 
-Exemples :
+## 6. Catalogue produits, articles et fiches techniques
 
-- `SUPERADMIN`
-- `ADMIN`
-- `MANAGER`
-- `USER`
+### 6.1 Produits composants
 
-## 6. Gestion des utilisateurs
-
-### 6.1 Creer un utilisateur
-
-Renseigner :
-
-- email ou telephone
-- prenom et nom
-- role
-- boutique
-- zone par defaut si necessaire
-- profil de permissions
-
-Le systeme :
-
-- cree le compte
-- genere un mot de passe temporaire
-- peut envoyer les informations par email ou SMS
-
-### 6.2 Bonnes pratiques
-
-- affecter le vendeur a la bonne boutique
-- eviter d'utiliser une zone de depot pour un vendeur
-- reserver les permissions sensibles aux administrateurs
-
-## 7. Catalogue : produits, articles et fiche technique
-
-### 7.1 Produits composants
-
-Creer d'abord les `produits composants`.
+Les produits composants sont les elements physiques du stock.
 
 Exemples :
 
 - biscuit
 - blister
-- flacon
 - capsule
+- flacon
 
 Ce sont eux qui seront :
 
 - achetes
-- stockes
+- recus en stock
 - transferes
 - ajustes
+- consommes lors des ventes
 
-### 7.2 Articles
+### 6.2 Articles
 
-Creer ensuite les `articles` vendus au client.
+Les articles sont les references commerciales proposees au client.
 
 Exemples :
 
@@ -222,209 +193,308 @@ Exemples :
 - kit de traitement
 - boite promotionnelle
 
-### 7.3 Fiche technique
+### 6.3 Fiche technique
 
-Associer ensuite les composants a l'article.
+Chaque article doit etre lie a ses composants.
 
 Exemple :
 
 - article : `Paquet de biscuit`
 - composant : `Biscuit`
-- quantite composant : `12`
+- quantite : `12`
 
-Sans fiche technique :
+Si une fiche technique manque :
 
-- l'article ne doit pas etre utilise pour la vente ou les flux dependants
+- l'article ne doit pas etre utilise en vente
+- les calculs de stock risquent d'etre incoherents
 
-## 8. Flux achat
+### 6.4 Code scan article
 
-Le flux achat est le suivant :
+Un article peut recevoir un `Code scan`.
 
-`Demande d'achat -> Commande fournisseur -> Entree stock`
+Ce champ permet :
 
-### 8.1 Demande d'achat
+- d'enregistrer le code QR ou code-barres de l'article
+- de retrouver l'article instantanement a la caisse
+- d'ajouter l'article au panier lors d'un scan
 
-Une demande d'achat sert a exprimer un besoin d'approvisionnement.
+Le `Code scan` est disponible :
+
+- dans le formulaire article
+- dans la liste des articles
+- dans le template XLSX d'import d'articles
+
+## 7. Flux achat
+
+Le flux achat suit generalement cette sequence :
+
+`Demande d'achat -> Commande fournisseur -> Entree de stock`
+
+### 7.1 Demande d'achat
+
+La demande d'achat exprime un besoin d'approvisionnement.
 
 Important :
 
-- l'utilisateur peut saisir un article
-- le systeme le convertit en composants avant enregistrement
+- l'utilisateur peut raisonner en article
+- le systeme convertit ensuite en composants
 
 Exemple :
 
 - demande : `2 paquets de biscuit`
 - enregistrement reel : `24 biscuits`
 
-### 8.2 Commande fournisseur
+### 7.2 Commande fournisseur
 
-La commande fournisseur doit porter sur des produits physiques.
+La commande fournisseur doit porter sur les produits physiques.
 
 Donc :
 
-- on commande les `composants`
+- on commande les composants
 - pas les articles composes
 
-### 8.3 Entree de stock
+### 7.3 Entree de stock
 
 L'entree de stock enregistre la reception fournisseur.
 
-Elle doit se faire sur :
+Elle doit contenir autant que possible :
 
-- les composants
-- avec les quantites recues
-- et, si possible, les informations de lot, cout et expiration
+- les composants recus
+- les quantites
+- le cout unitaire
+- le lot
+- la date d'expiration si applicable
 
-## 9. Flux ravitaillement depot -> boutique
+## 8. Flux ravitaillement depot vers boutique
 
-Le flux de ravitaillement est :
+Le flux de ravitaillement suit en general cette sequence :
 
-`Requisition -> Transfert -> Stock boutique`
+`Requisition -> Validation -> Transfert -> Stock boutique`
 
-### 9.1 Requisition
+### 8.1 Requisition
 
-Quand la boutique manque de stock :
+Quand une boutique manque de stock :
 
 - elle cree une requisition
-- elle peut saisir un article ou un besoin metier equivalent
-- le systeme convertit en composants
+- elle peut raisonner en article
+- le systeme convertit la demande en composants
 
 Exemple :
 
 - requisition : `2 paquets de biscuit`
 - besoin reel : `24 biscuits`
 
-### 9.2 Validation de la requisition
+### 8.2 Validation
 
 Selon votre workflow :
 
-- la requisition peut etre approuvee
+- la requisition peut etre soumise
+- puis approuvee
 - puis transformee en transfert
 
-### 9.3 Transfert
+### 8.3 Transfert
 
 Le transfert deplace les composants :
 
 - depuis la zone `WAREHOUSE`
-- vers la zone `STORE` de la boutique
+- vers la zone `STORE` de la boutique cible
 
-Le stock ne change reellement que lorsque le transfert est finalise ou valide selon le workflow.
+Le stock ne change reellement que lorsque le transfert est finalise selon le workflow en place.
 
-## 10. Flux vente
+## 9. Flux vente et caisse
 
-### 10.1 Ouverture de caisse
+### 9.1 Ouverture de caisse
 
 Avant de vendre :
 
 - ouvrir la caisse
-- verifier que la session utilise bien la zone `STORE` de la boutique
+- verifier que la session pointe vers la bonne boutique
+- verifier que la zone utilisee est bien la zone `STORE`
 
-### 10.2 Vente
+### 9.2 Vente d'un article
 
-Le vendeur selectionne un article.
+Le caissier selectionne un article dans la caisse.
 
 Le systeme :
 
-- calcule la quantite de composants necessaire
-- verifie le stock disponible en boutique
-- deduit les composants du stock boutique
+- verifie la fiche technique
+- calcule les composants necessaires
+- controle la disponibilite en stock boutique
+- deduit les composants du stock reel
 
 Exemple :
 
 - article : `Paquet de biscuit`
 - fiche technique : `12 biscuits`
 - vente : `2 paquets`
-- deduction en stock : `24 biscuits`
+- deduction stock : `24 biscuits`
 
-### 10.3 Point essentiel
+### 9.3 Ajout au panier par scan
 
-Le vendeur ne vend pas depuis :
+La caisse permet d'ajouter un article au panier par scan.
 
-- le depot
-- ni le stock global du tenant
+Principe :
 
-Il vend depuis :
+- le scanner envoie le code dans le champ de recherche
+- le systeme cherche une correspondance exacte sur `Code scan`
+- a defaut, il peut aussi reconnaitre le `SKU`
+- si l'article est trouve, il est ajoute au panier
 
-- le stock `STORE` de sa boutique
+Conditions importantes :
 
-## 11. Inventaire, ajustement et retours
+- l'article doit exister
+- la fiche technique doit etre valide
+- le stock disponible doit etre suffisant
+
+## 10. Programme bonus client
+
+Le programme bonus client permet de recompenser les achats selon des regles simples.
+
+### 10.1 Signification des champs
+
+- `Montant seuil` : montant minimum d'achat a atteindre pour declencher l'attribution de points
+- `Points attribues` : nombre de points accordes lorsque le montant seuil est atteint
+- `Equivalent montant d'un point` : valeur monetaire d'un point
+- `Quota de points` : plafond ou objectif de points sur une periode definie
+- `Prime en montant` : recompense financiere accordee quand le quota de points est atteint
+
+### 10.2 Exemple de configuration
+
+Exemple :
+
+- `Montant seuil = 20`
+- `Points attribues = 5`
+- `Equivalent montant d'un point = 0.2`
+- `Quota de points = 100`
+- `Prime en montant = 10`
+
+Cela signifie :
+
+- a chaque achat de `20` ou plus, le client gagne `5 points`
+- `1 point` vaut `0.2`
+- a l'atteinte de `100 points` sur la periode definie, le client recoit une prime de `10`
+
+### 10.3 Resume rapide
+
+- `Montant seuil` = a partir de combien on recompense
+- `Points attribues` = combien de points on donne
+- `Equivalent montant d'un point` = combien vaut 1 point
+- `Quota de points` = limite ou objectif de points
+- `Prime en montant` = recompense accordee a l'atteinte du quota
+
+## 11. Inventaire, ajustements et retours
 
 ### 11.1 Ajustement de stock
 
-Utilise pour :
+Utiliser un ajustement pour :
 
 - corriger une quantite
 - regulariser un ecart
-- reinitialiser un niveau theorique
+- mettre a jour un niveau theorique
 
 ### 11.2 Inventaire physique
 
-Utilise pour :
+L'inventaire physique sert a :
 
 - comparer le stock theorique au stock reel
-- valider les ecarts
-- cloturer avec correction si necessaire
+- identifier les ecarts
+- valider les corrections
 
 ### 11.3 Retour stock
 
-Utilise pour :
-
-- reintegrer un stock dans une zone
+Le retour stock sert a reintegrer des quantites dans une zone selon votre procedure interne.
 
 ### 11.4 Retour fournisseur
 
-Utilise pour :
+Le retour fournisseur sert a :
 
-- sortir des composants vers un fournisseur
-- gerer la casse, le defectueux ou les retours commerciaux
+- sortir un composant vers un fournisseur
+- gerer le defectueux, la casse ou un retour commercial
 
-## 12. Rapports et dashboard
+## 12. Procedures par role
 
-Les ecrans de pilotage permettent de suivre :
+### 12.1 Procedure quotidienne du SUPERADMIN ou ADMIN
 
-- le nombre de produits actifs
-- les entrees et sorties de stock
-- le cout des ventes
-- la repartition du stock par boutique
-- les alertes de peremption
+Au debut de la journee :
 
-Apres un reset de base ou sur une base vide :
+1. Verifier le tableau de bord
+2. Verifier les alertes stock et expiration
+3. Verifier les documents en attente de validation
 
-- le dashboard peut afficher des valeurs nulles
-- c'est normal tant qu'il n'y a pas encore de donnees metier
+En cours de journee :
 
-## 13. Ordre recommande de mise en place
+1. Creer ou mettre a jour les utilisateurs si necessaire
+2. Mettre a jour le catalogue si besoin
+3. Suivre les commandes fournisseur
+4. Suivre les requisitions et transferts
 
-Pour lancer une nouvelle instance, suivre cet ordre :
+En fin de journee :
 
-1. Creer les boutiques
-2. Creer les zones de stock
-3. Creer les unites
-4. Configurer les devises
-5. Creer les profils de permissions
-6. Creer les utilisateurs
-7. Creer les produits composants
-8. Creer les articles
-9. Definir les fiches techniques
-10. Creer les demandes d'achat si besoin
-11. Creer les commandes fournisseur
-12. Enregistrer les entrees en stock depot
-13. Creer les requisitions boutique
-14. Finaliser les transferts depot -> boutique
-15. Ouvrir la caisse
-16. Vendre les articles
+1. Controler les ventes et encaissements
+2. Controler les ecarts de stock signales
+3. Exporter les rapports utiles
 
-## 14. Bonnes pratiques d'utilisation
+### 12.2 Procedure du gestionnaire de stock ou manager
+
+Au debut de la journee :
+
+1. Verifier le stock depot
+2. Verifier le stock boutique
+3. Controler les requisitions recues
+
+Pendant l'exploitation :
+
+1. Traiter les demandes d'achat
+2. Preparer les entrees de stock depot
+3. Preparer les transferts depot vers boutique
+4. Finaliser les mouvements de stock selon le workflow
+
+En fin de journee :
+
+1. Verifier les transferts non finalises
+2. Verifier les mouvements en erreur
+3. Lancer les ajustements si necessaire
+
+### 12.3 Procedure quotidienne du caissier
+
+Au debut de la journee :
+
+1. Se connecter
+2. Ouvrir la caisse
+3. Verifier que la caisse pointe bien sur la bonne boutique
+4. Verifier que le stock boutique est suffisant
+
+Pendant la vente :
+
+1. Rechercher ou scanner l'article
+2. Ajouter l'article au panier
+3. Verifier les quantites
+4. Encaisser la vente
+
+Si un article manque :
+
+1. Verifier qu'il existe encore dans le stock boutique
+2. Si besoin, creer une requisition de ravitaillement
+
+En fin de journee :
+
+1. Verifier les ventes du jour
+2. Cloturer ou fermer la caisse selon votre procedure
+3. Signaler toute anomalie de stock ou de paiement
+
+## 13. Bonnes pratiques d'exploitation
 
 - toujours creer les composants avant les articles
-- ne pas utiliser un article comme stock physique
+- ne jamais utiliser un article comme stock physique
 - verifier qu'une fiche technique existe avant la vente
-- verifier que la boutique est bien ravitaillee avant l'ouverture de caisse
+- verifier que la boutique est ravitaillee avant l'ouverture de caisse
 - utiliser la requisition pour les besoins boutique
-- utiliser le depot comme source de ravitaillement, pas comme zone de vente
+- utiliser le depot comme source de ravitaillement et non comme zone de vente
 - controler les validations de workflow avant de conclure qu'un stock a bouge
+- renseigner le `Code scan` des articles pour accelerer le passage en caisse
+- garder une nomenclature claire pour les composants, articles et zones
 
-## 15. Erreurs frequentes et interpretation
+## 14. Erreurs frequentes et interpretation
 
 ### `Target store/zone required`
 
@@ -437,7 +507,7 @@ Signifie generalement :
 
 Signifie :
 
-- le depot ou la zone source ne contient pas assez de composants pour finaliser le transfert
+- la zone source ne contient pas assez de composants pour finaliser le mouvement
 
 ### `Password change required`
 
@@ -450,9 +520,23 @@ Signifie :
 Souvent, cela signifie :
 
 - le document a ete cree
-- mais pas encore comptabilise, valide ou finalise
+- mais il n'a pas encore ete valide, comptabilise ou finalise
 
-## 16. Resume metier en une phrase
+### L'article ne passe pas au scan
 
-`On vend des articles, mais on achete, on stocke, on transfere et on consomme seulement des composants.`
+Verifier :
 
+- que l'article possede un `Code scan`
+- que le code lu correspond exactement a la valeur enregistree
+- que la fiche technique de l'article est correcte
+- que le stock boutique n'est pas a zero
+
+## 15. Resume operationnel
+
+Schema simple a retenir :
+
+`Demande d'achat -> Commande fournisseur -> Entree depot -> Requisition boutique -> Transfert depot vers boutique -> Vente caisse`
+
+Phrase cle :
+
+`On vend des articles, mais on gere le stock reel uniquement en composants.`

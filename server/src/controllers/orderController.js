@@ -78,6 +78,33 @@ const computeProgramPoints = (total, program) => {
 
 const normalizePaymentMethod = (value) => PAYMENT_METHOD_MAP[value] || null;
 
+const orderDeliveryInclude = {
+  delivery: {
+    include: {
+      driver: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          phone: true,
+          role: true,
+        },
+      },
+      store: {
+        select: {
+          id: true,
+          name: true,
+          code: true,
+          city: true,
+          commune: true,
+          country: true,
+        },
+      },
+    },
+  },
+};
+
 const hydrateOrdersWithCurrencyCodes = async (records) => {
   const list = Array.isArray(records)
     ? records.filter(Boolean)
@@ -445,14 +472,28 @@ const getOrderWithRelations = (tenantId, id) =>
       store: true,
       payments: true,
       createdBy: true,
+      ...orderDeliveryInclude,
     },
   });
 
 const listOrders = async (req, res) => {
-  const { status, storeId, customerId } = req.query || {};
+  const { status, storeId, customerId, deliveryStatus } = req.query || {};
+  const hasDelivery =
+    req.query?.hasDelivery === undefined
+      ? undefined
+      : String(req.query.hasDelivery).toLowerCase() === "true";
   const { page, pageSize, paginate, sortBy, sortDir, search, exportType } =
     parseListParams(req.query);
   const createdAtFilter = buildDateRangeFilter(req.query, "createdAt");
+
+  const deliveryFilter =
+    deliveryStatus
+      ? { delivery: { is: { status: String(deliveryStatus).toUpperCase() } } }
+      : hasDelivery === undefined
+        ? {}
+        : hasDelivery
+          ? { delivery: { isNot: null } }
+          : { delivery: { is: null } };
 
   const searchFilter = search
     ? {
@@ -470,6 +511,7 @@ const listOrders = async (req, res) => {
     ...(status ? { status } : {}),
     ...(storeId ? { storeId } : {}),
     ...(customerId ? { customerId } : {}),
+    ...deliveryFilter,
     ...createdAtFilter,
     ...searchFilter,
   };
@@ -512,6 +554,7 @@ const listOrders = async (req, res) => {
         store: true,
         payments: true,
         createdBy: true,
+        ...orderDeliveryInclude,
       },
       orderBy,
     });
@@ -528,6 +571,7 @@ const listOrders = async (req, res) => {
         store: true,
         payments: true,
         createdBy: true,
+        ...orderDeliveryInclude,
       },
       orderBy,
       skip: (page - 1) * pageSize,
@@ -552,6 +596,7 @@ const getOrder = async (req, res) => {
       store: true,
       payments: true,
       createdBy: true,
+      ...orderDeliveryInclude,
     },
   });
 

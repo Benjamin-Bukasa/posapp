@@ -1,4 +1,9 @@
-DOCS/client_secret_*.json
-DOCS/client_secret_*.json
-
+node_modules/
+.expo/
+dist/
+build/
+coverage/
+.env
+.env.local
+.env.*.local
 DOCS/client_secret_*.json
