@@ -28,6 +28,7 @@ enum BillingCycle {
 enum UserRole {
   SUPERADMIN
   ADMIN
+  DRIVER
   USER
 }
 
@@ -35,6 +36,15 @@ enum OrderStatus {
   DRAFT
   PAID
   PARTIAL
+  CANCELED
+}
+
+enum DeliveryStatus {
+  PENDING
+  ASSIGNED
+  IN_TRANSIT
+  ARRIVED
+  DELIVERED
   CANCELED
 }
 
@@ -189,6 +199,8 @@ model Tenant {
   auditLogs         AuditLog[]
   messages          Message[]
   notifications     Notification[]
+  deliveries        Delivery[]
+  driverLocations   DriverLocation[]
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
 
@@ -262,6 +274,8 @@ model User {
   approvalFlowSteps ApprovalFlowStep[] @relation("ApprovalFlowApprover")
   productTransfersRequested ProductTransfer[] @relation("ProductTransferRequestedBy")
   inventoryMovementsCreated InventoryMovement[] @relation("InventoryMovementCreatedBy")
+  deliveriesAssigned Delivery[] @relation("DeliveryDriver")
+  driverLocations    DriverLocation[]
 
   @@index([tenantId])
   @@map("users")
@@ -328,6 +342,7 @@ model Store {
   stockEntries  StockEntry[]
   productTransfersFrom ProductTransfer[] @relation("TransferFrom")
   productTransfersTo   ProductTransfer[] @relation("TransferTo")
+  deliveries           Delivery[]
 
   @@index([tenantId])
   @@map("stores")
@@ -519,6 +534,7 @@ model Order {
   items       OrderItem[]
   payments    Payment[]
   invoices    Invoice[]
+  delivery    Delivery?
 
   @@index([tenantId])
   @@map("orders")
@@ -538,6 +554,64 @@ model OrderItem {
 
   @@index([orderId])
   @@map("order_items")
+}
+
+model Delivery {
+  id                 String         @id @default(cuid())
+  tenantId           String
+  storeId            String?
+  orderId            String         @unique
+  driverId           String?
+  status             DeliveryStatus @default(PENDING)
+  assignedAt         DateTime?
+  startedAt          DateTime?
+  arrivedAt          DateTime?
+  deliveredAt        DateTime?
+  canceledAt         DateTime?
+  canceledReason     String?
+  customerName       String?
+  customerPhone      String?
+  deliveryAddress    String?
+  customerLatitude   Decimal?       @db.Decimal(10, 7)
+  customerLongitude  Decimal?       @db.Decimal(10, 7)
+  lastDriverLatitude Decimal?       @db.Decimal(10, 7)
+  lastDriverLongitude Decimal?      @db.Decimal(10, 7)
+  lastDriverAccuracy Decimal?       @db.Decimal(10, 2)
+  lastLocationAt     DateTime?
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
+
+  tenant    Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  store     Store?           @relation(fields: [storeId], references: [id])
+  order     Order            @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  driver    User?            @relation("DeliveryDriver", fields: [driverId], references: [id])
+  locations DriverLocation[]
+
+  @@index([tenantId])
+  @@index([driverId, status])
+  @@index([storeId, status])
+  @@map("deliveries")
+}
+
+model DriverLocation {
+  id         String    @id @default(cuid())
+  tenantId   String
+  driverId   String
+  deliveryId String?
+  latitude   Decimal   @db.Decimal(10, 7)
+  longitude  Decimal   @db.Decimal(10, 7)
+  accuracy   Decimal?  @db.Decimal(10, 2)
+  recordedAt DateTime  @default(now())
+  createdAt  DateTime  @default(now())
+
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  driver   User      @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  delivery Delivery? @relation(fields: [deliveryId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([driverId, recordedAt])
+  @@index([deliveryId, recordedAt])
+  @@map("driver_locations")
 }
 
 model Wishlist {

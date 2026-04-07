@@ -36,6 +36,7 @@ const currencySettingsRoutes = require("./routes/currencySettingsRoutes");
 const customerBonusProgramRoutes = require("./routes/customerBonusProgramRoutes");
 const taxRateRoutes = require("./routes/taxRateRoutes");
 const permissionProfileRoutes = require("./routes/permissionProfileRoutes");
+const mobileDriverRoutes = require("./routes/mobileDriverRoutes");
 const { ensureProductExtendedFields } = require("./controllers/productController");
 const { startSubscriptionCron } = require("./services/subscriptionCron");
 const { initSocket } = require("./socket");
@@ -99,6 +100,7 @@ app.use("/api/currency-settings", currencySettingsRoutes);
 app.use("/api/customer-bonus-programs", customerBonusProgramRoutes);
 app.use("/api/tax-rates", taxRateRoutes);
 app.use("/api/permission-profiles", permissionProfileRoutes);
+app.use("/api/mobile/driver", mobileDriverRoutes);
 
 app.use((err, req, res, next) => {
   console.error(err);
