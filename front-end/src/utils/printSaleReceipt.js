@@ -225,8 +225,12 @@ export const printSaleReceipt = ({
   cashierName,
   storeName,
   businessName,
+  targetWindow,
 }) => {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer,width=420,height=720");
+  const printWindow =
+    targetWindow ||
+    window.open("", "_blank", "noopener,noreferrer,width=420,height=720");
+
   if (!printWindow) {
     throw new Error("Le navigateur a bloque l'ouverture du ticket d'impression.");
   }
@@ -242,6 +246,10 @@ export const printSaleReceipt = ({
     }),
   );
   printWindow.document.close();
+
+  if (!targetWindow) {
+    printWindow.focus();
+  }
 };
 
 export default printSaleReceipt;

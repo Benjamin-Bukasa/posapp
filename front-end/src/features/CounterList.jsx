@@ -418,6 +418,26 @@ const CounterList = () => {
         variant: "success",
       });
 
+      let browserPrintWindow = null;
+      const shouldPrepareBrowserWindow =
+        userPreferences.autoPrintReceipt &&
+        userPreferences.printerMode !== "local_service";
+
+      if (shouldPrepareBrowserWindow) {
+        browserPrintWindow = window.open(
+          "",
+          "_blank",
+          "noopener,noreferrer,width=420,height=720",
+        );
+
+        if (browserPrintWindow) {
+          browserPrintWindow.document.write(
+            "<html><head><title>Ticket en preparation</title></head><body><p>Préparation du ticket...</p></body></html>",
+          );
+          browserPrintWindow.document.close();
+        }
+      }
+
       if (userPreferences.autoPrintReceipt) {
         try {
           if (userPreferences.printerMode === "local_service") {
@@ -443,34 +463,24 @@ const CounterList = () => {
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
               businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+              targetWindow: browserPrintWindow || undefined,
             });
           }
         } catch (printError) {
-          try {
-            printSaleReceipt({
-              order: createdOrder,
-              amountReceived: amount,
-              cashierName:
-                [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
-                user?.email ||
-                "Caissier",
-              storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
-              businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
-            });
+          if (userPreferences.printerMode === "local_service") {
             showToast({
-              title: "Service local indisponible",
+              title: "Impression POS impossible",
               message:
                 printError.message ||
-                "Le ticket a ete bascule vers l'impression navigateur.",
+                "Le ticket POS n'a pas pu etre imprime via le service local.",
               variant: "warning",
             });
-          } catch (browserPrintError) {
+          } else {
             showToast({
-              title: "Impression impossible",
+              title: "Impression navigateur impossible",
               message:
                 printError.message ||
-                browserPrintError.message ||
-                "Le ticket n'a pas pu etre imprime.",
+                "Le ticket n'a pas pu etre imprime dans le navigateur.",
               variant: "warning",
             });
           }
