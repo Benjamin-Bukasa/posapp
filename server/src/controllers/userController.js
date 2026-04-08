@@ -778,45 +778,45 @@ const buildUserHardDeleteBlockers = (usage) => {
 const hardDeleteUser = async (req, res) => {
   const { id } = req.params;
 
-  if (id === req.user.id) {
-    return res.status(400).json({
-      message: "Vous ne pouvez pas supprimer definitivement votre propre compte.",
-    });
-  }
-
-  const user = await prisma.user.findFirst({
-    where: { id, tenantId: req.user.tenantId },
-    select: {
-      id: true,
-      firstName: true,
-      lastName: true,
-      email: true,
-      phone: true,
-    },
-  });
-
-  if (!user) {
-    return res.status(404).json({ message: "User not found." });
-  }
-
-  const label =
-    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
-    user.email ||
-    user.phone ||
-    "cet utilisateur";
-
-  const usage = await getUserHardDeleteUsage(req.user.tenantId, id);
-  const blockers = buildUserHardDeleteBlockers(usage);
-
-  if (blockers.length) {
-    return res.status(409).json({
-      message: `Suppression definitive impossible pour ${label}. References detectees : ${blockers.join(
-        ", ",
-      )}.`,
-    });
-  }
-
   try {
+    if (id === req.user.id) {
+      return res.status(400).json({
+        message: "Vous ne pouvez pas supprimer definitivement votre propre compte.",
+      });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id, tenantId: req.user.tenantId },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        phone: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(404).json({ message: "User not found." });
+    }
+
+    const label =
+      [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+      user.email ||
+      user.phone ||
+      "cet utilisateur";
+
+    const usage = await getUserHardDeleteUsage(req.user.tenantId, id);
+    const blockers = buildUserHardDeleteBlockers(usage);
+
+    if (blockers.length) {
+      return res.status(409).json({
+        message: `Suppression definitive impossible pour ${label}. References detectees : ${blockers.join(
+          ", ",
+        )}.`,
+      });
+    }
+
     await ensureUserPreferenceTable();
 
     await prisma.$transaction(async (tx) => {
@@ -836,9 +836,18 @@ const hardDeleteUser = async (req, res) => {
 
     return res.json({ message: "Utilisateur supprime definitivement." });
   } catch (error) {
+    console.error("[USER_HARD_DELETE_ERROR]", {
+      userId: id,
+      tenantId: req.user?.tenantId || null,
+      code: error?.code || null,
+      message: error?.message || "Unknown error",
+      meta: error?.meta || null,
+    });
+
     if (error?.code === "P2003") {
       return res.status(409).json({
-        message: `Suppression definitive impossible pour ${label} car le compte est encore reference dans des donnees liees.`,
+        message:
+          "Suppression definitive impossible car le compte est encore reference dans des donnees liees.",
       });
     }
 
