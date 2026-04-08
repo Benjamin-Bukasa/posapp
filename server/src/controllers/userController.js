@@ -9,6 +9,7 @@ const {
   getProfileById,
   getAssignedProfileByUserId,
   getAssignedProfilesMap,
+  ensurePermissionProfileTables,
 } = require("../utils/permissionProfileStore");
 const { hasPermission } = require("../utils/permissionAccess");
 const {
@@ -855,13 +856,21 @@ const hardDeleteUser = async (req, res) => {
       });
     }
 
+    await ensurePermissionProfileTables();
     await ensureUserPreferenceTable();
 
     await prisma.$transaction(async (tx) => {
-      await tx.$executeRawUnsafe(
-        `DELETE FROM user_permission_profiles WHERE user_id = $1`,
-        id,
-      );
+      try {
+        await tx.$executeRawUnsafe(
+          `DELETE FROM user_permission_profiles WHERE user_id = $1`,
+          id,
+        );
+      } catch (error) {
+        if (!isMissingRelationError(error)) {
+          throw error;
+        }
+      }
+
       await tx.$executeRawUnsafe(
         `DELETE FROM user_preferences WHERE "tenantId" = $1 AND "userId" = $2`,
         req.user.tenantId,
