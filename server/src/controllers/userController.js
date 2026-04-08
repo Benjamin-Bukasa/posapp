@@ -2,7 +2,7 @@ const prisma = require("../config/prisma");
 const { sendWorkbook, readSheetRows } = require("../utils/xlsxTemplates");
 const { hashPassword } = require("../utils/password");
 const { generateTempPassword } = require("../utils/tokens");
-const { sendEmail, sendSms } = require("../services/notificationService");
+const { sendEmail, sendSms, isEmailConfigured } = require("../services/notificationService");
 const { buildAccountCreationEmail } = require("../utils/emailTemplates");
 const {
   assignProfileToUser,
@@ -34,6 +34,7 @@ const queueAccountCreationNotification = ({
   tempPassword,
 }) => {
   const identifier = email || phone;
+  const channel = sendVia === "sms" && phone ? "sms" : email ? "email" : phone ? "sms" : "none";
   const { subject, text, html } = buildAccountCreationEmail({
     tenantName: tenantName || "POSapp",
     identifier,
@@ -42,19 +43,44 @@ const queueAccountCreationNotification = ({
 
   Promise.resolve()
     .then(async () => {
+      console.log("[USER_CREATE_NOTIFICATION_START]", {
+        identifier,
+        channel,
+        hasEmail: Boolean(email),
+        hasPhone: Boolean(phone),
+        smtpConfigured: isEmailConfigured(),
+      });
+
       if (sendVia === "sms" && phone) {
         await sendSms({ to: phone, message: text });
         return;
       }
 
       if (email) {
-        await sendEmail({
+        const result = await sendEmail({
           to: email,
           subject,
           text,
           html,
         });
+        if (result?.skipped) {
+          console.warn("[USER_CREATE_NOTIFICATION_SKIPPED]", {
+            identifier,
+            reason: "smtp_not_configured",
+          });
+        }
+        return;
       }
+
+      if (phone) {
+        await sendSms({ to: phone, message: text });
+        return;
+      }
+
+      console.warn("[USER_CREATE_NOTIFICATION_SKIPPED]", {
+        identifier,
+        reason: "no_email_or_phone",
+      });
     })
     .catch((error) => {
       console.error("[USER_CREATE_NOTIFICATION_ERROR]", {

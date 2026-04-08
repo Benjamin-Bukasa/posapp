@@ -25,6 +25,15 @@ const isEmailConfigured = () => {
   return Boolean(host) && !Number.isNaN(port);
 };
 
+const getEmailDebugInfo = () => ({
+  host: readEnv("SMTP_HOST") || null,
+  port: Number(readEnv("SMTP_PORT", "587")),
+  secure: readEnv("SMTP_SECURE", "false").toLowerCase() === "true",
+  user: readEnv("SMTP_USER") || null,
+  from: readEnv("SMTP_FROM") || readEnv("COMPANY_SUPPORT_EMAIL") || null,
+  configured: isEmailConfigured(),
+});
+
 const getTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
 
@@ -102,4 +111,5 @@ module.exports = {
   sendEmail,
   sendSms,
   isEmailConfigured,
+  getEmailDebugInfo,
 };

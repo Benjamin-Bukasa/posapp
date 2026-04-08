@@ -14,6 +14,7 @@ const {
   sendEmail,
   sendSms,
   isEmailConfigured,
+  getEmailDebugInfo,
 } = require("../services/notificationService");
 const { verifyGoogleIdToken } = require("../services/googleService");
 const { getPlanConfig } = require("../services/subscriptionService");
@@ -32,9 +33,19 @@ const getAccessTokenTtlByClient = (clientType) => {
 const queueForgotPasswordNotification = ({ user, sendVia, resetToken }) => {
   const identifier = user?.email || user?.phone || user?.id || "unknown-user";
   const message = `Reinitialisation du mot de passe: ${resetToken}.`;
+  const channel =
+    sendVia === "sms" && user?.phone ? "sms" : user?.email ? "email" : user?.phone ? "sms" : "none";
 
   Promise.resolve()
     .then(async () => {
+      console.log("[FORGOT_PASSWORD_NOTIFICATION_START]", {
+        identifier,
+        channel,
+        hasEmail: Boolean(user?.email),
+        hasPhone: Boolean(user?.phone),
+        smtpConfigured: isEmailConfigured(),
+      });
+
       if (sendVia === "sms" && user?.phone) {
         await sendSms({ to: user.phone, message });
         return;
@@ -54,7 +65,13 @@ const queueForgotPasswordNotification = ({ user, sendVia, resetToken }) => {
 
       if (user?.phone) {
         await sendSms({ to: user.phone, message });
+        return;
       }
+
+      console.warn("[FORGOT_PASSWORD_NOTIFICATION_SKIPPED]", {
+        identifier,
+        reason: "no_email_or_phone",
+      });
     })
     .catch((error) => {
       console.error("[FORGOT_PASSWORD_NOTIFICATION_ERROR]", {
@@ -360,6 +377,10 @@ const forgotPassword = async (req, res) => {
     }
 
     if (!isEmailConfigured()) {
+      console.warn("[FORGOT_PASSWORD_EMAIL_UNAVAILABLE]", {
+        identifier,
+        emailDebug: getEmailDebugInfo(),
+      });
       return res.status(503).json({
         message: "Le service email n'est pas configure sur le serveur.",
       });
