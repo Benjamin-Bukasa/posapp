@@ -23,6 +23,7 @@ const { sendExport } = require("../utils/exporter");
 const {
   getUserPreferences,
   upsertUserPreferences,
+  ensureUserPreferenceTable,
 } = require("../utils/userPreferenceStore");
 
 const queueAccountCreationNotification = ({
