@@ -57,6 +57,7 @@ const protectedRoutes = [
               { index: true, element: <Navigate to="requisitions" replace /> },
               { path: "requisitions", element: <Requisitions /> },
               { path: "requisitions/nouvelle", element: <RequisitionCreate /> },
+              { path: "requisitions/:id/modifier", element: <RequisitionCreate /> },
               { path: "transferts", element: <Transfers /> },
               { path: "livraisons", element: <Deliveries /> },
               { path: "receptions", element: <Receptions /> },

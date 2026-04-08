@@ -15,6 +15,7 @@ const formatRole = (role) => {
   if (!role) return "Utilisateur";
   if (role === "SUPERADMIN") return "Super admin";
   if (role === "ADMIN") return "Administrateur";
+  if (role === "SELLER") return "Vendeur";
   return "Utilisateur";
 };
 

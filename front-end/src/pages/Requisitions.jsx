@@ -89,6 +89,7 @@ function Requisitions() {
           reference,
           title: rawTitle || reference,
           store: request.store?.name || request.storageZone?.name || "N/A",
+          requestedById: request.requestedById || request.requestedBy?.id || null,
           requestedBy: request.requestedBy
             ? formatName(request.requestedBy)
             : "N/A",
@@ -219,6 +220,19 @@ function Requisitions() {
         description="Toutes les requisitions de stock"
         columns={columns}
         data={pagedRows}
+        renderActions={(row) =>
+          row.rawStatus === "DRAFT" && row.requestedById === user?.id ? (
+            <Button
+              type="button"
+              label="Modifier"
+              variant="default"
+              size="small"
+              onClick={() =>
+                navigate(`/operations/requisitions/${row.id}/modifier`)
+              }
+            />
+          ) : null
+        }
         emptyMessage={loading ? "Chargement..." : "Aucune donnee"}
         enableSelection={false}
         searchInput={{

@@ -19,6 +19,8 @@ const toMoney = (value) => {
   return Number.isFinite(amount) ? Number(amount.toFixed(2)) : NaN;
 };
 
+const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
+
 const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZoneId }) => {
   if (defaultStorageZoneId) {
     const zone = await prisma.storageZone.findFirst({
@@ -112,9 +114,7 @@ const getById = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canView =
-    req.user.role !== "USER" ||
-    session.userId === req.user.id;
+  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
 
   if (!canView) {
     return res.status(403).json({
@@ -262,7 +262,7 @@ const list = async (req, res) => {
   const status = req.query?.status ? String(req.query.status).trim().toUpperCase() : null;
   const requestedUserId = req.query?.userId ? String(req.query.userId).trim() : null;
   const storeId = req.query?.storeId ? String(req.query.storeId).trim() : null;
-  const scopedUserId = req.user.role === "USER" ? req.user.id : requestedUserId;
+  const scopedUserId = isFrontOfficeRole(req.user.role) ? req.user.id : requestedUserId;
 
   if (exportType) {
     const exportRows = await listCashSessions({

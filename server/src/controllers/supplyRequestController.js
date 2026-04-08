@@ -579,6 +579,18 @@ const updateSupplyRequest = async (req, res) => {
     return res.status(404).json({ message: "Supply request not found." });
   }
 
+  const canManageRequest =
+    request.requestedById === req.user.id ||
+    req.user.role === "ADMIN" ||
+    req.user.role === "SUPERADMIN" ||
+    req.user.role === "MANAGER";
+
+  if (!canManageRequest) {
+    return res.status(403).json({
+      message: "Vous ne pouvez modifier que vos propres requisitions non validees.",
+    });
+  }
+
   if (request.status !== "DRAFT") {
     return res.status(400).json({
       message: "Only non-validated requisitions can be edited.",
@@ -649,6 +661,18 @@ const deleteSupplyRequest = async (req, res) => {
 
   if (!request) {
     return res.status(404).json({ message: "Supply request not found." });
+  }
+
+  const canManageRequest =
+    request.requestedById === req.user.id ||
+    req.user.role === "ADMIN" ||
+    req.user.role === "SUPERADMIN" ||
+    req.user.role === "MANAGER";
+
+  if (!canManageRequest) {
+    return res.status(403).json({
+      message: "Vous ne pouvez supprimer que vos propres requisitions non validees.",
+    });
   }
 
   if (request.status !== "DRAFT") {
