@@ -99,7 +99,15 @@ const buildReceiptPdfBlob = async ({
   y -= 16;
   drawText(page, font, businessName || "POSapp", centerX, y, 10, "center");
   y -= 14;
-  drawText(page, font, `Ticket: ${String(order?.id || "").slice(-8).toUpperCase()}`, 20, y, 9, "left");
+  drawText(
+    page,
+    font,
+    `Ticket: ${String(order?.id || "").slice(-8).toUpperCase()}`,
+    20,
+    y,
+    9,
+    "left",
+  );
   y -= 12;
   drawText(page, font, `Date: ${formatDate(order?.createdAt)}`, 20, y, 9, "left");
   y -= 12;
@@ -147,7 +155,15 @@ const buildReceiptPdfBlob = async ({
       y -= 12;
     });
 
-    drawText(page, font, `${quantity} x ${formatAmount(unitPrice, currencyCode)}`, 20, y, 9, "left");
+    drawText(
+      page,
+      font,
+      `${quantity} x ${formatAmount(unitPrice, currencyCode)}`,
+      20,
+      y,
+      9,
+      "left",
+    );
     drawText(page, font, formatAmount(lineTotal, currencyCode), width - 20, y, 9, "right");
     y -= 14;
   });
@@ -159,7 +175,7 @@ const buildReceiptPdfBlob = async ({
     ["Sous-total", formatAmount(order?.subtotal ?? total, currencyCode)],
     ["Total", formatAmount(total, currencyCode)],
     ["Paiement", methodLabels[payment?.method] || payment?.method || "--"],
-    ["Montant reçu", formatAmount(paid, currencyCode)],
+    ["Montant recu", formatAmount(paid, currencyCode)],
     ...(showOriginalPayment
       ? [["Remis client", formatAmount(originalPaid, originalCurrencyCode)]]
       : []),
@@ -176,7 +192,7 @@ const buildReceiptPdfBlob = async ({
     y -= 12;
     drawText(page, font, "----------------------------------------", 20, y, 8, "left");
     y -= 14;
-    drawText(page, font, `Points gagnés: ${order.loyaltyPoints}`, 20, y, 9, "left");
+    drawText(page, font, `Points gagnes: ${order.loyaltyPoints}`, 20, y, 9, "left");
     y -= 14;
   }
 

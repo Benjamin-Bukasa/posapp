@@ -30,6 +30,8 @@ import {
   formatSecondaryAmount,
   hasSecondaryCurrency,
 } from "../utils/currency";
+import printReceiptViaLocalService from "../utils/localPrintService";
+import printSaleReceipt from "../utils/printSaleReceipt";
 
 const settingsCardClassName =
   "rounded-xl border border-border bg-surface p-4 shadow-sm";
@@ -78,6 +80,7 @@ function Settings() {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [passwordSaving, setPasswordSaving] = useState(false);
+  const [printTesting, setPrintTesting] = useState(false);
   const [zoneName, setZoneName] = useState("");
   const [cashSession, setCashSession] = useState(null);
   const [cashSessionLoading, setCashSessionLoading] = useState(false);
@@ -305,6 +308,96 @@ function Settings() {
         message: error.message || "Impossible de sauvegarder les preferences.",
         variant: "danger",
       });
+    }
+  };
+
+  const handleTestPrint = async () => {
+    setPrintTesting(true);
+
+    const testOrder = {
+      id: "test-print-ticket",
+      createdAt: new Date().toISOString(),
+      subtotal: 12.5,
+      total: 12.5,
+      currencyCode: currencySettings.primaryCurrencyCode || "USD",
+      customer: {
+        firstName: "Client",
+        lastName: "Test",
+      },
+      items: [
+        {
+          id: "test-line-1",
+          name: "Article de test",
+          quantity: 1,
+          unitPrice: 12.5,
+          total: 12.5,
+          product: {
+            name: "Article de test",
+          },
+        },
+      ],
+      payments: [
+        {
+          method: "CASH",
+          amount: 20,
+          currencyCode: currencySettings.primaryCurrencyCode || "USD",
+        },
+      ],
+      loyaltyPoints: 0,
+    };
+
+    const cashierName =
+      [user?.firstName, user?.lastName].filter(Boolean).join(" ") ||
+      user?.email ||
+      "Caissier";
+    const storeName = user?.storeName || cashSession?.storeName || "Boutique";
+    const businessName = user?.tenantName || storeName || "POSapp";
+
+    try {
+      if (printerForm.printerMode === "local_service") {
+        await printReceiptViaLocalService({
+          order: testOrder,
+          amountReceived: 20,
+          cashierName,
+          storeName,
+          businessName,
+          printerServiceUrl: printerForm.printerServiceUrl || undefined,
+          printerName: printerForm.printerName || undefined,
+        });
+      } else {
+        const printWindow = window.open("", "_blank");
+        if (!printWindow) {
+          throw new Error(
+            "Le navigateur a bloque l'ouverture du ticket. Autorise les popups pour cette application.",
+          );
+        }
+
+        printSaleReceipt({
+          order: testOrder,
+          amountReceived: 20,
+          cashierName,
+          storeName,
+          businessName,
+          targetWindow: printWindow,
+        });
+      }
+
+      showToast({
+        title: "Impression test",
+        message:
+          printerForm.printerMode === "local_service"
+            ? "Le ticket test a ete envoye au service local."
+            : "Le ticket test a ete ouvert pour impression.",
+        variant: "success",
+      });
+    } catch (error) {
+      showToast({
+        title: "Test impression impossible",
+        message: error.message || "Le ticket test n'a pas pu etre imprime.",
+        variant: "warning",
+      });
+    } finally {
+      setPrintTesting(false);
     }
   };
 
@@ -848,7 +941,15 @@ function Settings() {
             </label>
           </div>
 
-          <div className="mt-4 flex justify-end">
+          <div className="mt-4 flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              label={printTesting ? "Test en cours..." : "Tester l'impression"}
+              variant="default"
+              size="small"
+              disabled={printTesting}
+              onClick={handleTestPrint}
+            />
             <Button
               type="button"
               label={preferenceSaving ? "Sauvegarde..." : "Sauvegarder"}

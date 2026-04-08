@@ -1442,6 +1442,19 @@ const productRowActions = [
   },
 ];
 
+const userRowActions = [
+  {
+    id: "user-reactivate",
+    label: "Reactiver",
+    method: "PATCH",
+    endpoint: (row) => `/api/users/${row.id}`,
+    body: () => ({ isActive: true }),
+    visible: (row) => row?.isActive === false,
+    tone: "success",
+    requiredPermissions: ["users.update"],
+  },
+];
+
 export const resourceCatalog = {
   "/commande/demande-achat": createResource({
     endpoint: "/api/purchase-requests",
@@ -1844,6 +1857,7 @@ export const resourceCatalog = {
   "/configurations/utilisateur/liste-utilisateurs": createResource({
     endpoint: "/api/users",
     columns: userColumns,
+    rowActions: userRowActions,
     tableTitle: "Liste d'utilisateurs",
     tableDescription: "Comptes utilisateur actuellement enregistres.",
     emptyMessage: "Aucun utilisateur disponible.",
@@ -1862,6 +1876,7 @@ export const resourceCatalog = {
   "/configurations/utilisateur/creer": createResource({
     endpoint: "/api/users",
     columns: userColumns,
+    rowActions: userRowActions,
     tableTitle: "Preparation creation utilisateur",
     tableDescription:
       "Vue des utilisateurs existants avant creation de nouveaux comptes.",

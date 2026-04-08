@@ -1,0 +1,26 @@
+{
+  "name": "local-printer-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local Windows printer bridge for POSapp ESC/POS ticket printing",
+  "main": "src/server.js",
+  "bin": "src/server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "build:win": "npx @yao-pkg/pkg . --targets node20-win-x64 --output dist/posapp-local-printer-service.exe",
+    "build:installer": "powershell -ExecutionPolicy Bypass -File .\\build-installer.ps1"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pkg": {
+    "assets": [
+      "scripts/*.ps1",
+      ".env.example",
+      "README.md"
+    ],
+    "outputPath": "dist"
+  }
+}

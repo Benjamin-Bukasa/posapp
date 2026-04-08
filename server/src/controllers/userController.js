@@ -574,12 +574,20 @@ const updateUser = async (req, res) => {
     return res.status(404).json({ message: "User not found." });
   }
 
+  const hasStoreId = Object.prototype.hasOwnProperty.call(req.body || {}, "storeId");
+  const hasDefaultStorageZoneId = Object.prototype.hasOwnProperty.call(
+    req.body || {},
+    "defaultStorageZoneId",
+  );
+
   let userScope;
   try {
     userScope = await resolveUserScope({
       tenantId: req.user.tenantId,
-      storeId,
-      defaultStorageZoneId,
+      storeId: hasStoreId ? storeId : user.storeId,
+      defaultStorageZoneId: hasDefaultStorageZoneId
+        ? defaultStorageZoneId
+        : user.defaultStorageZoneId,
     });
   } catch (error) {
     return res.status(error?.status || 500).json({ message: error.message });
@@ -593,8 +601,9 @@ const updateUser = async (req, res) => {
       email,
       phone,
       role,
-      storeId: userScope.storeId,
-      defaultStorageZoneId: userScope.defaultStorageZoneId,
+      storeId: hasStoreId || hasDefaultStorageZoneId ? userScope.storeId : undefined,
+      defaultStorageZoneId:
+        hasStoreId || hasDefaultStorageZoneId ? userScope.defaultStorageZoneId : undefined,
       isActive,
     },
   });

@@ -13,7 +13,7 @@ const PRINTER_HOST = process.env.PRINTER_HOST || "";
 const PRINTER_PORT = Number(process.env.PRINTER_PORT || 9100);
 const ALLOWED_ORIGINS = String(
   process.env.PRINTER_ALLOWED_ORIGINS ||
-    "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174",
+    "http://localhost:5173,http://localhost:5174,http://127.0.0.1:5173,http://127.0.0.1:5174,*",
 )
   .split(",")
   .map((item) => item.trim())

@@ -24,7 +24,7 @@ import {
   hasSecondaryCurrency,
 } from "../utils/currency";
 import printReceiptViaLocalService from "../utils/localPrintService";
-import printReceiptPdf from "../utils/printReceiptPdf";
+import printSaleReceipt from "../utils/printSaleReceipt";
 
 const normalizeScanValue = (value) => String(value || "").trim().toLowerCase();
 
@@ -443,7 +443,7 @@ const CounterList = () => {
               printerName: userPreferences.printerName || undefined,
             });
           } else {
-            await printReceiptPdf({
+            printSaleReceipt({
               order: createdOrder,
               amountReceived: amount,
               cashierName:
