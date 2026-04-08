@@ -51,6 +51,7 @@ const { ensureInventorySessionTables } = require("./utils/inventorySessionStore"
 const { ensureUserPreferenceTable } = require("./utils/userPreferenceStore");
 const { ensureDocumentApprovalTable } = require("./utils/documentApprovalStore");
 const { ensureSupplierReturnTables } = require("./controllers/supplierReturnController");
+const { getEmailDebugInfo } = require("./services/notificationService");
 
 const app = express();
 const server = http.createServer(app);
@@ -111,6 +112,8 @@ const port = process.env.PORT || 5000;
 initSocket(server);
 
 const bootstrap = async () => {
+  console.log("[EMAIL][BOOT]", getEmailDebugInfo());
+
   await ensureTenantCurrencyColumns(prisma);
   console.log("Currency settings ready.");
 
