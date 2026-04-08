@@ -663,6 +663,33 @@ const deactivateUser = async (req, res) => {
   return res.json(updated);
 };
 
+const isMissingRelationError = (error) => {
+  if (error?.code === "P2021") return true;
+
+  const message = String(error?.message || "");
+  return (
+    message.includes('does not exist') &&
+    (message.includes("relation") || message.includes("table"))
+  );
+};
+
+const safeCount = async (label, operation) => {
+  try {
+    return await operation();
+  } catch (error) {
+    if (isMissingRelationError(error)) {
+      console.warn("[USER_HARD_DELETE_USAGE_SKIPPED]", {
+        label,
+        code: error?.code || null,
+        message: error?.message || "Missing relation",
+      });
+      return 0;
+    }
+
+    throw error;
+  }
+};
+
 const getUserHardDeleteUsage = async (tenantId, userId) => {
   const [
     orders,
@@ -679,31 +706,42 @@ const getUserHardDeleteUsage = async (tenantId, userId) => {
     productTransfers,
     stockEntries,
     inventoryMovements,
-  ] = await prisma.$transaction([
-    prisma.order.count({ where: { tenantId, createdById: userId } }),
-    prisma.delivery.count({ where: { tenantId, driverId: userId } }),
-    prisma.message.count({
-      where: {
-        tenantId,
-        OR: [{ senderId: userId }, { recipientId: userId }],
-      },
-    }),
-    prisma.auditLog.count({ where: { tenantId, userId } }),
-    prisma.supplyRequest.count({ where: { tenantId, requestedById: userId } }),
-    prisma.supplyRequestApproval.count({ where: { tenantId, approverId: userId } }),
-    prisma.purchaseRequest.count({ where: { tenantId, requestedById: userId } }),
-    prisma.purchaseRequestApproval.count({ where: { tenantId, approverId: userId } }),
-    prisma.purchaseOrder.count({ where: { tenantId, orderedById: userId } }),
-    prisma.deliveryNote.count({ where: { tenantId, receivedById: userId } }),
-    prisma.approvalFlowStep.count({ where: { tenantId, approverUserId: userId } }),
-    prisma.productTransfer.count({ where: { tenantId, requestedById: userId } }),
-    prisma.stockEntry.count({
-      where: {
-        tenantId,
-        OR: [{ createdById: userId }, { approvedById: userId }],
-      },
-    }),
-    prisma.inventoryMovement.count({ where: { tenantId, createdById: userId } }),
+  ] = await Promise.all([
+    safeCount("orders", () => prisma.order.count({ where: { tenantId, createdById: userId } })),
+    safeCount("deliveries", () => prisma.delivery.count({ where: { tenantId, driverId: userId } })),
+    safeCount("messages", () =>
+      prisma.message.count({
+        where: {
+          tenantId,
+          OR: [{ senderId: userId }, { recipientId: userId }],
+        },
+      })),
+    safeCount("auditLogs", () => prisma.auditLog.count({ where: { tenantId, userId } })),
+    safeCount("supplyRequests", () =>
+      prisma.supplyRequest.count({ where: { tenantId, requestedById: userId } })),
+    safeCount("supplyRequestApprovals", () =>
+      prisma.supplyRequestApproval.count({ where: { tenantId, approverId: userId } })),
+    safeCount("purchaseRequests", () =>
+      prisma.purchaseRequest.count({ where: { tenantId, requestedById: userId } })),
+    safeCount("purchaseRequestApprovals", () =>
+      prisma.purchaseRequestApproval.count({ where: { tenantId, approverId: userId } })),
+    safeCount("purchaseOrders", () =>
+      prisma.purchaseOrder.count({ where: { tenantId, orderedById: userId } })),
+    safeCount("deliveryNotes", () =>
+      prisma.deliveryNote.count({ where: { tenantId, receivedById: userId } })),
+    safeCount("approvalSteps", () =>
+      prisma.approvalFlowStep.count({ where: { tenantId, approverUserId: userId } })),
+    safeCount("productTransfers", () =>
+      prisma.productTransfer.count({ where: { tenantId, requestedById: userId } })),
+    safeCount("stockEntries", () =>
+      prisma.stockEntry.count({
+        where: {
+          tenantId,
+          OR: [{ createdById: userId }, { approvedById: userId }],
+        },
+      })),
+    safeCount("inventoryMovements", () =>
+      prisma.inventoryMovement.count({ where: { tenantId, createdById: userId } })),
   ]);
 
   let cashSessions = 0;
@@ -722,15 +760,15 @@ const getUserHardDeleteUsage = async (tenantId, userId) => {
         )
       )?.[0]?.count || 0;
   } catch (error) {
-    const message = String(error?.message || "");
-    if (!message.includes(`relation "cashSessions" does not exist`)) {
+    if (!isMissingRelationError(error)) {
       throw error;
     }
   }
 
-  const ownerTenants = await prisma.tenant.count({
-    where: { id: tenantId, ownerId: userId },
-  });
+  const ownerTenants = await safeCount("ownerTenants", () =>
+    prisma.tenant.count({
+      where: { id: tenantId, ownerId: userId },
+    }));
 
   return {
     orders,
