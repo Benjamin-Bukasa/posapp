@@ -29,6 +29,7 @@ enum UserRole {
   SUPERADMIN
   ADMIN
   DRIVER
+  SELLER
   USER
 }
 

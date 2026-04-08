@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import Button from "../components/ui/button";
 import Input from "../components/ui/input";
 import Textarea from "../components/ui/textarea";
 import useToastStore from "../stores/toastStore";
 import useAuthStore from "../stores/authStore";
-import { apiGet, apiPost, buildQuery } from "../services/apiClient";
+import { apiGet, apiPatch, apiPost, buildQuery } from "../services/apiClient";
 import { useProductsData } from "../hooks/useProductsData";
 
 const buildReference = (sequence) => `REQ${String(sequence).padStart(3, "0")}`;
@@ -29,6 +29,8 @@ const resolveNextSequence = (requests = []) => {
 
 function RequisitionCreate() {
   const navigate = useNavigate();
+  const { id: requisitionId } = useParams();
+  const isEditing = Boolean(requisitionId);
   const showToast = useToastStore((state) => state.showToast);
   const user = useAuthStore((state) => state.user);
   const storeId = user?.storeId || null;
@@ -43,8 +45,10 @@ function RequisitionCreate() {
   const [globalInventory, setGlobalInventory] = useState({});
   const [loadingGlobalInventory, setLoadingGlobalInventory] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [loadingRequest, setLoadingRequest] = useState(false);
 
   useEffect(() => {
+    if (isEditing) return undefined;
     let isMounted = true;
     const loadReference = async () => {
       setLoadingReference(true);
@@ -70,7 +74,63 @@ function RequisitionCreate() {
     return () => {
       isMounted = false;
     };
-  }, [showToast, storeId]);
+  }, [isEditing, showToast, storeId]);
+
+  useEffect(() => {
+    if (!isEditing) return undefined;
+    let isMounted = true;
+    const loadRequest = async () => {
+      setLoadingRequest(true);
+      try {
+        const request = await apiGet(`/api/supply-requests/${requisitionId}`);
+        if (!isMounted) return;
+
+        if (request?.status !== "DRAFT") {
+          showToast({
+            title: "Modification impossible",
+            message: "Seules les requisitions en brouillon peuvent etre modifiees.",
+            variant: "warning",
+          });
+          navigate("/operations/requisitions", { replace: true });
+          return;
+        }
+
+        if (request?.requestedById && user?.id && request.requestedById !== user.id) {
+          showToast({
+            title: "Acces refuse",
+            message: "Vous ne pouvez modifier que vos propres requisitions.",
+            variant: "danger",
+          });
+          navigate("/operations/requisitions", { replace: true });
+          return;
+        }
+
+        setReference(String(request?.code || request?.title || ""));
+        setNote(request?.note || "");
+        setLines(
+          Array.isArray(request?.items)
+            ? request.items.map((item) => ({
+                productId: item.productId,
+                quantity: String(Number(item.quantity || 0) || ""),
+              }))
+            : [],
+        );
+      } catch (error) {
+        showToast({
+          title: "Erreur",
+          message: error.message || "Impossible de charger la requisition.",
+          variant: "danger",
+        });
+        navigate("/operations/requisitions", { replace: true });
+      } finally {
+        if (isMounted) setLoadingRequest(false);
+      }
+    };
+    loadRequest();
+    return () => {
+      isMounted = false;
+    };
+  }, [isEditing, navigate, requisitionId, showToast, user?.id]);
 
   useEffect(() => {
     let isMounted = true;
@@ -170,22 +230,35 @@ function RequisitionCreate() {
 
     setSubmitting(true);
     try {
-      await apiPost("/api/supply-requests", {
+      const payload = {
         title: reference,
         note: note.trim() ? note.trim() : undefined,
         storeId: storeId || undefined,
         items,
-      });
+      };
+
+      if (isEditing) {
+        await apiPatch(`/api/supply-requests/${requisitionId}`, payload);
+      } else {
+        await apiPost("/api/supply-requests", payload);
+      }
+
       showToast({
-        title: "Requisition envoyee",
-        message: "Votre demande a ete enregistree.",
+        title: isEditing ? "Requisition modifiee" : "Requisition envoyee",
+        message: isEditing
+          ? "Votre requisition a ete mise a jour."
+          : "Votre demande a ete enregistree.",
         variant: "success",
       });
       navigate("/operations/requisitions");
     } catch (error) {
       showToast({
         title: "Erreur",
-        message: error.message || "Impossible de creer la requisition.",
+        message:
+          error.message ||
+          (isEditing
+            ? "Impossible de modifier la requisition."
+            : "Impossible de creer la requisition."),
         variant: "danger",
       });
     } finally {
@@ -198,10 +271,12 @@ function RequisitionCreate() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <h1 className="text-2xl font-semibold text-text-primary">
-            Nouvelle requisition
+            {isEditing ? "Modifier la requisition" : "Nouvelle requisition"}
           </h1>
           <p className="text-sm text-text-secondary">
-            Creez une demande de stock pour plusieurs produits.
+            {isEditing
+              ? "Mettez a jour votre brouillon avant validation."
+              : "Creez une demande de stock pour plusieurs produits."}
           </p>
         </div>
         <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:items-center">
@@ -215,10 +290,16 @@ function RequisitionCreate() {
           />
           <Button
             type="submit"
-            label={submitting ? "Enregistrement..." : "Enregistrer"}
+            label={
+              submitting
+                ? "Enregistrement..."
+                : isEditing
+                  ? "Mettre a jour"
+                  : "Enregistrer"
+            }
             variant="primary"
             size="small"
-            disabled={submitting}
+            disabled={submitting || loadingRequest}
             form="requisition-form"
             className="w-full sm:w-auto"
           />
@@ -236,7 +317,7 @@ function RequisitionCreate() {
             name="reference"
             value={reference}
             readOnly
-            disabled={loadingReference}
+            disabled={loadingReference || loadingRequest}
           />
           <Input
             label="Boutique"
@@ -335,7 +416,7 @@ function RequisitionCreate() {
                       className="px-4 py-6 text-center text-text-secondary"
                       colSpan={5}
                     >
-                      Aucun produit ajoute.
+                    {loadingRequest ? "Chargement..." : "Aucun produit ajoute."}
                     </td>
                   </tr>
                 ) : (

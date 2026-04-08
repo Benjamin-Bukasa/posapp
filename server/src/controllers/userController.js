@@ -90,7 +90,7 @@ const queueAccountCreationNotification = ({
     });
 };
 
-const USER_ROLE_VALUES = ["SUPERADMIN", "ADMIN", "MANAGER", "USER", "DRIVER"];
+const USER_ROLE_VALUES = ["SUPERADMIN", "ADMIN", "MANAGER", "USER", "SELLER", "DRIVER"];
 
 const resolveUserScope = async ({
   tenantId,

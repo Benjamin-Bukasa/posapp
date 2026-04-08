@@ -1917,12 +1917,14 @@ const userRoleOptions = [
   { value: "SUPERADMIN", label: "Superadmin" },
   { value: "ADMIN", label: "Admin" },
   { value: "DRIVER", label: "Livreur" },
+  { value: "SELLER", label: "Vendeur" },
   { value: "USER", label: "Utilisateur" },
 ];
 
 const permissionProfileRoleOptions = [
   { value: "ADMIN", label: "Admin" },
   { value: "MANAGER", label: "Manager" },
+  { value: "SELLER", label: "Vendeur" },
   { value: "USER", label: "Utilisateur" },
 ];
 

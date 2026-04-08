@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const prisma = require("../config/prisma");
 const { PERMISSION_MODULES, PERMISSION_CODE_SET } = require("./permissionCatalog");
 
-const PROFILE_ROLE_OPTIONS = ["ADMIN", "MANAGER", "USER"];
+const PROFILE_ROLE_OPTIONS = ["ADMIN", "MANAGER", "USER", "SELLER"];
 
 const parseJson = (value, fallback) => {
   if (!value) return fallback;
@@ -76,7 +76,7 @@ const ensurePermissionProfileTables = async () => {
       permissions_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      CONSTRAINT permission_profiles_role_check CHECK (role IN ('ADMIN', 'MANAGER', 'USER')),
+      CONSTRAINT permission_profiles_role_check CHECK (role IN ('ADMIN', 'MANAGER', 'USER', 'SELLER')),
       CONSTRAINT permission_profiles_tenant_name_unique UNIQUE (tenant_id, name),
       CONSTRAINT permission_profiles_tenant_fk FOREIGN KEY (tenant_id) REFERENCES tenants(id) ON DELETE CASCADE
     )
@@ -101,6 +101,17 @@ const ensurePermissionProfileTables = async () => {
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS idx_user_permission_profiles_profile_id
     ON user_permission_profiles (profile_id)
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE permission_profiles
+    DROP CONSTRAINT IF EXISTS permission_profiles_role_check
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE permission_profiles
+    ADD CONSTRAINT permission_profiles_role_check
+    CHECK (role IN ('ADMIN', 'MANAGER', 'USER', 'SELLER'))
   `);
 
   await ensurePermissionCatalog();

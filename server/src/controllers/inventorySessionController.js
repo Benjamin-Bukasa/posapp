@@ -17,6 +17,8 @@ const {
 const { emitLotExpiryNotifications } = require("../utils/inventoryLotStore");
 const { emitToStore, emitToTenant } = require("../socket");
 
+const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
+
 const resolveInventoryZoneId = async ({ tenantId, storeId, requestedZoneId, defaultZoneId }) => {
   if (requestedZoneId) {
     const zone = await prisma.storageZone.findFirst({
@@ -202,7 +204,7 @@ const exportById = async (req, res) => {
 const create = async (req, res) => {
   await ensureInventorySessionTables();
   const requestedStoreId =
-    req.body?.storeId && req.user.role !== "USER"
+    req.body?.storeId && !isFrontOfficeRole(req.user.role)
       ? String(req.body.storeId).trim()
       : req.user.storeId || null;
 
@@ -216,7 +218,7 @@ const create = async (req, res) => {
     tenantId: req.user.tenantId,
     storeId: requestedStoreId,
     requestedZoneId:
-      req.body?.storageZoneId && req.user.role !== "USER"
+      req.body?.storageZoneId && !isFrontOfficeRole(req.user.role)
         ? String(req.body.storageZoneId).trim()
         : req.body?.storageZoneId
           ? String(req.body.storageZoneId).trim()
