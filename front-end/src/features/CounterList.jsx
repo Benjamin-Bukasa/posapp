@@ -24,7 +24,7 @@ import {
   hasSecondaryCurrency,
 } from "../utils/currency";
 import printReceiptViaLocalService from "../utils/localPrintService";
-import { printSaleReceipt } from "../utils/printSaleReceipt";
+import printSaleReceipt from "../utils/printSaleReceipt";
 
 const normalizeScanValue = (value) => String(value || "").trim().toLowerCase();
 
@@ -424,18 +424,7 @@ const CounterList = () => {
         userPreferences.printerMode !== "local_service";
 
       if (shouldPrepareBrowserWindow) {
-        browserPrintWindow = window.open(
-          "",
-          "_blank",
-          "noopener,noreferrer,width=420,height=720",
-        );
-
-        if (browserPrintWindow) {
-          browserPrintWindow.document.write(
-            "<html><head><title>Ticket en preparation</title></head><body><p>Préparation du ticket...</p></body></html>",
-          );
-          browserPrintWindow.document.close();
-        }
+        browserPrintWindow = window.open("", "_blank");
       }
 
       if (userPreferences.autoPrintReceipt) {
@@ -477,10 +466,10 @@ const CounterList = () => {
             });
           } else {
             showToast({
-              title: "Impression navigateur impossible",
+              title: "Impression PDF impossible",
               message:
                 printError.message ||
-                "Le ticket n'a pas pu etre imprime dans le navigateur.",
+                "Le ticket PDF n'a pas pu etre genere ou ouvert.",
               variant: "warning",
             });
           }
