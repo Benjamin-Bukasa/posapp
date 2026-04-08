@@ -25,6 +25,38 @@ const getAccessTokenTtlByClient = (clientType) => {
   return getClientType(clientType) === "adminpanel" ? "60m" : "480m";
 };
 
+const queueForgotPasswordNotification = ({ user, sendVia, resetToken }) => {
+  const identifier = user?.email || user?.phone || user?.id || "unknown-user";
+  const message = `Reinitialisation du mot de passe: ${resetToken}.`;
+
+  Promise.resolve()
+    .then(async () => {
+      if (sendVia === "sms" && user?.phone) {
+        await sendSms({ to: user.phone, message });
+        return;
+      }
+
+      if (user?.email) {
+        await sendEmail({
+          to: user.email,
+          subject: "Reinitialisation du mot de passe",
+          message,
+        });
+        return;
+      }
+
+      if (user?.phone) {
+        await sendSms({ to: user.phone, message });
+      }
+    })
+    .catch((error) => {
+      console.error("[FORGOT_PASSWORD_NOTIFICATION_ERROR]", {
+        identifier,
+        message: error?.message || "Notification failed.",
+      });
+    });
+};
+
 const register = async (req, res) => {
   const { tenantName, email, phone, plan, sendVia, firstName, lastName } =
     req.body || {};
@@ -322,16 +354,11 @@ const forgotPassword = async (req, res) => {
     },
   });
 
-  const message = `Réinitialisation du mot de passe: ${resetToken}.`;
-  if (sendVia === "sms" && user.phone) {
-    await sendSms({ to: user.phone, message });
-  } else if (user.email) {
-    await sendEmail({
-      to: user.email,
-      subject: "Réinitialisation du mot de passe",
-      message,
-    });
-  }
+  queueForgotPasswordNotification({
+    user,
+    sendVia,
+    resetToken,
+  });
 
   return res.json({ message: "Reset instructions sent." });
 };
