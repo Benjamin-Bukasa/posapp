@@ -90,6 +90,8 @@ const queueAccountCreationNotification = ({
     });
 };
 
+const USER_ROLE_VALUES = ["SUPERADMIN", "ADMIN", "MANAGER", "USER", "DRIVER"];
+
 const resolveUserScope = async ({
   tenantId,
   storeId,
@@ -412,6 +414,11 @@ const listUsers = async (req, res) => {
     parseListParams(req.query);
   const createdAtFilter = buildDateRangeFilter(req.query, "createdAt");
 
+  const normalizedSearch = String(search || "").trim().toUpperCase();
+  const matchingRoles = normalizedSearch
+    ? USER_ROLE_VALUES.filter((value) => value.includes(normalizedSearch))
+    : [];
+
   const searchFilter = search
     ? {
         OR: [
@@ -419,7 +426,9 @@ const listUsers = async (req, res) => {
           { lastName: contains(search) },
           { email: contains(search) },
           { phone: contains(search) },
-          { role: contains(search) },
+          ...(matchingRoles.length
+            ? matchingRoles.map((value) => ({ role: value }))
+            : []),
         ],
       }
     : {};
