@@ -706,19 +706,31 @@ const getUserHardDeleteUsage = async (tenantId, userId) => {
     prisma.inventoryMovement.count({ where: { tenantId, createdById: userId } }),
   ]);
 
-  const cashSessions =
-    (
-      await prisma.$queryRawUnsafe(
-        `
-          SELECT COUNT(*)::int AS count
-          FROM "cashSessions"
-          WHERE "tenantId" = $1
-            AND "userId" = $2
-        `,
-        tenantId,
-        userId,
-      )
-    )?.[0]?.count || 0;
+  let cashSessions = 0;
+  try {
+    cashSessions =
+      (
+        await prisma.$queryRawUnsafe(
+          `
+            SELECT COUNT(*)::int AS count
+            FROM "cashSessions"
+            WHERE "tenantId" = $1
+              AND "userId" = $2
+          `,
+          tenantId,
+          userId,
+        )
+      )?.[0]?.count || 0;
+  } catch (error) {
+    const message = String(error?.message || "");
+    if (!message.includes(`relation "cashSessions" does not exist`)) {
+      throw error;
+    }
+  }
+
+  const ownerTenants = await prisma.tenant.count({
+    where: { id: tenantId, ownerId: userId },
+  });
 
   return {
     orders,
@@ -736,6 +748,7 @@ const getUserHardDeleteUsage = async (tenantId, userId) => {
     stockEntries,
     inventoryMovements,
     cashSessions,
+    ownerTenants,
   };
 };
 
@@ -757,6 +770,7 @@ const buildUserHardDeleteBlockers = (usage) => {
   if (usage.stockEntries > 0) blockers.push("entree(s) de stock");
   if (usage.inventoryMovements > 0) blockers.push("mouvement(s) d'inventaire");
   if (usage.cashSessions > 0) blockers.push("session(s) de caisse");
+  if (usage.ownerTenants > 0) blockers.push("proprietaire du tenant");
 
   return blockers;
 };
@@ -785,16 +799,16 @@ const hardDeleteUser = async (req, res) => {
     return res.status(404).json({ message: "User not found." });
   }
 
+  const label =
+    [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+    user.email ||
+    user.phone ||
+    "cet utilisateur";
+
   const usage = await getUserHardDeleteUsage(req.user.tenantId, id);
   const blockers = buildUserHardDeleteBlockers(usage);
 
   if (blockers.length) {
-    const label =
-      [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
-      user.email ||
-      user.phone ||
-      "cet utilisateur";
-
     return res.status(409).json({
       message: `Suppression definitive impossible pour ${label}. References detectees : ${blockers.join(
         ", ",
@@ -802,24 +816,36 @@ const hardDeleteUser = async (req, res) => {
     });
   }
 
-  await ensureUserPreferenceTable();
+  try {
+    await ensureUserPreferenceTable();
 
-  await prisma.$transaction(async (tx) => {
-    await tx.$executeRawUnsafe(
-      `DELETE FROM user_permission_profiles WHERE user_id = $1`,
-      id,
-    );
-    await tx.$executeRawUnsafe(
-      `DELETE FROM user_preferences WHERE "tenantId" = $1 AND "userId" = $2`,
-      req.user.tenantId,
-      id,
-    );
-    await tx.user.delete({
-      where: { id },
+    await prisma.$transaction(async (tx) => {
+      await tx.$executeRawUnsafe(
+        `DELETE FROM user_permission_profiles WHERE user_id = $1`,
+        id,
+      );
+      await tx.$executeRawUnsafe(
+        `DELETE FROM user_preferences WHERE "tenantId" = $1 AND "userId" = $2`,
+        req.user.tenantId,
+        id,
+      );
+      await tx.user.delete({
+        where: { id },
+      });
     });
-  });
 
-  return res.json({ message: "Utilisateur supprime definitivement." });
+    return res.json({ message: "Utilisateur supprime definitivement." });
+  } catch (error) {
+    if (error?.code === "P2003") {
+      return res.status(409).json({
+        message: `Suppression definitive impossible pour ${label} car le compte est encore reference dans des donnees liees.`,
+      });
+    }
+
+    return res.status(500).json({
+      message: "Impossible de supprimer definitivement cet utilisateur.",
+    });
+  }
 };
 
 const updateUserPermissions = async (req, res) => {
