@@ -663,6 +663,165 @@ const deactivateUser = async (req, res) => {
   return res.json(updated);
 };
 
+const getUserHardDeleteUsage = async (tenantId, userId) => {
+  const [
+    orders,
+    deliveries,
+    messages,
+    auditLogs,
+    supplyRequests,
+    supplyRequestApprovals,
+    purchaseRequests,
+    purchaseRequestApprovals,
+    purchaseOrders,
+    deliveryNotes,
+    approvalSteps,
+    productTransfers,
+    stockEntries,
+    inventoryMovements,
+  ] = await prisma.$transaction([
+    prisma.order.count({ where: { tenantId, createdById: userId } }),
+    prisma.delivery.count({ where: { tenantId, driverId: userId } }),
+    prisma.message.count({
+      where: {
+        tenantId,
+        OR: [{ senderId: userId }, { recipientId: userId }],
+      },
+    }),
+    prisma.auditLog.count({ where: { tenantId, userId } }),
+    prisma.supplyRequest.count({ where: { tenantId, requestedById: userId } }),
+    prisma.supplyRequestApproval.count({ where: { tenantId, approverId: userId } }),
+    prisma.purchaseRequest.count({ where: { tenantId, requestedById: userId } }),
+    prisma.purchaseRequestApproval.count({ where: { tenantId, approverId: userId } }),
+    prisma.purchaseOrder.count({ where: { tenantId, orderedById: userId } }),
+    prisma.deliveryNote.count({ where: { tenantId, receivedById: userId } }),
+    prisma.approvalFlowStep.count({ where: { tenantId, approverUserId: userId } }),
+    prisma.productTransfer.count({ where: { tenantId, requestedById: userId } }),
+    prisma.stockEntry.count({
+      where: {
+        tenantId,
+        OR: [{ createdById: userId }, { approvedById: userId }],
+      },
+    }),
+    prisma.inventoryMovement.count({ where: { tenantId, createdById: userId } }),
+  ]);
+
+  const cashSessions =
+    (
+      await prisma.$queryRawUnsafe(
+        `
+          SELECT COUNT(*)::int AS count
+          FROM "cashSessions"
+          WHERE "tenantId" = $1
+            AND "userId" = $2
+        `,
+        tenantId,
+        userId,
+      )
+    )?.[0]?.count || 0;
+
+  return {
+    orders,
+    deliveries,
+    messages,
+    auditLogs,
+    supplyRequests,
+    supplyRequestApprovals,
+    purchaseRequests,
+    purchaseRequestApprovals,
+    purchaseOrders,
+    deliveryNotes,
+    approvalSteps,
+    productTransfers,
+    stockEntries,
+    inventoryMovements,
+    cashSessions,
+  };
+};
+
+const buildUserHardDeleteBlockers = (usage) => {
+  const blockers = [];
+
+  if (usage.orders > 0) blockers.push("vente(s)");
+  if (usage.deliveries > 0) blockers.push("livraison(s)");
+  if (usage.messages > 0) blockers.push("message(s)");
+  if (usage.auditLogs > 0) blockers.push("journal d'audit");
+  if (usage.supplyRequests > 0) blockers.push("requisition(s)");
+  if (usage.supplyRequestApprovals > 0) blockers.push("validation(s) de requisitions");
+  if (usage.purchaseRequests > 0) blockers.push("demande(s) d'achat");
+  if (usage.purchaseRequestApprovals > 0) blockers.push("validation(s) de demandes d'achat");
+  if (usage.purchaseOrders > 0) blockers.push("commande(s) fournisseur");
+  if (usage.deliveryNotes > 0) blockers.push("bon(s) de livraison");
+  if (usage.approvalSteps > 0) blockers.push("niveau(x) de validation");
+  if (usage.productTransfers > 0) blockers.push("transfert(s)");
+  if (usage.stockEntries > 0) blockers.push("entree(s) de stock");
+  if (usage.inventoryMovements > 0) blockers.push("mouvement(s) d'inventaire");
+  if (usage.cashSessions > 0) blockers.push("session(s) de caisse");
+
+  return blockers;
+};
+
+const hardDeleteUser = async (req, res) => {
+  const { id } = req.params;
+
+  if (id === req.user.id) {
+    return res.status(400).json({
+      message: "Vous ne pouvez pas supprimer definitivement votre propre compte.",
+    });
+  }
+
+  const user = await prisma.user.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      phone: true,
+    },
+  });
+
+  if (!user) {
+    return res.status(404).json({ message: "User not found." });
+  }
+
+  const usage = await getUserHardDeleteUsage(req.user.tenantId, id);
+  const blockers = buildUserHardDeleteBlockers(usage);
+
+  if (blockers.length) {
+    const label =
+      [user.firstName, user.lastName].filter(Boolean).join(" ").trim() ||
+      user.email ||
+      user.phone ||
+      "cet utilisateur";
+
+    return res.status(409).json({
+      message: `Suppression definitive impossible pour ${label}. References detectees : ${blockers.join(
+        ", ",
+      )}.`,
+    });
+  }
+
+  await ensureUserPreferenceTable();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRawUnsafe(
+      `DELETE FROM user_permission_profiles WHERE user_id = $1`,
+      id,
+    );
+    await tx.$executeRawUnsafe(
+      `DELETE FROM user_preferences WHERE "tenantId" = $1 AND "userId" = $2`,
+      req.user.tenantId,
+      id,
+    );
+    await tx.user.delete({
+      where: { id },
+    });
+  });
+
+  return res.json({ message: "Utilisateur supprime definitivement." });
+};
+
 const updateUserPermissions = async (req, res) => {
   const { id } = req.params;
   const { permissions } = req.body || {};
@@ -760,6 +919,7 @@ module.exports = {
   getUser,
   updateUser,
   deactivateUser,
+  hardDeleteUser,
   updateUserPermissions,
   getMyPreferences,
   updateMyPreferences,

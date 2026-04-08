@@ -1858,6 +1858,8 @@ export const resourceCatalog = {
     endpoint: "/api/users",
     columns: userColumns,
     rowActions: userRowActions,
+    ...userDeactivateConfig,
+    ...userHardDeleteConfig,
     tableTitle: "Liste d'utilisateurs",
     tableDescription: "Comptes utilisateur actuellement enregistres.",
     emptyMessage: "Aucun utilisateur disponible.",
@@ -1877,6 +1879,8 @@ export const resourceCatalog = {
     endpoint: "/api/users",
     columns: userColumns,
     rowActions: userRowActions,
+    ...userDeactivateConfig,
+    ...userHardDeleteConfig,
     tableTitle: "Preparation creation utilisateur",
     tableDescription:
       "Vue des utilisateurs existants avant creation de nouveaux comptes.",
@@ -4235,6 +4239,18 @@ const productHardDeleteConfig = {
   hardDeleteConfirmDescription: (row) =>
     `Voulez-vous vraiment supprimer definitivement ${row?.name || row?.sku || row?.id || "cet element"} ? Cette action est irreversible et echouera si le produit est deja reference.`,
 };
+const userDeactivateConfig = {
+  deleteLabel: "Desactiver",
+  deleteConfirmTitle: "Confirmer la desactivation",
+  deleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment desactiver ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Le compte sera bloque mais conserve dans l'historique.`,
+};
+const userHardDeleteConfig = {
+  hardDeleteLabel: "Supprimer definitivement",
+  hardDeleteConfirmTitle: "Confirmer la suppression definitive",
+  hardDeleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment supprimer definitivement ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Cette action est irreversible et echouera si le compte est deja reference dans l'historique.`,
+};
 const productFormValues = (row) => ({
   name: row.name || "",
   sku: row.sku || "",
@@ -4919,8 +4935,12 @@ export const editCatalog = {
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/users/${id}`, method: "DELETE" }),
+    hardDeleteRequest: (id) => ({ endpoint: `/api/users/${id}/hard`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
+    canHardDelete: alwaysMutable,
+    ...userDeactivateConfig,
+    ...userHardDeleteConfig,
   },
   "/configurations/utilisateur/creer": {
     ...userForm,
@@ -4952,8 +4972,12 @@ export const editCatalog = {
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/users/${id}`, method: "DELETE" }),
+    hardDeleteRequest: (id) => ({ endpoint: `/api/users/${id}/hard`, method: "DELETE" }),
     canEdit: alwaysMutable,
     canDelete: alwaysMutable,
+    canHardDelete: alwaysMutable,
+    ...userDeactivateConfig,
+    ...userHardDeleteConfig,
   },
   "/configurations/utilisateur/roles-permissions": {
     ...rolePermissionForm,

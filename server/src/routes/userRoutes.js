@@ -48,5 +48,11 @@ router.delete(
   requirePermission("users.delete"),
   userController.deactivateUser
 );
+router.delete(
+  "/:id/hard",
+  auth,
+  requirePermission("users.delete"),
+  userController.hardDeleteUser
+);
 
 module.exports = router;
