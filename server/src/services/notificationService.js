@@ -2,12 +2,35 @@ const nodemailer = require("nodemailer");
 
 let cachedTransporter = null;
 
+const readEnv = (name, fallback = "") => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === null || raw === "") {
+    return fallback;
+  }
+
+  const trimmed = String(raw).trim();
+  if (
+    (trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+    (trimmed.startsWith("'") && trimmed.endsWith("'"))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+
+  return trimmed;
+};
+
+const isEmailConfigured = () => {
+  const host = readEnv("SMTP_HOST");
+  const port = Number(readEnv("SMTP_PORT", "587"));
+  return Boolean(host) && !Number.isNaN(port);
+};
+
 const getTransporter = () => {
   if (cachedTransporter) return cachedTransporter;
 
-  const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
-  const secureEnv = process.env.SMTP_SECURE;
+  const host = readEnv("SMTP_HOST");
+  const port = Number(readEnv("SMTP_PORT", "587"));
+  const secureEnv = readEnv("SMTP_SECURE");
   const secure =
     typeof secureEnv === "string"
       ? secureEnv.toLowerCase() === "true"
@@ -17,8 +40,8 @@ const getTransporter = () => {
     return null;
   }
 
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+  const user = readEnv("SMTP_USER");
+  const pass = readEnv("SMTP_PASS");
   const auth = user && pass ? { user, pass } : undefined;
 
   cachedTransporter = nodemailer.createTransport({
@@ -42,8 +65,8 @@ const sendEmail = async ({ to, subject, text, html, message }) => {
   }
 
   const from =
-    process.env.SMTP_FROM ||
-    process.env.COMPANY_SUPPORT_EMAIL ||
+    readEnv("SMTP_FROM") ||
+    readEnv("COMPANY_SUPPORT_EMAIL") ||
     "no-reply@POSapp.local";
 
   const finalText = text || message || "";
@@ -61,6 +84,13 @@ const sendEmail = async ({ to, subject, text, html, message }) => {
     html: finalHtml,
   });
 
+  console.log("[EMAIL][SENT]", {
+    to,
+    subject,
+    messageId: info?.messageId || null,
+    response: info?.response || null,
+  });
+
   return info;
 };
 
@@ -71,4 +101,5 @@ const sendSms = async ({ to, message }) => {
 module.exports = {
   sendEmail,
   sendSms,
+  isEmailConfigured,
 };

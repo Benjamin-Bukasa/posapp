@@ -10,7 +10,11 @@ const {
   generateRandomToken,
   generateTempPassword,
 } = require("../utils/tokens");
-const { sendEmail, sendSms } = require("../services/notificationService");
+const {
+  sendEmail,
+  sendSms,
+  isEmailConfigured,
+} = require("../services/notificationService");
 const { verifyGoogleIdToken } = require("../services/googleService");
 const { getPlanConfig } = require("../services/subscriptionService");
 
@@ -37,11 +41,14 @@ const queueForgotPasswordNotification = ({ user, sendVia, resetToken }) => {
       }
 
       if (user?.email) {
-        await sendEmail({
+        const result = await sendEmail({
           to: user.email,
           subject: "Reinitialisation du mot de passe",
           message,
         });
+        if (result?.skipped) {
+          throw new Error("SMTP non configure.");
+        }
         return;
       }
 
@@ -333,6 +340,8 @@ const forgotPassword = async (req, res) => {
     return res.status(400).json({ message: "Identifier required." });
   }
 
+  const channel = String(sendVia || "email").trim().toLowerCase() === "sms" ? "sms" : "email";
+
   const user = await prisma.user.findFirst({
     where: {
       OR: [{ email: identifier }, { phone: identifier }],
@@ -341,6 +350,26 @@ const forgotPassword = async (req, res) => {
 
   if (!user) {
     return res.json({ message: "If the user exists, a reset will be sent." });
+  }
+
+  if (channel === "email") {
+    if (!user.email) {
+      return res.status(400).json({
+        message: "Aucune adresse email n'est associee a ce compte.",
+      });
+    }
+
+    if (!isEmailConfigured()) {
+      return res.status(503).json({
+        message: "Le service email n'est pas configure sur le serveur.",
+      });
+    }
+  }
+
+  if (channel === "sms" && !user.phone) {
+    return res.status(400).json({
+      message: "Aucun numero de telephone n'est associe a ce compte.",
+    });
   }
 
   const resetToken = generateRandomToken(24);
@@ -356,7 +385,7 @@ const forgotPassword = async (req, res) => {
 
   queueForgotPasswordNotification({
     user,
-    sendVia,
+    sendVia: channel,
     resetToken,
   });
 
