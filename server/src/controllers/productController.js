@@ -9,8 +9,6 @@ const {
   normalizeCurrencyCode,
 } = require("../utils/currencySettings");
 const {
-  attachCurrencyCodes,
-  getCurrencyCodeMap,
   setCurrencyCode,
 } = require("../utils/moneyCurrency");
 const {
@@ -387,17 +385,13 @@ const hydrateProductsWithCurrencyCodes = async (records) => {
     return Array.isArray(records) ? [] : records;
   }
 
-  const currencyMap = await getCurrencyCodeMap(
-    prisma,
-    "products",
-    list.map((item) => item.id),
-  );
   const extendedMap = await getProductExtendedFieldMap(list.map((item) => item.id));
   const categoryCollectionMap = await getCategoryCollectionMap(
     list.map((item) => item.categoryId || item.category?.id).filter(Boolean),
   );
-  const hydrated = attachCurrencyCodes(list, currencyMap).map((item) => ({
+  const hydrated = list.map((item) => ({
     ...item,
+    currencyCode: normalizeCurrencyCode(item.currencyCode),
     managementUnitId: item.saleUnitId || item.stockUnitId || null,
     managementUnit: item.saleUnit || item.stockUnit || null,
     category: item.category
@@ -1125,6 +1119,145 @@ const listProducts = async (req, res) => {
     data: await hydrateProductsWithCurrencyCodes(products),
     meta: buildMeta({ page, pageSize, total, sortBy, sortDir }),
   });
+};
+
+const buildInventoryMap = (inventory = []) => {
+  const byProduct = new Map();
+  inventory.forEach((item) => {
+    if (!item?.productId) return;
+    const current = byProduct.get(item.productId) || {
+      quantity: 0,
+      minLevel: 0,
+    };
+    current.quantity += Number(item.quantity || 0);
+    current.minLevel += Number(item.minLevel || 0);
+    byProduct.set(item.productId, current);
+  });
+  return byProduct;
+};
+
+const resolveStockLabel = (quantity, minLevel) => {
+  if (quantity <= 0) return "Epuisé";
+  if (minLevel && quantity <= minLevel) return "Faible";
+  return "En stock";
+};
+
+const computeArticleAvailability = (product, inventoryMap) => {
+  const components = Array.isArray(product?.components) ? product.components : [];
+
+  if (!components.length) {
+    return {
+      quantity: 0,
+      minLevel: 0,
+      hasTechnicalSheet: false,
+    };
+  }
+
+  let minAvailable = Number.POSITIVE_INFINITY;
+  let minLevel = Number.POSITIVE_INFINITY;
+
+  for (const component of components) {
+    if (!component?.componentProductId) {
+      return { quantity: 0, minLevel: 0, hasTechnicalSheet: false };
+    }
+
+    const perArticle = Number(component.quantity || 0);
+    if (!Number.isFinite(perArticle) || perArticle <= 0) {
+      return { quantity: 0, minLevel: 0, hasTechnicalSheet: false };
+    }
+
+    const inventory = inventoryMap.get(component.componentProductId) || {
+      quantity: 0,
+      minLevel: 0,
+    };
+    const possible = Math.floor(Number(inventory.quantity || 0) / perArticle);
+    minAvailable = Math.min(minAvailable, possible);
+    minLevel = Math.min(
+      minLevel,
+      Math.floor(Number(inventory.minLevel || 0) / perArticle),
+    );
+  }
+
+  return {
+    quantity: Number.isFinite(minAvailable) ? Math.max(0, minAvailable) : 0,
+    minLevel: Number.isFinite(minLevel) ? Math.max(0, minLevel) : 0,
+    hasTechnicalSheet: true,
+  };
+};
+
+const listCashierArticles = async (req, res) => {
+  await normalizeManagementUnits(prisma);
+
+  const sellerStoreId = req.user?.role === "SELLER" ? req.user.storeId : null;
+  const storeId = sellerStoreId || req.query?.storeId || null;
+  const storageZoneId = req.query?.storageZoneId || null;
+
+  const products = await prisma.product.findMany({
+    where: {
+      tenantId: req.user.tenantId,
+      kind: "ARTICLE",
+      isActive: true,
+    },
+    include: productListInclude({ includeComponents: true }),
+    orderBy: { name: "asc" },
+  });
+
+  const hydratedProducts = await hydrateProductsWithCurrencyCodes(products);
+  const componentIds = [
+    ...new Set(
+      hydratedProducts.flatMap((product) =>
+        (product.components || []).map((component) => component.componentProductId).filter(Boolean),
+      ),
+    ),
+  ];
+
+  const inventory = componentIds.length
+    ? await prisma.inventory.findMany({
+        where: {
+          tenantId: req.user.tenantId,
+          productId: { in: componentIds },
+          ...(storeId ? { storeId } : {}),
+          ...(storageZoneId ? { storageZoneId } : {}),
+        },
+        select: {
+          productId: true,
+          quantity: true,
+          minLevel: true,
+        },
+      })
+    : [];
+
+  const inventoryMap = buildInventoryMap(inventory);
+  return res.json(
+    hydratedProducts.map((product) => {
+      const availability = computeArticleAvailability(product, inventoryMap);
+      const quantity = Number(availability.quantity || 0);
+      const minLevel = Number(availability.minLevel || 0);
+      return {
+        id: product.id,
+        product: product.name,
+        sku: product.sku || "",
+        scanCode: product.scanCode || "",
+        imageUrl: product.imageUrl || "",
+        category: product.category?.name || "N/A",
+        family: product.family?.name || "N/A",
+        subFamily: product.subFamily?.name || "N/A",
+        collection: product.category?.collection?.name || "N/A",
+        status: product.isActive ? "Actif" : "Inactif",
+        quantity,
+        stock:
+          availability.hasTechnicalSheet === false
+            ? "Fiche technique manquante"
+            : resolveStockLabel(quantity, minLevel),
+        price: Number(product.unitPrice || 0),
+        currencyCode: product.currencyCode || "USD",
+        createdAt: product.createdAt,
+        updatedAt: product.updatedAt,
+        components: product.components || [],
+        hasTechnicalSheet: availability.hasTechnicalSheet !== false,
+      };
+    }),
+  );
 };
 
 const getProduct = async (req, res) => {
@@ -2130,14 +2263,22 @@ const importProducts = async (req, res) => {
     const managementUnit = await findOrCreateUnit(managementUnitName, "SALE");
     const dosageUnit = await findOrCreateUnit(dosageUnitName, "DOSAGE");
 
+    const productLookupFilters = [
+      ...(sku ? [{ sku }] : []),
+      ...(scanCode ? [{ scanCode }] : []),
+    ];
+
+    if (!productLookupFilters.length) {
+      productLookupFilters.push({
+        name,
+        kind: rowKind || "ARTICLE",
+      });
+    }
+
     let product = await prisma.product.findFirst({
       where: {
         tenantId: req.user.tenantId,
-        OR: [
-          ...(sku ? [{ sku }] : []),
-          ...(scanCode ? [{ scanCode }] : []),
-          { name },
-        ],
+        OR: productLookupFilters,
       },
     });
 
@@ -2176,19 +2317,40 @@ const importProducts = async (req, res) => {
         ),
       );
       created.push(product);
-    } else if (rowKind && product.kind !== rowKind) {
-      product = await prisma.product.update({
-        where: { id: product.id },
-        data: {
-          kind: rowKind,
-          ...(scanCode !== undefined ? { scanCode } : {}),
-        },
-      });
-    } else if (scanCode !== undefined && scanCode !== product.scanCode) {
-      product = await prisma.product.update({
-        where: { id: product.id },
-        data: { scanCode },
-      });
+    } else {
+      const nextProductData = {
+        kind: rowKind || product.kind,
+        name,
+        description,
+        unitPrice,
+        categoryId: category?.id || null,
+        familyId: family?.id || null,
+        saleUnitId: managementUnit?.id || null,
+        stockUnitId: managementUnit?.id || null,
+        dosageUnitId: dosageUnit?.id || null,
+        ...(sku ? { sku } : {}),
+        ...(scanCode !== undefined ? { scanCode } : {}),
+      };
+
+      const shouldUpdateProduct =
+        nextProductData.kind !== product.kind ||
+        nextProductData.name !== product.name ||
+        nextProductData.description !== product.description ||
+        Number(nextProductData.unitPrice || 0) !== Number(product.unitPrice || 0) ||
+        String(nextProductData.categoryId || "") !== String(product.categoryId || "") ||
+        String(nextProductData.familyId || "") !== String(product.familyId || "") ||
+        String(nextProductData.saleUnitId || "") !== String(product.saleUnitId || "") ||
+        String(nextProductData.stockUnitId || "") !== String(product.stockUnitId || "") ||
+        String(nextProductData.dosageUnitId || "") !== String(product.dosageUnitId || "") ||
+        (sku && sku !== product.sku) ||
+        (scanCode !== undefined && scanCode !== product.scanCode);
+
+      if (shouldUpdateProduct) {
+        product = await prisma.product.update({
+          where: { id: product.id },
+          data: nextProductData,
+        });
+      }
     }
 
     if (rowCurrencyCode) {
@@ -2321,6 +2483,7 @@ module.exports = {
   downloadTechnicalSheetTemplate,
   ensureProductExtendedFields,
   listProducts,
+  listCashierArticles,
   getProduct,
   updateProduct,
   deleteProduct,

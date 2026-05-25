@@ -16,6 +16,8 @@ const {
 } = require("../utils/documentCodeStore");
 const { expandArticleItems } = require("../utils/expandArticleItems");
 
+const isSeller = (user) => user?.role === "SELLER";
+
 const includesSearch = (value, search) =>
   String(value || "")
     .toLowerCase()
@@ -101,8 +103,20 @@ const syncPurchaseRequestStatus = async (purchaseRequestId) => {
   });
 };
 
+const resetPurchaseRequestApprovals = async (purchaseRequestId) => {
+  await prisma.purchaseRequestApproval.updateMany({
+    where: { purchaseRequestId },
+    data: {
+      status: "PENDING",
+      decidedAt: null,
+      note: null,
+    },
+  });
+};
+
 const createPurchaseRequest = async (req, res) => {
   const { title, storeId, supplyRequestId, note, items } = req.body || {};
+  let resolvedStoreId = storeId;
 
   if (!title) {
     return res.status(400).json({ message: "title is required." });
@@ -115,6 +129,22 @@ const createPurchaseRequest = async (req, res) => {
       message:
         "Purchase requests cannot be created from supply requests. Requisitions are only for stock replenishment.",
     });
+  }
+
+  if (isSeller(req.user) && !req.user.storeId) {
+    return res.status(400).json({
+      message: "Le vendeur doit etre rattache a une boutique pour creer une demande d'achat.",
+    });
+  }
+
+  if (isSeller(req.user) && resolvedStoreId && resolvedStoreId !== req.user.storeId) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut creer une demande d'achat que pour sa propre boutique.",
+    });
+  }
+
+  if (isSeller(req.user)) {
+    resolvedStoreId = req.user.storeId;
   }
 
   let expandedItems;
@@ -133,7 +163,7 @@ const createPurchaseRequest = async (req, res) => {
     data: {
       tenantId: req.user.tenantId,
       title,
-      storeId,
+      storeId: resolvedStoreId,
       note,
       requestedById: req.user.id,
       status: "DRAFT",
@@ -201,7 +231,14 @@ const listPurchaseRequests = async (req, res) => {
   const where = {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
-    ...(storeId ? { storeId } : {}),
+    ...(isSeller(req.user)
+      ? {
+          requestedById: req.user.id,
+          ...(req.user.storeId ? { storeId: req.user.storeId } : {}),
+        }
+      : storeId
+        ? { storeId }
+        : {}),
     ...createdAtFilter,
   };
 
@@ -283,7 +320,11 @@ const getPurchaseRequest = async (req, res) => {
   const { id } = req.params;
 
   const request = await prisma.purchaseRequest.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user) ? { requestedById: req.user.id } : {}),
+    },
     include: {
       items: { include: { product: true, unit: true } },
       approvals: true,
@@ -304,7 +345,11 @@ const getPurchaseRequestPdf = async (req, res) => {
   const { id } = req.params;
 
   const request = await prisma.purchaseRequest.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user) ? { requestedById: req.user.id } : {}),
+    },
     include: {
       items: { include: { product: true, unit: true } },
       approvals: true,
@@ -508,6 +553,7 @@ const rejectPurchaseRequest = async (req, res) => {
 const updatePurchaseRequest = async (req, res) => {
   const { id } = req.params;
   const { title, storeId, note, items } = req.body || {};
+  let resolvedStoreId = storeId;
 
   const request = await prisma.purchaseRequest.findFirst({
     where: { id, tenantId: req.user.tenantId },
@@ -531,7 +577,7 @@ const updatePurchaseRequest = async (req, res) => {
     });
   }
 
-  if (request.status !== "DRAFT") {
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(request.status)) {
     return res.status(400).json({
       message: "Only non-validated purchase requests can be edited.",
     });
@@ -543,6 +589,22 @@ const updatePurchaseRequest = async (req, res) => {
 
   if (!Array.isArray(items) || !items.length) {
     return res.status(400).json({ message: "items array required." });
+  }
+
+  if (isSeller(req.user) && !req.user.storeId) {
+    return res.status(400).json({
+      message: "Le vendeur doit etre rattache a une boutique pour creer une demande d'achat.",
+    });
+  }
+
+  if (isSeller(req.user) && resolvedStoreId && resolvedStoreId !== req.user.storeId) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut creer une demande d'achat que pour sa propre boutique.",
+    });
+  }
+
+  if (isSeller(req.user)) {
+    resolvedStoreId = req.user.storeId;
   }
 
   let expandedItems;
@@ -557,6 +619,10 @@ const updatePurchaseRequest = async (req, res) => {
     });
   }
 
+  if (request.status !== "DRAFT") {
+    await resetPurchaseRequestApprovals(id);
+  }
+
   await prisma.purchaseRequestItem.deleteMany({
     where: { purchaseRequestId: id },
   });
@@ -564,8 +630,9 @@ const updatePurchaseRequest = async (req, res) => {
   const updated = await prisma.purchaseRequest.update({
     where: { id },
     data: {
+      status: "DRAFT",
       title,
-      storeId,
+      storeId: resolvedStoreId,
       note,
       items: {
         create: expandedItems.map((item) => ({

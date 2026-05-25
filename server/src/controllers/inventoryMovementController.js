@@ -8,6 +8,8 @@ const {
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
 
+const isSeller = (user) => user?.role === "SELLER";
+
 const listInventoryMovements = async (req, res) => {
   const { movementType, productId, storageZoneId, sourceType } = req.query || {};
   const { page, pageSize, paginate, sortBy, sortDir, search, exportType } =
@@ -33,6 +35,7 @@ const listInventoryMovements = async (req, res) => {
     ...(productId ? { productId } : {}),
     ...(storageZoneId ? { storageZoneId } : {}),
     ...(sourceType ? { sourceType } : {}),
+    ...(isSeller(req.user) ? { createdById: req.user.id } : {}),
     ...createdAtFilter,
     ...searchFilter,
   };

@@ -1,8 +1,19 @@
 const crypto = require("crypto");
 const prisma = require("../config/prisma");
 const { PERMISSION_MODULES, PERMISSION_CODE_SET } = require("./permissionCatalog");
+const { SELLER_DEFAULT_PERMISSION_CODES } = require("./permissionAccess");
 
 const PROFILE_ROLE_OPTIONS = ["ADMIN", "MANAGER", "USER", "SELLER"];
+const DEFAULT_PERMISSION_PROFILES = Object.freeze([
+  {
+    key: "seller-default",
+    name: "Vendeur",
+    role: "SELLER",
+    description:
+      "Acces caisse et operations front-end limitees a sa boutique et a ses propres documents.",
+    permissions: SELLER_DEFAULT_PERMISSION_CODES,
+  },
+]);
 
 const parseJson = (value, fallback) => {
   if (!value) return fallback;
@@ -65,6 +76,49 @@ const ensurePermissionCatalog = async () => {
   }
 };
 
+const ensureDefaultProfilesForTenant = async (tenantId) => {
+  await ensurePermissionProfileTables();
+
+  for (const profile of DEFAULT_PERMISSION_PROFILES) {
+    const rows = await prisma.$queryRawUnsafe(
+      `
+        SELECT id
+        FROM permission_profiles
+        WHERE tenant_id = $1 AND name = $2
+        LIMIT 1
+      `,
+      tenantId,
+      profile.name,
+    );
+
+    if (rows?.[0]?.id) {
+      continue;
+    }
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO permission_profiles (
+          id,
+          tenant_id,
+          name,
+          role,
+          description,
+          permissions_json,
+          created_at,
+          updated_at
+        )
+        VALUES ($1, $2, $3, $4, $5, $6::jsonb, NOW(), NOW())
+      `,
+      crypto.randomUUID(),
+      tenantId,
+      profile.name,
+      profile.role,
+      profile.description,
+      JSON.stringify(normalizePermissionCodes(profile.permissions)),
+    );
+  }
+};
+
 const ensurePermissionProfileTables = async () => {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS permission_profiles (
@@ -121,6 +175,7 @@ const listPermissionCatalog = () => PERMISSION_MODULES;
 
 const listProfilesByTenant = async (tenantId) => {
   await ensurePermissionProfileTables();
+  await ensureDefaultProfilesForTenant(tenantId);
   const rows = await prisma.$queryRawUnsafe(
     `
       SELECT
@@ -140,6 +195,7 @@ const listProfilesByTenant = async (tenantId) => {
 
 const getProfileById = async (tenantId, profileId) => {
   await ensurePermissionProfileTables();
+  await ensureDefaultProfilesForTenant(tenantId);
   const rows = await prisma.$queryRawUnsafe(
     `
       SELECT
@@ -221,6 +277,7 @@ const assignProfileToUser = async ({ tenantId, profileId, userId, db = prisma })
 
 const getAssignedProfileByUserId = async (tenantId, userId) => {
   await ensurePermissionProfileTables();
+  await ensureDefaultProfilesForTenant(tenantId);
   const rows = await prisma.$queryRawUnsafe(
     `
       SELECT
@@ -240,6 +297,7 @@ const getAssignedProfileByUserId = async (tenantId, userId) => {
 
 const getAssignedProfilesMap = async (tenantId, userIds = []) => {
   await ensurePermissionProfileTables();
+  await ensureDefaultProfilesForTenant(tenantId);
   if (!Array.isArray(userIds) || !userIds.length) {
     return new Map();
   }
@@ -416,6 +474,7 @@ const deleteProfile = async (tenantId, profileId) => {
 module.exports = {
   PROFILE_ROLE_OPTIONS,
   ensurePermissionProfileTables,
+  ensureDefaultProfilesForTenant,
   listPermissionCatalog,
   listProfilesByTenant,
   getProfileById,

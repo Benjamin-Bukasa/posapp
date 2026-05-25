@@ -1,4 +1,4 @@
-require("dotenv").config();
+require("dotenv").config({ quiet: true });
 
 const express = require("express");
 const http = require("http");
@@ -32,6 +32,7 @@ const orderRoutes = require("./routes/orderRoutes");
 const paymentRoutes = require("./routes/paymentRoutes");
 const cashSessionRoutes = require("./routes/cashSessionRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
+const reportRoutes = require("./routes/reportRoutes");
 const currencySettingsRoutes = require("./routes/currencySettingsRoutes");
 const customerBonusProgramRoutes = require("./routes/customerBonusProgramRoutes");
 const taxRateRoutes = require("./routes/taxRateRoutes");
@@ -55,6 +56,13 @@ const { getEmailDebugInfo } = require("./services/notificationService");
 
 const app = express();
 const server = http.createServer(app);
+const isBootVerbose = ["1", "true", "yes", "on"].includes(
+  String(process.env.BOOT_VERBOSE || "").trim().toLowerCase()
+);
+let bootstrapState = {
+  ready: false,
+  lastError: null,
+};
 
 const corsOptions = {
   origin: "*",
@@ -67,7 +75,15 @@ app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "..", "uploads")));
 
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok" });
+  if (!bootstrapState.ready) {
+    return res.status(503).json({
+      status: "degraded",
+      database: "unavailable",
+      error: bootstrapState.lastError,
+    });
+  }
+
+  return res.json({ status: "ok" });
 });
 
 app.use("/api/auth", authRoutes);
@@ -97,6 +113,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/payments", paymentRoutes);
 app.use("/api/cash-sessions", cashSessionRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
+app.use("/api/reports", reportRoutes);
 app.use("/api/currency-settings", currencySettingsRoutes);
 app.use("/api/customer-bonus-programs", customerBonusProgramRoutes);
 app.use("/api/tax-rates", taxRateRoutes);
@@ -111,52 +128,163 @@ app.use((err, req, res, next) => {
 const port = process.env.PORT || 5000;
 initSocket(server);
 
+const wait = (delayMs) =>
+  new Promise((resolve) => {
+    setTimeout(resolve, delayMs);
+  });
+
+const getDatabaseDebugInfo = () => {
+  const rawUrl = process.env.DATABASE_URL || "";
+
+  if (!rawUrl) {
+    return { configured: false };
+  }
+
+  try {
+    const parsed = new URL(rawUrl);
+    return {
+      configured: true,
+      host: parsed.hostname,
+      port: parsed.port || "5432",
+      database: parsed.pathname.replace(/^\//, "") || null,
+      sslmode: parsed.searchParams.get("sslmode") || null,
+    };
+  } catch (error) {
+    return {
+      configured: true,
+      invalidUrl: true,
+    };
+  }
+};
+
+const bootDebug = (...args) => {
+  if (isBootVerbose) {
+    console.log(...args);
+  }
+};
+
+const formatEmailBootInfo = () => {
+  const info = getEmailDebugInfo();
+  return info.configured ? `${info.provider} configured` : "email not configured";
+};
+
+const formatDatabaseBootInfo = () => {
+  const info = getDatabaseDebugInfo();
+
+  if (!info.configured) {
+    return "database not configured";
+  }
+
+  if (info.invalidUrl) {
+    return "database URL invalid";
+  }
+
+  return `${info.database || "unknown"}@${info.host}:${info.port}`;
+};
+
+const toErrorMessage = (error) => {
+  if (!error) {
+    return "Unknown bootstrap error.";
+  }
+
+  return error.message || String(error);
+};
+
+const runWithRetry = async (label, task, { attempts = 5, delayMs = 5000 } = {}) => {
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await task();
+    } catch (error) {
+      lastError = error;
+      console.error(
+        `[BOOT] ${label} failed (attempt ${attempt}/${attempts}): ${toErrorMessage(error)}`
+      );
+
+      if (attempt < attempts) {
+        await wait(delayMs);
+      }
+    }
+  }
+
+  throw lastError;
+};
+
 const bootstrap = async () => {
-  console.log("[EMAIL][BOOT]", getEmailDebugInfo());
+  bootDebug("[EMAIL][BOOT]", getEmailDebugInfo());
+  bootDebug("[DB][BOOT]", getDatabaseDebugInfo());
+
+  await runWithRetry(
+    "Prisma connection",
+    async () => {
+      await prisma.$connect();
+      await prisma.$queryRawUnsafe("SELECT 1");
+    },
+    { attempts: 5, delayMs: 4000 }
+  );
+  bootDebug("Database connection ready.");
 
   await ensureTenantCurrencyColumns(prisma);
-  console.log("Currency settings ready.");
+  bootDebug("Currency settings ready.");
 
   await ensureProductExtendedFields();
-  console.log("Product extended fields ready.");
+  bootDebug("Product extended fields ready.");
 
   await ensureTaxRatesTable();
-  console.log("Tax rates ready.");
+  bootDebug("Tax rates ready.");
 
   await ensureCustomerBonusProgramsTable();
-  console.log("Customer bonus programs ready.");
+  bootDebug("Customer bonus programs ready.");
 
   const managementSummary = await normalizeManagementUnits(prisma);
-  console.log(
-    `Management units normalized: ${managementSummary.mergedUnits} unit(s) merged, ${managementSummary.normalizedProducts} product(s) aligned.`,
-  );
+  if (
+    isBootVerbose ||
+    managementSummary.mergedUnits > 0 ||
+    managementSummary.normalizedProducts > 0
+  ) {
+    console.log(
+      `Management units normalized: ${managementSummary.mergedUnits} unit(s) merged, ${managementSummary.normalizedProducts} product(s) aligned.`,
+    );
+  }
 
   await ensurePermissionProfileTables();
-  console.log("Permission profiles ready.");
+  bootDebug("Permission profiles ready.");
 
   await ensureCashSessionTables();
-  console.log("Cash sessions ready.");
+  bootDebug("Cash sessions ready.");
 
   await ensureInventorySessionTables();
-  console.log("Inventory sessions ready.");
+  bootDebug("Inventory sessions ready.");
 
   await ensureUserPreferenceTable();
-  console.log("User preferences ready.");
+  bootDebug("User preferences ready.");
 
   await ensureDocumentApprovalTable();
-  console.log("Document approvals ready.");
+  bootDebug("Document approvals ready.");
 
   await ensureSupplierReturnTables();
-  console.log("Supplier returns ready.");
+  bootDebug("Supplier returns ready.");
+
+  bootstrapState = {
+    ready: true,
+    lastError: null,
+  };
 
   server.listen(port, () => {
-    console.log(`Server running on port ${port}`);
+    console.log(
+      `Server running on port ${port} (${formatDatabaseBootInfo()}, ${formatEmailBootInfo()})`
+    );
   });
 
   startSubscriptionCron();
 };
 
 bootstrap().catch((error) => {
+  bootstrapState = {
+    ready: false,
+    lastError: toErrorMessage(error),
+  };
   console.error("Unable to bootstrap server.", error);
   process.exit(1);
 });

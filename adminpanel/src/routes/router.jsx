@@ -198,6 +198,20 @@ const createResource = ({
 const compactValue = (value) =>
   value === "" || value === null || value === undefined ? undefined : value;
 
+const userDeactivateConfig = {
+  deleteLabel: "Desactiver",
+  deleteConfirmTitle: "Confirmer la desactivation",
+  deleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment desactiver ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Le compte sera bloque mais conserve dans l'historique.`,
+};
+
+const userHardDeleteConfig = {
+  hardDeleteLabel: "Supprimer definitivement",
+  hardDeleteConfirmTitle: "Confirmer la suppression definitive",
+  hardDeleteConfirmDescription: (row) =>
+    `Voulez-vous vraiment supprimer definitivement ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Cette action est irreversible et echouera si le compte est deja reference dans l'historique.`,
+};
+
 const upperCodeValue = (value) => {
   const compacted = compactValue(value);
   return typeof compacted === "string" ? compacted.trim().toUpperCase() : compacted;
@@ -3745,6 +3759,34 @@ const userForm = {
     },
     { name: "sendVia", label: "Envoi mot de passe", type: "select", options: sendViaOptions, initialValue: "email" },
   ],
+  fieldEffects: [
+    {
+      id: "seller-default-profile",
+      field: "role",
+      fields: ["role", "permissionProfileId"],
+      run: async ({ values, token, requestJson }) => {
+        if (values.role !== "SELLER" || values.permissionProfileId) {
+          return null;
+        }
+
+        const profiles = await requestJson("/api/permission-profiles?paginate=false", {
+          token,
+        });
+        const rows = Array.isArray(profiles?.data) ? profiles.data : Array.isArray(profiles) ? profiles : [];
+        const sellerProfile = rows.find(
+          (item) => item?.role === "SELLER" && String(item?.name || "").toLowerCase() === "vendeur",
+        );
+
+        if (!sellerProfile?.id) {
+          return null;
+        }
+
+        return {
+          permissionProfileId: sellerProfile.id,
+        };
+      },
+    },
+  ],
   buildRequest: (values) => ({
     endpoint: "/api/users",
     method: "POST",
@@ -4225,9 +4267,17 @@ const basePatchBuilder = (builder, endpointBuilder) => (values, id) => {
 };
 
 const isDraftStatus = (row) => row?.status === "DRAFT";
+const isNotValidatedApprovalRequest = (row) =>
+  ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status);
 const isDraftOrRejectedWithRawDraft = (row) =>
   row?.rawStatus === "DRAFT" && ["DRAFT", "REJECTED"].includes(row?.status);
+const isNonValidatedDraftWorkflow = (row) =>
+  row?.rawStatus === "DRAFT" &&
+  ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status);
 const isPendingStatus = (row) => row?.status === "PENDING";
+const isNonValidatedPendingMovement = (row) =>
+  row?.rawStatus === "PENDING" &&
+  ["PENDING", "SUBMITTED", "REJECTED"].includes(row?.status);
 const alwaysMutable = () => true;
 const productDeactivateConfig = {
   deleteLabel: "Desactiver",
@@ -4240,18 +4290,6 @@ const productHardDeleteConfig = {
   hardDeleteConfirmTitle: "Confirmer la suppression definitive",
   hardDeleteConfirmDescription: (row) =>
     `Voulez-vous vraiment supprimer definitivement ${row?.name || row?.sku || row?.id || "cet element"} ? Cette action est irreversible et echouera si le produit est deja reference.`,
-};
-const userDeactivateConfig = {
-  deleteLabel: "Desactiver",
-  deleteConfirmTitle: "Confirmer la desactivation",
-  deleteConfirmDescription: (row) =>
-    `Voulez-vous vraiment desactiver ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Le compte sera bloque mais conserve dans l'historique.`,
-};
-const userHardDeleteConfig = {
-  hardDeleteLabel: "Supprimer definitivement",
-  hardDeleteConfirmTitle: "Confirmer la suppression definitive",
-  hardDeleteConfirmDescription: (row) =>
-    `Voulez-vous vraiment supprimer definitivement ${row?.firstName || row?.email || row?.id || "cet utilisateur"} ? Cette action est irreversible et echouera si le compte est deja reference dans l'historique.`,
 };
 const productFormValues = (row) => ({
   name: row.name || "",
@@ -4294,7 +4332,7 @@ export const editCatalog = {
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-requests/${id}`, method: "DELETE" }),
     pdfUrl: (row) => `/api/purchase-requests/${row.id}/pdf`,
-    canEdit: isDraftStatus,
+    canEdit: isNotValidatedApprovalRequest,
     canDelete: isDraftStatus,
     detailKind: "approval-request",
   },
@@ -4318,7 +4356,7 @@ export const editCatalog = {
       (id) => `/api/supply-requests/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/supply-requests/${id}`, method: "DELETE" }),
-    canEdit: isDraftStatus,
+    canEdit: isNotValidatedApprovalRequest,
     canDelete: isDraftStatus,
     pdfUrl: (row) => `/api/supply-requests/${row.id}/pdf`,
     detailKind: "approval-request",
@@ -4346,7 +4384,7 @@ export const editCatalog = {
       (id) => `/api/purchase-orders/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-orders/${id}`, method: "DELETE" }),
-    canEdit: isDraftOrRejectedWithRawDraft,
+    canEdit: isNonValidatedDraftWorkflow,
     canDelete: isDraftOrRejectedWithRawDraft,
     pdfUrl: (row) => `/api/purchase-orders/${row.id}/pdf`,
     detailKind: "purchase-order",
@@ -4374,7 +4412,7 @@ export const editCatalog = {
       (id) => `/api/purchase-orders/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-orders/${id}`, method: "DELETE" }),
-    canEdit: isDraftOrRejectedWithRawDraft,
+    canEdit: isNonValidatedDraftWorkflow,
     canDelete: isDraftOrRejectedWithRawDraft,
     pdfUrl: (row) => `/api/purchase-orders/${row.id}/pdf`,
     detailKind: "purchase-order",
@@ -4419,8 +4457,7 @@ export const editCatalog = {
     deleteRequest: (id) => ({ endpoint: `/api/stock-entries/${id}`, method: "DELETE" }),
     canEdit: (row) =>
       row?.sourceType === "DIRECT" &&
-      row?.rawStatus === "PENDING" &&
-      ["PENDING", "REJECTED"].includes(row?.status),
+      isNonValidatedPendingMovement(row),
     canDelete: (row) =>
       row?.sourceType === "DIRECT" &&
       row?.rawStatus === "PENDING" &&
@@ -4448,7 +4485,7 @@ export const editCatalog = {
     ),
     pdfUrl: (row) => `/api/transfers/${row.id}/pdf`,
     deleteRequest: (id) => ({ endpoint: `/api/transfers/${id}`, method: "DELETE" }),
-    canEdit: isDraftOrRejectedWithRawDraft,
+    canEdit: isNonValidatedDraftWorkflow,
     canDelete: isDraftOrRejectedWithRawDraft,
     detailKind: "transfer",
   },
@@ -4471,7 +4508,7 @@ export const editCatalog = {
       (id) => `/api/supplier-returns/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/supplier-returns/${id}`, method: "DELETE" }),
-    canEdit: (row) => ["DRAFT", "REJECTED"].includes(row?.status),
+    canEdit: (row) => ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status),
     canDelete: (row) => ["DRAFT", "REJECTED"].includes(row?.status),
     detailKind: "supplier-return",
   },

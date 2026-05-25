@@ -23,11 +23,13 @@ const {
   getDocumentApprovals,
   prepareDocumentApprovals,
   decideDocumentApproval,
+  ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
 const { expandArticleItems } = require("../utils/expandArticleItems");
 
 const TRANSFER_DOCUMENT_TYPE = "TRANSFER";
 const TRANSFER_FLOW_CODE = "TRANSFER";
+const isSeller = (user) => user?.role === "SELLER";
 
 const queueTransferExpiryNotifications = (tenantId) => {
   Promise.resolve()
@@ -72,8 +74,21 @@ const decorateTransfersWithApprovals = async (records, { includeApprovals = true
 
 const canModifyTransfer = async (tenantId, transfer) => {
   if (transfer.status !== "DRAFT") return false;
-  const approvals = await getDocumentApprovals(tenantId, TRANSFER_DOCUMENT_TYPE, transfer.id);
-  return !approvals.length || approvals.some((item) => item.status === "REJECTED");
+  return true;
+};
+
+const resetTransferApprovals = async (tenantId, transferId) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    UPDATE "documentApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${JSON.stringify(tenantId)}
+      AND "documentType" = ${JSON.stringify(TRANSFER_DOCUMENT_TYPE)}
+      AND "documentId" = ${JSON.stringify(transferId)}
+  `);
 };
 
 const includesSearch = (value, search) =>
@@ -317,8 +332,19 @@ const listTransfers = async (req, res) => {
   const where = {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
-    ...(fromStoreId ? { fromStoreId } : {}),
-    ...(toStoreId ? { toStoreId } : {}),
+    ...(isSeller(req.user)
+      ? req.user.storeId
+        ? {
+            OR: [
+              { fromStoreId: req.user.storeId },
+              { toStoreId: req.user.storeId },
+            ],
+          }
+        : { id: "__no_seller_store__" }
+      : {
+          ...(fromStoreId ? { fromStoreId } : {}),
+          ...(toStoreId ? { toStoreId } : {}),
+        }),
     ...createdAtFilter,
   };
 
@@ -410,7 +436,20 @@ const getTransfer = async (req, res) => {
   const { id } = req.params;
 
   const transfer = await prisma.productTransfer.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user)
+        ? req.user.storeId
+          ? {
+              OR: [
+                { fromStoreId: req.user.storeId },
+                { toStoreId: req.user.storeId },
+              ],
+            }
+          : { id: "__no_seller_store__" }
+        : {}),
+    },
     include: {
       items: { include: { product: true, unit: true } },
       fromStore: true,
@@ -454,6 +493,8 @@ const updateTransfer = async (req, res) => {
   if (!(await canModifyTransfer(req.user.tenantId, transfer))) {
     return res.status(400).json({ message: "Only draft transfers can be edited." });
   }
+
+  await resetTransferApprovals(req.user.tenantId, id);
 
   if (!fromStoreId || !toStoreId) {
     return res.status(400).json({ message: "fromStoreId and toStoreId required." });
@@ -713,7 +754,20 @@ const approveTransfer = async (req, res) => {
   const note = req.body?.note || null;
 
   const transfer = await prisma.productTransfer.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user)
+        ? req.user.storeId
+          ? {
+              OR: [
+                { fromStoreId: req.user.storeId },
+                { toStoreId: req.user.storeId },
+              ],
+            }
+          : { id: "__no_seller_store__" }
+        : {}),
+    },
     include: {
       items: { include: { product: true, unit: true } },
       fromStore: true,
@@ -759,7 +813,20 @@ const rejectTransfer = async (req, res) => {
   const note = req.body?.note || null;
 
   const transfer = await prisma.productTransfer.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user)
+        ? req.user.storeId
+          ? {
+              OR: [
+                { fromStoreId: req.user.storeId },
+                { toStoreId: req.user.storeId },
+              ],
+            }
+          : { id: "__no_seller_store__" }
+        : {}),
+    },
     include: {
       items: { include: { product: true, unit: true } },
       fromStore: true,

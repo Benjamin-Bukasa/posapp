@@ -1,7 +1,12 @@
 const parseListParams = (query = {}) => {
   const page = Number.parseInt(query.page, 10);
   const pageSize = Number.parseInt(query.pageSize, 10);
-  const paginate = Number.isFinite(page) || Number.isFinite(pageSize);
+  const paginateFlag =
+    query.paginate === undefined
+      ? null
+      : String(query.paginate).trim().toLowerCase() === "true";
+  const paginate =
+    paginateFlag === null ? Number.isFinite(page) || Number.isFinite(pageSize) : paginateFlag;
   const safePage = Number.isFinite(page) && page > 0 ? page : 1;
   const safePageSize = Number.isFinite(pageSize) && pageSize > 0 ? Math.min(pageSize, 100) : 20;
   const sortBy = query.sortBy ? String(query.sortBy) : null;

@@ -1,8 +1,7 @@
 const prisma = require("../config/prisma");
 const {
-  attachCurrencyCodes,
-  getCurrencyCodeMap,
-} = require("../utils/moneyCurrency");
+  normalizeCurrencyCode,
+} = require("../utils/currencySettings");
 const {
   attachPaymentOriginalDetails,
   getPaymentOriginalMap,
@@ -27,32 +26,24 @@ const hydratePaymentsWithCurrencyCodes = async (records) => {
     return Array.isArray(records) ? [] : records;
   }
 
-  const paymentCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "payments",
-    list.map((item) => item.id),
-  );
-  const orderCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "orders",
-    list.map((item) => item.orderId),
-  );
   const paymentOriginalMap = await getPaymentOriginalMap(
     prisma,
     list.map((item) => item.id),
   );
 
   const hydrated = attachPaymentOriginalDetails(
-    attachCurrencyCodes(list, paymentCurrencyMap),
+    list.map((payment) => ({
+      ...payment,
+      currencyCode: normalizeCurrencyCode(payment.currencyCode),
+    })),
     paymentOriginalMap,
   ).map((payment) => ({
     ...payment,
     order: payment.order
       ? {
-          ...payment.order,
-          currencyCode:
-            orderCurrencyMap.get(payment.orderId) || payment.currencyCode || "USD",
-        }
+        ...payment.order,
+        currencyCode: normalizeCurrencyCode(payment.order.currencyCode || payment.currencyCode),
+      }
       : payment.order,
   }));
 

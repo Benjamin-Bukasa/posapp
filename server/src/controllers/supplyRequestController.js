@@ -101,6 +101,17 @@ const syncSupplyRequestStatus = async (supplyRequestId) => {
   });
 };
 
+const resetSupplyRequestApprovals = async (supplyRequestId) => {
+  await prisma.supplyRequestApproval.updateMany({
+    where: { supplyRequestId },
+    data: {
+      status: "PENDING",
+      decidedAt: null,
+      note: null,
+    },
+  });
+};
+
 const sanitizeRequest = (request, pdfOverride) => {
   if (!request) return request;
   const { pdfData, ...rest } = request;
@@ -591,7 +602,7 @@ const updateSupplyRequest = async (req, res) => {
     });
   }
 
-  if (request.status !== "DRAFT") {
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(request.status)) {
     return res.status(400).json({
       message: "Only non-validated requisitions can be edited.",
     });
@@ -617,6 +628,10 @@ const updateSupplyRequest = async (req, res) => {
     });
   }
 
+  if (request.status !== "DRAFT") {
+    await resetSupplyRequestApprovals(id);
+  }
+
   await prisma.supplyRequestItem.deleteMany({
     where: { supplyRequestId: id },
   });
@@ -624,6 +639,7 @@ const updateSupplyRequest = async (req, res) => {
   const updated = await prisma.supplyRequest.update({
     where: { id },
     data: {
+      status: "DRAFT",
       title,
       storeId,
       storageZoneId,

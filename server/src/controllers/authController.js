@@ -18,6 +18,7 @@ const {
 } = require("../services/notificationService");
 const { verifyGoogleIdToken } = require("../services/googleService");
 const { getPlanConfig } = require("../services/subscriptionService");
+const { getGrantedPermissions } = require("../utils/permissionAccess");
 
 const getClientType = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
@@ -173,7 +174,11 @@ const login = async (req, res) => {
     where: {
       OR: [{ email: identifier }, { phone: identifier }],
     },
-    include: { store: true, tenant: true },
+    include: {
+      store: true,
+      tenant: true,
+      permissions: { include: { permission: true } },
+    },
   });
 
   if (!user || !user.passwordHash) {
@@ -279,6 +284,7 @@ const refresh = async (req, res) => {
           include: {
             tenant: true,
             store: true,
+            permissions: { include: { permission: true } },
           },
         },
       },
@@ -330,6 +336,7 @@ const refresh = async (req, res) => {
         storeId: session.user.storeId,
         storeName: session.user.store?.name || null,
         defaultStorageZoneId: session.user.defaultStorageZoneId || null,
+        permissions: getGrantedPermissions(session.user),
       },
     });
   } catch (error) {
@@ -577,7 +584,11 @@ const googleLogin = async (req, res) => {
       where: {
         OR: [{ googleId: profile.sub }, { email: profile.email }],
       },
-      include: { store: true, tenant: true },
+      include: {
+        store: true,
+        tenant: true,
+        permissions: { include: { permission: true } },
+      },
     });
 
     if (!user) {
@@ -618,6 +629,7 @@ const googleLogin = async (req, res) => {
         },
         include: {
           tenant: true,
+          permissions: { include: { permission: true } },
         },
       });
 
@@ -629,7 +641,11 @@ const googleLogin = async (req, res) => {
       user = await prisma.user.update({
         where: { id: user.id },
         data: { googleId: profile.sub },
-        include: { store: true, tenant: true },
+        include: {
+          store: true,
+          tenant: true,
+          permissions: { include: { permission: true } },
+        },
       });
     }
 
@@ -679,6 +695,7 @@ const googleLogin = async (req, res) => {
         storeId: user.storeId,
         storeName: user.store?.name || null,
         defaultStorageZoneId: user.defaultStorageZoneId || null,
+        permissions: getGrantedPermissions(user),
       },
     });
   } catch (error) {

@@ -221,7 +221,8 @@ function Requisitions() {
         columns={columns}
         data={pagedRows}
         renderActions={(row) =>
-          row.rawStatus === "DRAFT" && row.requestedById === user?.id ? (
+          ["DRAFT", "SUBMITTED", "REJECTED"].includes(row.rawStatus) &&
+          row.requestedById === user?.id ? (
             <Button
               type="button"
               label="Modifier"

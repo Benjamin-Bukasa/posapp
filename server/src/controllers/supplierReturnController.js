@@ -242,10 +242,22 @@ const getSupplierReturnById = async (tenantId, id) => {
 };
 
 const canModifySupplierReturn = async (tenantId, record) => {
-  if (record.status === "REJECTED") return true;
-  if (record.status !== "DRAFT") return false;
-  const approvals = await getDocumentApprovals(tenantId, SUPPLIER_RETURN_DOCUMENT_TYPE, record.id);
-  return !approvals.length || approvals.some((item) => item.status === "REJECTED");
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(record.status)) return false;
+  return true;
+};
+
+const resetSupplierReturnApprovals = async (tenantId, supplierReturnId) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    UPDATE "documentApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "documentType" = ${escapeSqlValue(SUPPLIER_RETURN_DOCUMENT_TYPE)}
+      AND "documentId" = ${escapeSqlValue(supplierReturnId)}
+  `);
 };
 
 const listSupplierReturns = async (req, res) => {
@@ -426,6 +438,8 @@ const updateSupplierReturn = async (req, res) => {
     return res.status(400).json({ message: "Only draft supplier returns can be edited." });
   }
 
+  await resetSupplierReturnApprovals(req.user.tenantId, record.id);
+
   const { supplierId, storageZoneId, note, items, reference } = req.body || {};
   if (!supplierId || !storageZoneId) {
     return res.status(400).json({ message: "supplierId and storageZoneId are required." });
@@ -455,6 +469,8 @@ const updateSupplierReturn = async (req, res) => {
       "storageZoneId" = ${escapeSqlValue(storageZoneId)},
       "note" = ${escapeSqlValue(note || null)},
       "status" = 'DRAFT',
+      "approvedById" = NULL,
+      "approvedAt" = NULL,
       "updatedAt" = NOW()
     WHERE "tenantId" = ${escapeSqlValue(req.user.tenantId)}
       AND "id" = ${escapeSqlValue(record.id)}

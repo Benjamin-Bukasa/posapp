@@ -1,8 +1,9 @@
 const prisma = require("../config/prisma");
-const { loadTenantCurrencySettings } = require("../utils/currencySettings");
 const {
-  attachCurrencyCodes,
-  getCurrencyCodeMap,
+  loadTenantCurrencySettings,
+  normalizeCurrencyCode,
+} = require("../utils/currencySettings");
+const {
   setCurrencyCodes,
 } = require("../utils/moneyCurrency");
 const { ensureComponentItems } = require("../utils/expandArticleItems");
@@ -22,6 +23,7 @@ const {
   getDocumentApprovals,
   prepareDocumentApprovals,
   decideDocumentApproval,
+  ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
 
 const PURCHASE_ORDER_DOCUMENT_TYPE = "PURCHASE_ORDER";
@@ -61,8 +63,21 @@ const decoratePurchaseOrdersWithApprovals = async (records, { includeApprovals =
 
 const canModifyPurchaseOrder = async (tenantId, order) => {
   if (order.status !== "DRAFT") return false;
-  const approvals = await getDocumentApprovals(tenantId, PURCHASE_ORDER_DOCUMENT_TYPE, order.id);
-  return !approvals.length || approvals.some((item) => item.status === "REJECTED");
+  return true;
+};
+
+const resetPurchaseOrderApprovals = async (tenantId, orderId) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    UPDATE "documentApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${JSON.stringify(tenantId)}
+      AND "documentType" = ${JSON.stringify(PURCHASE_ORDER_DOCUMENT_TYPE)}
+      AND "documentId" = ${JSON.stringify(orderId)}
+  `);
 };
 
 const hydratePurchaseOrdersWithCurrencyCodes = async (records) => {
@@ -76,15 +91,12 @@ const hydratePurchaseOrdersWithCurrencyCodes = async (records) => {
     return Array.isArray(records) ? [] : records;
   }
 
-  const itemCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "purchaseOrderItems",
-    list.flatMap((order) => order.items || []).map((item) => item.id),
-  );
-
   const hydrated = list.map((order) => ({
     ...order,
-    items: attachCurrencyCodes(order.items || [], itemCurrencyMap),
+    items: (order.items || []).map((item) => ({
+      ...item,
+      currencyCode: normalizeCurrencyCode(item.currencyCode),
+    })),
   }));
 
   return Array.isArray(records) ? hydrated : hydrated[0];
@@ -620,6 +632,8 @@ const updatePurchaseOrder = async (req, res) => {
   if (!(await canModifyPurchaseOrder(req.user.tenantId, order))) {
     return res.status(400).json({ message: "Only draft orders can be edited." });
   }
+
+  await resetPurchaseOrderApprovals(req.user.tenantId, id);
 
   if (!supplierId) {
     return res.status(400).json({ message: "supplierId is required." });
