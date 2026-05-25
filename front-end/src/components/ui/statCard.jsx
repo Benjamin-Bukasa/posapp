@@ -9,6 +9,8 @@ const StatCard = ({
   highlight = false,
   amountLabel,
   amountValue,
+  actionLabel,
+  onAction,
 }) => {
   const hasChange =
     change !== undefined && change !== null && String(change).trim() !== "";
@@ -91,6 +93,20 @@ const StatCard = ({
             {amountValue}
           </span>
         </div>
+      ) : null}
+      {actionLabel && typeof onAction === "function" ? (
+        <button
+          type="button"
+          onClick={onAction}
+          className={[
+            "mt-3 w-full rounded-lg px-3 py-2 text-xs font-medium transition-colors",
+            highlight
+              ? "bg-white/15 text-white hover:bg-white/20"
+              : "bg-background text-text-primary hover:bg-header",
+          ].join(" ")}
+        >
+          {actionLabel}
+        </button>
       ) : null}
     </div>
   );

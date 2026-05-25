@@ -23,6 +23,7 @@ import ReportsSalesTable from "../pages/ReportsSalesTable";
 import ReportsSupplyTable from "../pages/ReportsSupplyTable";
 import Notifications from "../pages/Notifications";
 import Sales from "../pages/Sales";
+import SalesDailyDetails from "../pages/SalesDailyDetails";
 import Settings from "../pages/Settings";
 import Transfers from "../pages/Transfers";
 import Deliveries from "../pages/Deliveries";
@@ -73,7 +74,11 @@ const protectedRoutes = [
               { path: "approvisionnement", element: <ReportsSupplyTable /> },
             ],
           },
-          { path: "sales", element: <Sales /> },
+          {
+            path: "sales",
+            element: <Sales />,
+            children: [{ path: "details", element: <SalesDailyDetails /> }],
+          },
           { path: "notifications", element: <Notifications /> },
           { path: "messages", element: <Messages /> },
           { path: "profile", element: <Profile /> },

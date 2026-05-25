@@ -6,10 +6,11 @@ import {
   History,
   Pencil,
   Receipt,
-  TrendingUp,
+  Store,
   Trash2,
   Users,
 } from "lucide-react";
+import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import DataTable from "../components/ui/datatable";
 import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
@@ -22,20 +23,38 @@ import useCurrencyStore from "../stores/currencyStore";
 import { apiDelete, apiGet, apiPatch } from "../services/apiClient";
 import {
   formatAmount,
-  formatDate,
   formatDisplayAmount,
   formatName,
   shortId,
   toDisplayAmount,
 } from "../utils/formatters";
-import {
-  getMonthRange,
-  getPreviousMonthRange,
-  isWithinRange,
-  percentChange,
-} from "../utils/metrics";
+import { percentChange } from "../utils/metrics";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
+
+const startOfDay = (value = new Date()) => {
+  const date = new Date(value);
+  date.setHours(0, 0, 0, 0);
+  return date;
+};
+
+const endOfDay = (value = new Date()) => {
+  const date = startOfDay(value);
+  date.setDate(date.getDate() + 1);
+  return date;
+};
+
+const sumOrderItems = (order) =>
+  (order?.items || []).reduce(
+    (sum, item) => sum + Number(item?.quantity || 0),
+    0,
+  );
+
+const isWithinPeriod = (value, start, end) => {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return false;
+  return date >= start && date < end;
+};
 
 const mapPaymentMethod = (method) => {
   if (!method) return "N/A";
@@ -62,17 +81,20 @@ const resolveSaleVariant = (status) => {
 };
 
 function Sales() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const refreshTick = useRealtimeRefetch([
     "sale:created",
     "sale:updated",
     "payment:created",
+    "cash:session:opened",
+    "cash:session:closed",
+    "cash:session:movement",
   ]);
-  const displayCurrencyCode = useCurrencyStore(
-    (state) => state.settings.primaryCurrencyCode,
-  );
   const currencySettings = useCurrencyStore((state) => state.settings);
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
+  const [cashSessions, setCashSessions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
@@ -86,15 +108,28 @@ function Sales() {
   const [submittingEdit, setSubmittingEdit] = useState(false);
   const [submittingDelete, setSubmittingDelete] = useState(false);
 
+  const isDetailOpen = location.pathname.endsWith("/details");
+
   useEffect(() => {
     let isMounted = true;
+
     const load = async () => {
       setLoading(true);
       try {
-        const data = await apiGet("/api/orders");
+        const [ordersData, cashSessionsData] = await Promise.all([
+          apiGet("/api/orders"),
+          apiGet("/api/cash-sessions?paginate=false&status=OPEN"),
+        ]);
+
         if (!isMounted) return;
-        const list = Array.isArray(data?.data) ? data.data : data;
-        setOrders(Array.isArray(list) ? list : []);
+
+        const ordersList = Array.isArray(ordersData?.data) ? ordersData.data : ordersData;
+        const sessionList = Array.isArray(cashSessionsData?.data)
+          ? cashSessionsData.data
+          : cashSessionsData;
+
+        setOrders(Array.isArray(ordersList) ? ordersList : []);
+        setCashSessions(Array.isArray(sessionList) ? sessionList : []);
       } catch (error) {
         showToast({
           title: "Erreur",
@@ -105,6 +140,7 @@ function Sales() {
         if (isMounted) setLoading(false);
       }
     };
+
     load();
     return () => {
       isMounted = false;
@@ -118,7 +154,7 @@ function Sales() {
           ? order.items
               .map(
                 (item) =>
-                  `${item.product?.name || "Produit"} (${item.quantity || 0})`
+                  `${item.product?.name || "Produit"} (${item.quantity || 0})`,
               )
               .join(", ")
           : "";
@@ -130,20 +166,17 @@ function Sales() {
           id: order.id,
           raw: order,
           saleId: `#SALE-${shortId(order.id)}`,
-          cashier: order.createdBy
-            ? formatName(order.createdBy)
-            : "N/A",
-          customer: order.customer
-            ? formatName(order.customer)
-            : "Client comptoir",
-          date: formatDate(order.createdAt),
+          cashier: order.createdBy ? formatName(order.createdBy) : "N/A",
+          customer: order.customer ? formatName(order.customer) : "Client comptoir",
+          dateValue: order.createdAt,
+          dateLabel: new Date(order.createdAt).toLocaleString("fr-FR"),
           items,
           total: formatAmount(order.total, order.currencyCode),
           paymentMethod,
           status: mapSaleStatus(order.status),
         };
       }),
-    [orders, displayCurrencyCode]
+    [orders],
   );
 
   const filteredSales = useMemo(() => {
@@ -156,44 +189,38 @@ function Sales() {
           .filter(Boolean)
           .join(" ")
           .toLowerCase()
-          .includes(keyword)
+          .includes(keyword),
       );
     }
 
     if (filterValues?.from || filterValues?.to) {
       const fromDate = filterValues.from ? new Date(filterValues.from) : null;
-      const toDate = filterValues.to ? new Date(filterValues.to) : null;
+      const toDate = filterValues.to ? endOfDay(filterValues.to) : null;
       results = results.filter((row) => {
-        const rowDate = new Date(row.date);
+        const rowDate = new Date(row.dateValue);
         if (fromDate && rowDate < fromDate) return false;
-        if (toDate && rowDate > toDate) return false;
+        if (toDate && rowDate >= toDate) return false;
         return true;
       });
     }
 
     if (filterValues?.status && filterValues.status !== "all") {
       if (filterValues.status === "annule") {
-        results = results.filter((row) =>
-          row.status.toLowerCase().includes("annule")
-        );
+        results = results.filter((row) => row.status.toLowerCase().includes("annule"));
       }
       if (filterValues.status === "actif") {
-        results = results.filter((row) =>
-          row.status.toLowerCase().includes("paye")
-        );
+        results = results.filter((row) => row.status.toLowerCase().includes("paye"));
       }
       if (filterValues.status === "inactif") {
-        results = results.filter((row) =>
-          row.status.toLowerCase().includes("attente")
-        );
+        results = results.filter((row) => row.status.toLowerCase().includes("attente"));
       }
     }
 
-    const sort = sortValues ?? { date: "asc", activity: "az", name: "az" };
+    const sort = sortValues ?? { date: "desc", name: "az" };
     if (sort?.date) {
       results.sort((a, b) => {
-        const aDate = new Date(a.date);
-        const bDate = new Date(b.date);
+        const aDate = new Date(a.dateValue);
+        const bDate = new Date(b.dateValue);
         return sort.date === "asc" ? aDate - bDate : bDate - aDate;
       });
     }
@@ -211,109 +238,115 @@ function Sales() {
   const safePage = Math.min(page, totalPages);
   const pagedSales = filteredSales.slice(
     (safePage - 1) * pageSize,
-    safePage * pageSize
+    safePage * pageSize,
   );
-  const rangeStart = filteredSales.length
-    ? (safePage - 1) * pageSize + 1
-    : 0;
+  const rangeStart = filteredSales.length ? (safePage - 1) * pageSize + 1 : 0;
   const rangeEnd = Math.min(filteredSales.length, safePage * pageSize);
   const rangeLabel = `Affichage ${rangeStart}-${rangeEnd} sur ${filteredSales.length}`;
 
   const stats = useMemo(() => {
     const now = new Date();
-    const currentRange = getMonthRange(now);
-    const previousRange = getPreviousMonthRange(now);
+    const todayStart = startOfDay(now);
+    const tomorrowStart = endOfDay(now);
+    const yesterdayStart = new Date(todayStart);
+    yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
     const paidOrders = orders.filter((order) => order.status === "PAID");
-    const paidOrdersCurrent = paidOrders.filter((order) =>
-      isWithinRange(order.createdAt, currentRange.start, currentRange.end)
+    const paidToday = paidOrders.filter((order) =>
+      isWithinPeriod(order.createdAt, todayStart, tomorrowStart),
     );
-    const paidOrdersPrevious = paidOrders.filter((order) =>
-      isWithinRange(order.createdAt, previousRange.start, previousRange.end)
+    const paidYesterday = paidOrders.filter((order) =>
+      isWithinPeriod(order.createdAt, yesterdayStart, todayStart),
+    );
+    const paidMonth = paidOrders.filter((order) =>
+      isWithinPeriod(order.createdAt, currentMonthStart, tomorrowStart),
     );
 
     const revenueTotal = paidOrders.reduce(
       (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
-      0
+      0,
     );
-    const revenueMonth = paidOrdersCurrent.reduce(
+    const revenueDay = paidToday.reduce(
       (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
-      0
+      0,
     );
-    const revenuePrevious = paidOrdersPrevious.reduce(
+    const revenueYesterday = paidYesterday.reduce(
       (sum, order) => sum + toDisplayAmount(order.total, order.currencyCode),
-      0
+      0,
     );
 
     const uniqueCustomers = new Set(
-      paidOrders.map((order) => order.customerId).filter(Boolean)
+      paidMonth.map((order) => order.customerId).filter(Boolean),
     );
-    const currentCustomers = new Set(
-      paidOrdersCurrent.map((order) => order.customerId).filter(Boolean)
+    const currentDayCustomers = new Set(
+      paidToday.map((order) => order.customerId).filter(Boolean),
     );
-    const previousCustomers = new Set(
-      paidOrdersPrevious.map((order) => order.customerId).filter(Boolean)
+    const previousDayCustomers = new Set(
+      paidYesterday.map((order) => order.customerId).filter(Boolean),
     );
 
     const allPayments = orders.flatMap((order) =>
       (order.payments || []).map((payment) => ({
         ...payment,
         orderCreatedAt: order.createdAt,
-      }))
+      })),
     );
 
-    const paymentsCurrent = allPayments.filter((payment) =>
-      isWithinRange(
+    const paymentsToday = allPayments.filter((payment) =>
+      isWithinPeriod(
         payment.paidAt || payment.createdAt || payment.orderCreatedAt,
-        currentRange.start,
-        currentRange.end
-      )
+        todayStart,
+        tomorrowStart,
+      ),
     );
-    const paymentsPrevious = allPayments.filter((payment) =>
-      isWithinRange(
+    const paymentsYesterday = allPayments.filter((payment) =>
+      isWithinPeriod(
         payment.paidAt || payment.createdAt || payment.orderCreatedAt,
-        previousRange.start,
-        previousRange.end
-      )
+        yesterdayStart,
+        todayStart,
+      ),
     );
 
     const paymentsValidated = allPayments.filter(
-      (payment) => payment.status === "COMPLETED"
+      (payment) => payment.status === "COMPLETED",
     ).length;
-    const paymentsValidatedCurrent = paymentsCurrent.filter(
-      (payment) => payment.status === "COMPLETED"
+    const paymentsValidatedCurrent = paymentsToday.filter(
+      (payment) => payment.status === "COMPLETED",
     ).length;
-    const paymentsValidatedPrevious = paymentsPrevious.filter(
-      (payment) => payment.status === "COMPLETED"
+    const paymentsValidatedPrevious = paymentsYesterday.filter(
+      (payment) => payment.status === "COMPLETED",
     ).length;
 
     return {
       totalSales: paidOrders.length,
       revenueTotal,
-      revenueMonth,
+      revenueDay,
+      salesToday: paidToday.length,
+      openSellers: cashSessions.length,
       customers: uniqueCustomers.size,
       paymentsValidated,
       change: {
-        totalSales: percentChange(
-          paidOrdersCurrent.length,
-          paidOrdersPrevious.length
+        totalSales: percentChange(paidToday.length, paidYesterday.length),
+        revenueDay: percentChange(revenueDay, revenueYesterday),
+        customers: percentChange(
+          currentDayCustomers.size,
+          previousDayCustomers.size,
         ),
-        revenueMonth: percentChange(revenueMonth, revenuePrevious),
-        customers: percentChange(currentCustomers.size, previousCustomers.size),
         paymentsValidated: percentChange(
           paymentsValidatedCurrent,
-          paymentsValidatedPrevious
+          paymentsValidatedPrevious,
         ),
       },
     };
-  }, [orders, displayCurrencyCode]);
+  }, [orders, cashSessions]);
 
   const salesCards = useMemo(
     () => [
       {
         title: "Ventes totales",
         value: stats.totalSales.toString(),
-        subtitle: "Depuis la semaine",
+        subtitle: "Historique cumule",
         icon: Receipt,
         change: stats.change.totalSales,
         highlight: true,
@@ -321,13 +354,14 @@ function Sales() {
         amountValue: formatDisplayAmount(stats.revenueTotal),
       },
       {
-        title: "Revenus du mois",
-        value: formatDisplayAmount(stats.revenueMonth),
-        subtitle: "Ce mois-ci",
-        icon: TrendingUp,
-        change: stats.change.revenueMonth,
-        amountLabel: "Objectif atteint",
-        amountValue: "72%",
+        title: "Ventes du jour",
+        value: formatDisplayAmount(stats.revenueDay),
+        subtitle: "Toutes les boutiques aujourd'hui",
+        icon: Store,
+        change: stats.change.revenueDay,
+        amountLabel: "Tickets payes",
+        amountValue: stats.salesToday.toString(),
+        actionLabel: isDetailOpen ? "Masquer le detail" : "Voir detail",
       },
       {
         title: "Clients servis",
@@ -335,8 +369,8 @@ function Sales() {
         subtitle: "Depuis le debut du mois",
         icon: Users,
         change: stats.change.customers,
-        amountLabel: "Satisfaction",
-        amountValue: "4.7/5",
+        amountLabel: "Caisses ouvertes",
+        amountValue: stats.openSellers.toString(),
       },
       {
         title: "Paiements valides",
@@ -344,11 +378,11 @@ function Sales() {
         subtitle: "Transactions reussies",
         icon: BadgeCheck,
         change: stats.change.paymentsValidated,
-        amountLabel: "Taux de reussite",
-        amountValue: "92%",
+        amountLabel: "Temps reel",
+        amountValue: "Aujourd'hui",
       },
     ],
-    [stats, displayCurrencyCode]
+    [isDetailOpen, stats],
   );
 
   const columns = useMemo(
@@ -356,7 +390,7 @@ function Sales() {
       { header: "Vente ID", accessor: "saleId" },
       { header: "Caissier", accessor: "cashier" },
       { header: "Client", accessor: "customer" },
-      { header: "Date", accessor: "date" },
+      { header: "Date", accessor: "dateLabel" },
       { header: "Produits", accessor: "items" },
       { header: "Montant", accessor: "total" },
       {
@@ -377,17 +411,21 @@ function Sales() {
         ),
       },
     ],
-    []
+    [],
   );
+
+  const reloadOrders = async () => {
+    const data = await apiGet("/api/orders");
+    const list = Array.isArray(data?.data) ? data.data : data;
+    setOrders(Array.isArray(list) ? list : []);
+  };
 
   const handleEditSale = async (payload) => {
     if (!selectedSale?.raw?.id) return;
     setSubmittingEdit(true);
     try {
       await apiPatch(`/api/orders/${selectedSale.raw.id}`, payload);
-      const data = await apiGet("/api/orders");
-      const list = Array.isArray(data?.data) ? data.data : data;
-      setOrders(Array.isArray(list) ? list : []);
+      await reloadOrders();
       setSelectedSale(null);
       showToast({
         title: "Vente modifiee",
@@ -413,9 +451,7 @@ function Sales() {
         reason: deleteReason,
       });
 
-      const data = await apiGet("/api/orders");
-      const list = Array.isArray(data?.data) ? data.data : data;
-      setOrders(Array.isArray(list) ? list : []);
+      await reloadOrders();
       setDeleteSale(null);
       setDeleteReason("");
       showToast({
@@ -434,18 +470,26 @@ function Sales() {
     }
   };
 
+  const handleToggleDetails = () => {
+    navigate(isDetailOpen ? "/sales" : "/sales/details");
+  };
+
   return (
-    <section className="w-full h-full flex flex-col gap-4 p-4">
+    <section className="flex h-full w-full flex-col gap-4 p-4">
       <div>
         <h1 className="text-2xl font-semibold text-text-primary">Ventes</h1>
         <p className="text-sm text-text-secondary">
-          Suivez les ventes realisees en boutique.
+          Suivez les ventes realisees en boutique et la performance du jour.
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {salesCards.map((card) => (
-          <StatCard key={card.title} {...card} />
+          <StatCard
+            key={card.title}
+            {...card}
+            onAction={card.title === "Ventes du jour" ? handleToggleDetails : undefined}
+          />
         ))}
       </div>
 
@@ -528,6 +572,14 @@ function Sales() {
           label: "Afficher",
         }}
         tableMaxHeightClass="max-h-[45vh]"
+      />
+
+      <Outlet
+        context={{
+          orders,
+          cashSessions,
+          currencySettings,
+        }}
       />
 
       <SaleEditModal
