@@ -20,6 +20,22 @@ const { verifyGoogleIdToken } = require("../services/googleService");
 const { getPlanConfig } = require("../services/subscriptionService");
 const { getGrantedPermissions } = require("../utils/permissionAccess");
 
+const normalizeEmail = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return normalized || null;
+};
+
+const normalizePhone = (value) => {
+  const normalized = String(value || "").trim();
+  return normalized || null;
+};
+
+const normalizeIdentifier = (value) => {
+  const normalized = String(value || "").trim();
+  if (!normalized) return null;
+  return normalized.includes("@") ? normalizeEmail(normalized) : normalized;
+};
+
 const getClientType = (value) => {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "adminpanel") return "adminpanel";
@@ -85,8 +101,10 @@ const queueForgotPasswordNotification = ({ user, sendVia, resetToken }) => {
 const register = async (req, res) => {
   const { tenantName, email, phone, plan, sendVia, firstName, lastName } =
     req.body || {};
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(phone);
 
-  if (!tenantName || !plan || (!email && !phone)) {
+  if (!tenantName || !plan || (!normalizedEmail && !normalizedPhone)) {
     return res.status(400).json({
       message: "le nom de la Vendeur, le plan, email et phone sont obligatoire.",
     });
@@ -99,7 +117,7 @@ const register = async (req, res) => {
 
   const existing = await prisma.user.findFirst({
     where: {
-      OR: [{ email }, { phone }],
+      OR: [{ email: normalizedEmail }, { phone: normalizedPhone }],
     },
   });
   if (existing) {
@@ -126,8 +144,8 @@ const register = async (req, res) => {
   const user = await prisma.user.create({
     data: {
       tenantId: tenant.id,
-      email,
-      phone,
+      email: normalizedEmail,
+      phone: normalizedPhone,
       firstName,
       lastName,
       role: "SUPERADMIN",
@@ -142,14 +160,14 @@ const register = async (req, res) => {
   });
 
   const message = `Votre compte pour la Vendeur ${tenantName} est créé. Identifiant: ${
-    email || phone
+    normalizedEmail || normalizedPhone
   }. Mot de passe temporaire: ${tempPassword}. Veuillez le changer à la première connexion.`;
 
-  if (sendVia === "sms" && phone) {
-    await sendSms({ to: phone, message });
-  } else if (email) {
+  if (sendVia === "sms" && normalizedPhone) {
+    await sendSms({ to: normalizedPhone, message });
+  } else if (normalizedEmail) {
     await sendEmail({
-      to: email,
+      to: normalizedEmail,
       subject: "Création de compte POSapp",
       message,
     });
@@ -165,14 +183,15 @@ const register = async (req, res) => {
 const login = async (req, res) => {
   const { identifier, password, rememberMe, twoFactorCode, clientType } =
     req.body || {};
+  const normalizedIdentifier = normalizeIdentifier(identifier);
 
-  if (!identifier || !password) {
+  if (!normalizedIdentifier || !password) {
     return res.status(400).json({ message: "Identifier and password required." });
   }
 
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ email: identifier }, { phone: identifier }],
+      OR: [{ email: normalizedIdentifier }, { phone: normalizedIdentifier }],
     },
     include: {
       store: true,
@@ -360,7 +379,8 @@ const logout = async (req, res) => {
 
 const forgotPassword = async (req, res) => {
   const { identifier, sendVia } = req.body || {};
-  if (!identifier) {
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+  if (!normalizedIdentifier) {
     return res.status(400).json({ message: "Identifier required." });
   }
 
@@ -368,7 +388,7 @@ const forgotPassword = async (req, res) => {
 
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ email: identifier }, { phone: identifier }],
+      OR: [{ email: normalizedIdentifier }, { phone: normalizedIdentifier }],
     },
   });
 
@@ -475,13 +495,14 @@ const changePassword = async (req, res) => {
 
 const firstLoginChangePassword = async (req, res) => {
   const { identifier, tempPassword, newPassword } = req.body || {};
-  if (!identifier || !tempPassword || !newPassword) {
+  const normalizedIdentifier = normalizeIdentifier(identifier);
+  if (!normalizedIdentifier || !tempPassword || !newPassword) {
     return res.status(400).json({ message: "Missing fields." });
   }
 
   const user = await prisma.user.findFirst({
     where: {
-      OR: [{ email: identifier }, { phone: identifier }],
+      OR: [{ email: normalizedIdentifier }, { phone: normalizedIdentifier }],
     },
   });
 
@@ -582,7 +603,7 @@ const googleLogin = async (req, res) => {
     const profile = await verifyGoogleIdToken(idToken);
     let user = await prisma.user.findFirst({
       where: {
-        OR: [{ googleId: profile.sub }, { email: profile.email }],
+        OR: [{ googleId: profile.sub }, { email: normalizeEmail(profile.email) }],
       },
       include: {
         store: true,
@@ -620,7 +641,7 @@ const googleLogin = async (req, res) => {
       user = await prisma.user.create({
         data: {
           tenantId: tenant.id,
-          email: profile.email,
+          email: normalizeEmail(profile.email),
           firstName: profile.givenName,
           lastName: profile.familyName,
           role: "SUPERADMIN",
