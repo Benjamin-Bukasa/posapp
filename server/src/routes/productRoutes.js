@@ -13,6 +13,7 @@ const imageUpload = multer({
 const router = express.Router();
 
 router.get("/", auth, productController.listProducts);
+router.get("/cashier/articles", auth, productController.listCashierArticles);
 router.get(
   "/template",
   auth,

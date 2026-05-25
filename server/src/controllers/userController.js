@@ -10,8 +10,13 @@ const {
   getAssignedProfileByUserId,
   getAssignedProfilesMap,
   ensurePermissionProfileTables,
+  ensureDefaultProfilesForTenant,
 } = require("../utils/permissionProfileStore");
-const { hasPermission } = require("../utils/permissionAccess");
+const {
+  hasPermission,
+  getGrantedPermissions,
+  SELLER_DEFAULT_PERMISSION_CODES,
+} = require("../utils/permissionAccess");
 const {
   parseListParams,
   buildOrderBy,
@@ -200,6 +205,21 @@ const createUserRecord = async ({
     }
   }
 
+  let resolvedPermissionProfileId = permissionProfileId || null;
+  if (!resolvedPermissionProfileId && role === "SELLER") {
+    await ensureDefaultProfilesForTenant(tenantId);
+    const defaultSellerProfile = await prisma.$queryRawUnsafe(
+      `
+        SELECT id
+        FROM permission_profiles
+        WHERE tenant_id = $1 AND role = 'SELLER' AND name = 'Vendeur'
+        LIMIT 1
+      `,
+      tenantId,
+    );
+    resolvedPermissionProfileId = defaultSellerProfile?.[0]?.id || null;
+  }
+
   const tempPassword = generateTempPassword();
   const passwordHash = await hashPassword(tempPassword);
   const userScope = await resolveUserScope({
@@ -207,6 +227,12 @@ const createUserRecord = async ({
     storeId,
     defaultStorageZoneId,
   });
+  const effectivePermissions =
+    Array.isArray(permissions) && permissions.length
+      ? permissions
+      : !resolvedPermissionProfileId && role === "SELLER"
+        ? [...SELLER_DEFAULT_PERMISSION_CODES]
+        : [];
 
   const user = await prisma.user.create({
     data: {
@@ -223,16 +249,16 @@ const createUserRecord = async ({
     },
   });
 
-  if (permissionProfileId) {
+  if (resolvedPermissionProfileId) {
     await assignProfileToUser({
       tenantId,
-      profileId: permissionProfileId,
+      profileId: resolvedPermissionProfileId,
       userId: user.id,
       db: prisma,
     });
-  } else if (Array.isArray(permissions) && permissions.length) {
+  } else if (effectivePermissions.length) {
     const permissionRecords = await prisma.permission.findMany({
-      where: { code: { in: permissions } },
+      where: { code: { in: effectivePermissions } },
     });
 
     await prisma.userPermission.createMany({
@@ -488,7 +514,7 @@ const listUsers = async (req, res) => {
 
     return users.map((user) => ({
       ...user,
-      permissions: (user.permissions || []).map((item) => item.permission.code),
+      permissions: getGrantedPermissions(user),
       permissionProfile: profileMap.get(user.id) || null,
       permissionProfileId: profileMap.get(user.id)?.id || null,
     }));
@@ -582,7 +608,7 @@ const getUser = async (req, res) => {
   return res.json({
     ...user,
     tenantName: req.user.tenantName || null,
-    permissions: (user.permissions || []).map((item) => item.permission.code),
+    permissions: getGrantedPermissions(user),
     permissionProfile,
     permissionProfileId: permissionProfile?.id || null,
   });

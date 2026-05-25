@@ -483,6 +483,7 @@ model Product {
 
   @@index([tenantId])
   @@index([tenantId, kind])
+  @@index([tenantId, kind, isActive, createdAt])
   @@unique([tenantId, scanCode])
   @@map("products")
 }
@@ -538,6 +539,8 @@ model Order {
   delivery    Delivery?
 
   @@index([tenantId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, storeId, createdAt])
   @@map("orders")
 }
 
@@ -727,6 +730,8 @@ model Payment {
   order  Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
 
   @@index([tenantId])
+  @@index([tenantId, orderId])
+  @@index([tenantId, status, paidAt])
   @@map("payements")
 }
 
@@ -1013,6 +1018,8 @@ model Inventory {
 
   @@unique([storageZoneId, productId])
   @@index([tenantId])
+  @@index([tenantId, storeId, updatedAt])
+  @@index([tenantId, productId])
   @@map("inventory")
 }
 
@@ -1041,6 +1048,8 @@ model StockEntry {
 
   @@index([tenantId])
   @@index([storageZoneId])
+  @@index([tenantId, status, createdAt])
+  @@index([tenantId, storeId, createdAt])
   @@map("stockEntries")
 }
 
@@ -1084,6 +1093,7 @@ model InventoryMovement {
 
   @@index([tenantId])
   @@index([storageZoneId])
+  @@index([tenantId, createdAt])
   @@map("inventoryMovements")
 }
 

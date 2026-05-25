@@ -1,8 +1,9 @@
 const prisma = require("../config/prisma");
-const { loadTenantCurrencySettings } = require("../utils/currencySettings");
 const {
-  attachCurrencyCodes,
-  getCurrencyCodeMap,
+  loadTenantCurrencySettings,
+  normalizeCurrencyCode,
+} = require("../utils/currencySettings");
+const {
   setCurrencyCodes,
 } = require("../utils/moneyCurrency");
 const {
@@ -29,6 +30,7 @@ const {
   getDocumentApprovalMap,
   prepareDocumentApprovals,
   decideDocumentApproval,
+  ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
 const {
   expandArticleItems,
@@ -37,6 +39,7 @@ const {
 
 const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
+const isSeller = (user) => user?.role === "SELLER";
 
 const resolveStockEntryFlowCodes = (sourceType, operationType = "IN") => {
   const normalizedOperationType = operationType === "OUT" ? "OUT" : "IN";
@@ -85,8 +88,21 @@ const decorateStockEntriesWithApprovals = async (records, { includeApprovals = t
 
 const canModifyStockEntry = async (tenantId, entry) => {
   if (entry.sourceType !== "DIRECT" || entry.status !== "PENDING") return false;
-  const approvals = await getDocumentApprovals(tenantId, STOCK_ENTRY_DOCUMENT_TYPE, entry.id);
-  return !approvals.length || approvals.some((item) => item.status === "REJECTED");
+  return true;
+};
+
+const resetStockEntryApprovals = async (tenantId, entryId) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    UPDATE "documentApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${JSON.stringify(tenantId)}
+      AND "documentType" = ${JSON.stringify(STOCK_ENTRY_DOCUMENT_TYPE)}
+      AND "documentId" = ${JSON.stringify(entryId)}
+  `);
 };
 
 const hydrateStockEntriesWithCurrencyCodes = async (records) => {
@@ -100,15 +116,12 @@ const hydrateStockEntriesWithCurrencyCodes = async (records) => {
     return Array.isArray(records) ? [] : records;
   }
 
-  const itemCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "stockEntryItems",
-    list.flatMap((entry) => entry.items || []).map((item) => item.id),
-  );
-
   const hydrated = list.map((entry) => ({
     ...entry,
-    items: attachCurrencyCodes(entry.items || [], itemCurrencyMap),
+    items: (entry.items || []).map((item) => ({
+      ...item,
+      currencyCode: normalizeCurrencyCode(item.currencyCode),
+    })),
   }));
 
   const withLots = await Promise.all(
@@ -225,6 +238,12 @@ const createStockEntry = async (req, res) => {
     req.user.tenantId,
   );
 
+  if (isSeller(req.user) && !req.user.storeId) {
+    return res.status(400).json({
+      message: "Le vendeur doit etre rattache a une boutique pour creer un mouvement.",
+    });
+  }
+
   if (sourceType === "PURCHASE_ORDER") {
     if (!sourceId) {
       return res.status(400).json({
@@ -309,6 +328,33 @@ const createStockEntry = async (req, res) => {
 
   if (!sourceItems.length) {
     return res.status(400).json({ message: "items array required." });
+  }
+
+  if (isSeller(req.user) && resolvedStoreId && resolvedStoreId !== req.user.storeId) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut creer des mouvements que pour sa propre boutique.",
+    });
+  }
+
+  if (isSeller(req.user)) {
+    resolvedStoreId = req.user.storeId;
+  }
+
+  if (isSeller(req.user)) {
+    const scopedZone = await prisma.storageZone.findFirst({
+      where: {
+        id: storageZoneId,
+        tenantId: req.user.tenantId,
+        storeId: req.user.storeId,
+      },
+      select: { id: true },
+    });
+
+    if (!scopedZone) {
+      return res.status(403).json({
+        message: "Le vendeur ne peut utiliser qu'une zone de sa propre boutique.",
+      });
+    }
   }
 
   const normalizedItems = normalizeStockEntryItems(sourceItems, normalizedOperationType);
@@ -444,9 +490,16 @@ const listStockEntries = async (req, res) => {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
     ...(sourceType ? { sourceType } : {}),
-    ...(storeId ? { storeId } : {}),
+    ...(isSeller(req.user)
+      ? {
+          createdById: req.user.id,
+          ...(req.user.storeId ? { storeId: req.user.storeId } : {}),
+        }
+      : storeId
+        ? { storeId }
+        : {}),
     ...(storageZoneId ? { storageZoneId } : {}),
-    ...(createdById ? { createdById } : {}),
+    ...(isSeller(req.user) ? {} : createdById ? { createdById } : {}),
     ...(approvedById ? { approvedById } : {}),
     ...createdAtFilter,
     ...searchFilter,
@@ -544,7 +597,16 @@ const getStockEntry = async (req, res) => {
   const { id } = req.params;
 
   const entry = await prisma.stockEntry.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user)
+        ? {
+            createdById: req.user.id,
+            ...(req.user.storeId ? { storeId: req.user.storeId } : {}),
+          }
+        : {}),
+    },
     include: {
       store: true,
       storageZone: true,
@@ -569,7 +631,16 @@ const getStockEntryPdf = async (req, res) => {
   const { id } = req.params;
 
   const entry = await prisma.stockEntry.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user)
+        ? {
+            createdById: req.user.id,
+            ...(req.user.storeId ? { storeId: req.user.storeId } : {}),
+          }
+        : {}),
+    },
     include: {
       store: true,
       storageZone: true,
@@ -622,17 +693,48 @@ const updateStockEntry = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
+  if (isSeller(req.user) && entry.createdById !== req.user.id) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut modifier que ses propres mouvements.",
+    });
+  }
+
   if (!(await canModifyStockEntry(req.user.tenantId, entry))) {
     return res.status(400).json({
       message: "Only pending direct stock entries can be edited.",
     });
   }
 
+  await resetStockEntryApprovals(req.user.tenantId, id);
+
   if (!storageZoneId) {
     return res.status(400).json({ message: "storageZoneId required." });
   }
   if (!Array.isArray(items) || !items.length) {
     return res.status(400).json({ message: "items array required." });
+  }
+
+  if (isSeller(req.user)) {
+    if (storeId && storeId !== req.user.storeId) {
+      return res.status(403).json({
+        message: "Le vendeur ne peut modifier des mouvements que pour sa propre boutique.",
+      });
+    }
+
+    const scopedZone = await prisma.storageZone.findFirst({
+      where: {
+        id: storageZoneId,
+        tenantId: req.user.tenantId,
+        storeId: req.user.storeId,
+      },
+      select: { id: true },
+    });
+
+    if (!scopedZone) {
+      return res.status(403).json({
+        message: "Le vendeur ne peut utiliser qu'une zone de sa propre boutique.",
+      });
+    }
   }
 
   let sourceItems = items;
@@ -682,7 +784,7 @@ const updateStockEntry = async (req, res) => {
     where: { id },
     data: {
       sourceId,
-      storeId,
+      storeId: isSeller(req.user) ? req.user.storeId : storeId,
       storageZoneId,
       note,
       items: {
@@ -733,6 +835,12 @@ const deleteStockEntry = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
+  if (isSeller(req.user) && entry.createdById !== req.user.id) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut supprimer que ses propres mouvements.",
+    });
+  }
+
   if (!(await canModifyStockEntry(req.user.tenantId, entry))) {
     return res.status(400).json({
       message: "Only pending direct stock entries can be deleted.",
@@ -746,6 +854,12 @@ const deleteStockEntry = async (req, res) => {
 const approveStockEntry = async (req, res) => {
   const { id } = req.params;
   const note = req.body?.note || null;
+
+  if (isSeller(req.user)) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut pas valider un mouvement de stock.",
+    });
+  }
 
   const entry = await prisma.stockEntry.findUnique({
     where: { id },
@@ -845,6 +959,12 @@ const rejectStockEntry = async (req, res) => {
   const { id } = req.params;
   const note = req.body?.note || null;
 
+  if (isSeller(req.user)) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut pas rejeter un mouvement de stock.",
+    });
+  }
+
   const entry = await prisma.stockEntry.findUnique({
     where: { id },
     include: {
@@ -908,6 +1028,12 @@ const rejectStockEntry = async (req, res) => {
 
 const postStockEntry = async (req, res) => {
   const { id } = req.params;
+
+  if (isSeller(req.user)) {
+    return res.status(403).json({
+      message: "Le vendeur ne peut pas poster un mouvement de stock.",
+    });
+  }
 
   const entry = await prisma.stockEntry.findUnique({
     where: { id },

@@ -2,10 +2,9 @@ const prisma = require("../config/prisma");
 const {
   convertAmount,
   loadTenantCurrencySettings,
+  normalizeCurrencyCode,
 } = require("../utils/currencySettings");
 const {
-  attachCurrencyCodes,
-  getCurrencyCodeMap,
 } = require("../utils/moneyCurrency");
 const {
   ensureInventoryLotTables,
@@ -214,14 +213,12 @@ const getAdminDashboard = async (req, res) => {
     includeZero: false,
   });
 
-  const stockEntryItemCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "stockEntryItems",
-    postedEntries.flatMap((entry) => entry.items || []).map((item) => item.id),
-  );
   const hydratedEntries = postedEntries.map((entry) => ({
     ...entry,
-    items: attachCurrencyCodes(entry.items || [], stockEntryItemCurrencyMap),
+    items: (entry.items || []).map((item) => ({
+      ...item,
+      currencyCode: normalizeCurrencyCode(item.currencyCode),
+    })),
   }));
 
   const costHistory = buildCostHistory(hydratedEntries, currencySettings);

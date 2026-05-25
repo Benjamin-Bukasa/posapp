@@ -22,6 +22,8 @@ const toNumber = (value) => {
   return Number.isFinite(amount) ? amount : 0;
 };
 
+const isSeller = (user) => user?.role === "SELLER";
+
 const getExpiryStatus = (expiryDate) => {
   if (!expiryDate) return "SANS_DATE";
   const today = new Date();
@@ -44,12 +46,18 @@ const listInventory = async (req, res) => {
     "updatedAt"
   );
 
+  const scopedStoreId = isSeller(req.user) ? req.user.storeId : storeId;
+
   if (String(detailed).toLowerCase() === "true" || String(detailed).toLowerCase() === "lots") {
+    if (isSeller(req.user) && !scopedStoreId) {
+      return res.json(paginate ? { data: [], meta: buildMeta({ page, pageSize, total: 0, sortBy, sortDir }) } : []);
+    }
+
     await ensureInventoryLotTables();
     const aggregateRows = await prisma.inventory.findMany({
       where: {
         tenantId: req.user.tenantId,
-        ...(storeId ? { storeId } : {}),
+        ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
         ...(storageZoneId ? { storageZoneId } : {}),
         ...(productId ? { productId } : {}),
       },
@@ -71,7 +79,7 @@ const listInventory = async (req, res) => {
     });
     const lotRows = await listInventoryLots({
       tenantId: req.user.tenantId,
-      storeId,
+      storeId: scopedStoreId,
       storageZoneId,
       productId,
       search,
@@ -167,7 +175,7 @@ const listInventory = async (req, res) => {
 
   const where = {
     tenantId: req.user.tenantId,
-    ...(storeId ? { storeId } : {}),
+    ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
     ...(storageZoneId ? { storageZoneId } : {}),
     ...(productId ? { productId } : {}),
     ...(zoneType ? { storageZone: { zoneType } } : {}),

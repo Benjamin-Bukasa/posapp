@@ -5,7 +5,6 @@ const {
   normalizeCurrencyCode,
 } = require("../utils/currencySettings");
 const {
-  attachCurrencyCodes,
   getCurrencyCodeMap,
   setCurrencyCode,
   setCurrencyCodes,
@@ -116,31 +115,23 @@ const hydrateOrdersWithCurrencyCodes = async (records) => {
     return Array.isArray(records) ? [] : records;
   }
 
-  const orderCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "orders",
-    list.map((item) => item.id),
-  );
-  const itemCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "orderItems",
-    list.flatMap((item) => item.items || []).map((item) => item.id),
-  );
-  const paymentCurrencyMap = await getCurrencyCodeMap(
-    prisma,
-    "payments",
-    list.flatMap((item) => item.payments || []).map((payment) => payment.id),
-  );
   const paymentOriginalMap = await getPaymentOriginalMap(
     prisma,
     list.flatMap((item) => item.payments || []).map((payment) => payment.id),
   );
 
-  const hydrated = attachCurrencyCodes(list, orderCurrencyMap).map((order) => ({
+  const hydrated = list.map((order) => ({
     ...order,
-    items: attachCurrencyCodes(order.items || [], itemCurrencyMap),
+    currencyCode: normalizeCurrencyCode(order.currencyCode),
+    items: (order.items || []).map((item) => ({
+      ...item,
+      currencyCode: normalizeCurrencyCode(item.currencyCode),
+    })),
     payments: attachPaymentOriginalDetails(
-      attachCurrencyCodes(order.payments || [], paymentCurrencyMap),
+      (order.payments || []).map((payment) => ({
+        ...payment,
+        currencyCode: normalizeCurrencyCode(payment.currencyCode),
+      })),
       paymentOriginalMap,
     ),
   }));

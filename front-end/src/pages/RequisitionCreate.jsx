@@ -85,10 +85,10 @@ function RequisitionCreate() {
         const request = await apiGet(`/api/supply-requests/${requisitionId}`);
         if (!isMounted) return;
 
-        if (request?.status !== "DRAFT") {
+        if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(request?.status)) {
           showToast({
             title: "Modification impossible",
-            message: "Seules les requisitions en brouillon peuvent etre modifiees.",
+            message: "Seules les requisitions non validees peuvent etre modifiees.",
             variant: "warning",
           });
           navigate("/operations/requisitions", { replace: true });

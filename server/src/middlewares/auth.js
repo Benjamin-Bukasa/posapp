@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const prisma = require("../config/prisma");
+const { getGrantedPermissions } = require("../utils/permissionAccess");
 
 const auth = async (req, res, next) => {
   const authHeader = req.headers.authorization || "";
@@ -36,7 +37,7 @@ const auth = async (req, res, next) => {
       role: user.role,
       storeId: user.storeId,
       defaultStorageZoneId: user.defaultStorageZoneId,
-      permissions: user.permissions.map((item) => item.permission.code),
+      permissions: getGrantedPermissions(user),
     };
     res.locals.tenantName = user.tenant?.name || null;
 
