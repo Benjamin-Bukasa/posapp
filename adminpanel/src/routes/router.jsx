@@ -46,6 +46,7 @@ import AdminCreatePage from "../pages/AdminCreatePage";
 import AdminDetailPage from "../pages/AdminDetailPage";
 import AdminInventoryCountPage from "../pages/AdminInventoryCountPage";
 import SettingsPage from "../pages/SettingsPage";
+import ReceiptSettingsPage from "../pages/ReceiptSettingsPage";
 import Login from "../pages/Login";
 import ProtectedRoute from "./ProtectedRoute";
 import { formatMoney } from "../utils/currencyDisplay";
@@ -742,6 +743,17 @@ export const sidebarSections = [
             parentLabel: "Parametres",
             parentPath: "/configurations/parametres",
           }),
+          leaf({
+            id: "parametres-ticket-vente",
+            name: "Ticket de vente",
+            path: "/configurations/parametres/ticket-vente",
+            link: "parametres-ticket-vente",
+            icon: ReceiptText,
+            summary: "Format, en-tete, pied et contenu du ticket de caisse.",
+            sectionLabel: "Configurations",
+            parentLabel: "Parametres",
+            parentPath: "/configurations/parametres",
+          }),
         ],
       },
       {
@@ -970,6 +982,10 @@ const routePermissionConfig = {
     create: ["settings.create"],
     edit: ["settings.update"],
     delete: ["settings.delete"],
+  },
+  "/configurations/parametres/ticket-vente": {
+    read: ["settings.read"],
+    edit: ["settings.update"],
   },
   "/configurations/utilisateur/liste-utilisateurs": {
     read: ["users.read"],
@@ -1270,7 +1286,13 @@ const currencyConversionLabel = (row) =>
 const conversionColumns = [
   column("Devise depart", "fromCurrencyCode", { sortBy: "fromCurrencyCode" }),
   column("Devise cible", "toCurrencyCode", { sortBy: "toCurrencyCode" }),
-  column("Taux", (row) => (row.rate ? Number(row.rate).toFixed(6) : "--"), {
+  column("Taux", (row) => {
+    if (!row.rate) return "--";
+    const rate = Number(row.rate);
+    return Math.abs(rate) >= 1
+      ? rate.toFixed(4).replace(/\.?0+$/, "")
+      : rate.toFixed(8).replace(/\.?0+$/, "");
+  }, {
     sortBy: "rate",
   }),
   column("Creation", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
@@ -1513,6 +1535,17 @@ export const resourceCatalog = {
     tableDescription:
       "Receptions et integrations au stock central et boutique.",
     emptyMessage: "Aucune entree de stock trouvee.",
+    importConfig: {
+      templatePath: "/api/stock-entries/template",
+      importPath: "/api/stock-entries/import",
+      templateFileName: "template-entrees-stock.xlsx",
+      modalTitle: "Importer des entrees en stock",
+      modalDescription:
+        "Telechargez le template, renseignez boutique, zone, produit et quantites, puis importez le fichier XLSX.",
+      templateButtonLabel: "Template entrees stock",
+      importButtonLabel: "Importer les entrees",
+      importSuccessMessage: "Les entrees en stock ont ete importees avec succes.",
+    },
   }),
   "/mouvement/sortie-stock": createResource({
     endpoint: "/api/inventory-movements",
@@ -1611,6 +1644,30 @@ export const resourceCatalog = {
     tableDescription:
       "Sessions d'inventaire avec snapshot theorique, comptage physique et workflow de validation.",
     emptyMessage: "Aucune session d'inventaire disponible.",
+    importConfig: {
+      templatePath: "/api/inventory/sessions/template",
+      importPath: "/api/inventory/sessions/import",
+      templateFileName: "template-inventaire.xlsx",
+      modalTitle: "Importer un inventaire",
+      modalDescription:
+        "Selectionnez une session, telechargez son template avec la colonne qte stock pre-remplie, puis importez votre comptage XLSX.",
+      templateButtonLabel: "Template inventaire",
+      importButtonLabel: "Importer le comptage",
+      importSuccessMessage: "Le comptage d'inventaire a ete importe avec succes.",
+      selectionConfig: {
+        fieldName: "sessionId",
+        name: "sessionId",
+        label: "Session d'inventaire",
+        placeholder: "Rechercher une session...",
+        endpoint: "/api/inventory/sessions",
+        query: { paginate: false },
+        required: true,
+        mapOptionLabel: (row) =>
+          [row?.code || row?.id, row?.store?.name, row?.status]
+            .filter(Boolean)
+            .join(" - "),
+      },
+    },
   }),
   "/inventaire/etat-inventaire": createResource({
     endpoint: "/api/inventory/sessions",
@@ -2588,63 +2645,79 @@ const stockEntryForm = {
 const stockOutputForm = {
   title: "Nouvelle sortie de stock",
   description:
-    "Cree une sortie depuis une requisition validee ou une sortie directe a valider par un superadmin.",
+    "Approvisionnez une boutique depuis le depot ou retirez du stock sans destination.",
   submitLabel: "Enregistrer la sortie",
   successMessage: "Sortie de stock enregistree.",
   fields: [
     {
       name: "mode",
-      label: "Mode de sortie",
+      label: "Type d'operation",
       type: "select",
       required: true,
       options: [
-        { value: "REQUISITION", label: "Depuis une requisition validee" },
-        { value: "DIRECT", label: "Sortie directe" },
+        { value: "REQUISITION", label: "Approvisionner une boutique" },
+        { value: "DIRECT", label: "Retirer du stock" },
       ],
       initialValue: "REQUISITION",
+      description:
+        "Choisissez une operation d'approvisionnement pour envoyer le stock du depot vers une boutique, ou une sortie simple pour une casse, une perte ou une consommation interne.",
     },
     {
       name: "supplyRequestId",
-      label: "Requisition validee",
+      label: "Requisition",
       type: "search-select",
       optionsEndpoint: "/api/supply-requests",
       query: { status: "APPROVED" },
       optionValue: "id",
       optionLabel: "title",
-      placeholder: "Rechercher une requisition validee...",
+      placeholder: "Rechercher une requisition approuvee...",
+      description:
+        "Selectionnez la demande de la boutique a servir depuis le depot.",
+      visibleWhen: ({ values }) => values.mode === "REQUISITION",
     },
     {
       name: "fromZoneId",
-      label: "Zone source requisition",
+      label: "Prelever depuis",
       type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
-      placeholder: "Rechercher la zone source...",
+      placeholder: "Rechercher la zone de depot...",
+      description:
+        "Zone de depot ou magasin source depuis laquelle le stock sera preleve.",
+      visibleWhen: ({ values }) => values.mode === "REQUISITION",
     },
     {
       name: "toZoneId",
-      label: "Zone cible requisition",
+      label: "Livrer vers",
       type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
-      placeholder: "Rechercher la zone cible...",
+      placeholder: "Rechercher la zone boutique de destination...",
+      description:
+        "Zone boutique qui va recevoir le stock transfere pour la vente.",
+      visibleWhen: ({ values }) => values.mode === "REQUISITION",
     },
     {
       name: "storageZoneId",
-      label: "Zone de sortie directe",
+      label: "Sortir depuis",
       type: "search-select",
       optionsEndpoint: "/api/storage-zones",
       optionValue: "id",
       optionLabel: zoneLabel,
-      placeholder: "Rechercher une zone de sortie...",
+      placeholder: "Rechercher la zone a debiter...",
+      description:
+        "Zone dans laquelle le stock sera retire sans destination: casse, perte, usage interne ou correction.",
+      visibleWhen: ({ values }) => values.mode === "DIRECT",
     },
     {
       name: "note",
       label: "Note globale",
       type: "textarea",
-      placeholder: "Motif de sortie",
+      placeholder: "Motif ou commentaire de l'operation",
+      description:
+        "Expliquez le motif du mouvement pour faciliter le suivi et les validations.",
     },
   ],
   repeaters: [
@@ -2757,6 +2830,7 @@ const stockOutputForm = {
             supplyRequestId: "",
             fromZoneId: "",
             toZoneId: "",
+            storageZoneId: "",
             items: [repeaterRow(componentInventoryLineFields(), 0)],
           };
         }
@@ -5185,7 +5259,12 @@ const redirectRoutes = sidebarItems
   }));
 
 const workspaceRoutes = allRouteMeta
-  .filter((item) => item.path !== dashboardMeta.path && item.path !== settingsMeta.path)
+  .filter(
+    (item) =>
+      item.path !== dashboardMeta.path &&
+      item.path !== settingsMeta.path &&
+      item.path !== "/configurations/parametres/ticket-vente",
+  )
   .map((item) => ({
     path: item.path.slice(1),
     element: <AdminResourcePage />,
@@ -5226,6 +5305,10 @@ const router = createBrowserRouter([
           { index: true, element: <Navigate to="/dashboard" replace /> },
           { path: "dashboard", element: <Dashboard /> },
           { path: "settings", element: <SettingsPage /> },
+          {
+            path: "configurations/parametres/ticket-vente",
+            element: <ReceiptSettingsPage />,
+          },
           {
             path: "configurations/articles/produits-vente",
             element: <Navigate to="/configurations/articles/articles" replace />,

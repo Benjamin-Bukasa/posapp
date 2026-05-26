@@ -29,6 +29,10 @@ const SearchSelect = ({
     visibility: "hidden",
   });
 
+  const closeMenu = () => {
+    setIsOpen(false);
+  };
+
   const selectedOption = useMemo(
     () =>
       options.find((option) => String(option.value) === String(value ?? "")) || null,
@@ -119,21 +123,33 @@ const SearchSelect = ({
         !containerRef.current?.contains(target) &&
         !menuRef.current?.contains(target)
       ) {
-        setIsOpen(false);
+        closeMenu();
+      }
+    };
+
+    const handleFocusIn = (event) => {
+      const target = event.target;
+      if (
+        !containerRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        closeMenu();
       }
     };
 
     const handleEscape = (event) => {
       if (event.key === "Escape") {
-        setIsOpen(false);
+        closeMenu();
       }
     };
 
-    document.addEventListener("mousedown", handlePointerDown);
+    document.addEventListener("pointerdown", handlePointerDown);
+    document.addEventListener("focusin", handleFocusIn);
     document.addEventListener("keydown", handleEscape);
 
     return () => {
-      document.removeEventListener("mousedown", handlePointerDown);
+      document.removeEventListener("pointerdown", handlePointerDown);
+      document.removeEventListener("focusin", handleFocusIn);
       document.removeEventListener("keydown", handleEscape);
     };
   }, [isOpen]);
@@ -141,13 +157,16 @@ const SearchSelect = ({
   const handleSelect = (option) => {
     onChange?.(option.value);
     setQuery(option.label);
-    setIsOpen(false);
+    closeMenu();
+    requestAnimationFrame(() => {
+      inputRef.current?.blur();
+    });
   };
 
   const handleClear = () => {
     onChange?.("");
     setQuery("");
-    setIsOpen(false);
+    closeMenu();
     inputRef.current?.focus();
   };
 
@@ -176,6 +195,17 @@ const SearchSelect = ({
           onChange={(event) => {
             setQuery(event.target.value);
             setIsOpen(true);
+          }}
+          onBlur={(event) => {
+            const nextTarget = event.relatedTarget;
+            if (
+              nextTarget &&
+              (containerRef.current?.contains(nextTarget) ||
+                menuRef.current?.contains(nextTarget))
+            ) {
+              return;
+            }
+            closeMenu();
           }}
         />
         <div className="absolute inset-y-0 right-3 flex items-center gap-1">

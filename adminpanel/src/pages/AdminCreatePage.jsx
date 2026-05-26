@@ -232,6 +232,18 @@ const renderFieldInput = ({
   }
 };
 
+const isFieldVisible = (field, context) => {
+  if (typeof field.visibleWhen === "function") {
+    return field.visibleWhen(context);
+  }
+
+  if (typeof field.hiddenWhen === "function") {
+    return !field.hiddenWhen(context);
+  }
+
+  return true;
+};
+
 const AdminCreatePage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -536,6 +548,9 @@ const AdminCreatePage = () => {
     if (!field.optionsEndpoint) return [];
     return optionStore[fieldSourceKey(field)] || [];
   };
+  const visibleFields = (formConfig?.fields || []).filter((field) =>
+    isFieldVisible(field, { values, isEditing, user }),
+  );
 
   if (!formConfig) {
     return null;
@@ -853,7 +868,7 @@ const AdminCreatePage = () => {
         ) : null}
 
         <div className="grid gap-4 md:grid-cols-2">
-          {(formConfig.fields || []).map((field) => (
+          {visibleFields.map((field) => (
             <div
               key={field.name}
               className={

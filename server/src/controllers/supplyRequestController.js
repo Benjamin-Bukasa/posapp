@@ -9,6 +9,7 @@ const {
 const { sendExport } = require("../utils/exporter");
 const { emitToStore, emitToTenant } = require("../socket");
 const { buildSupplyRequestPdf } = require("../services/supplyRequestPdf");
+const { notifySupplyRequestApprovalStep } = require("../services/approvalNotificationService");
 const {
   attachDocumentCodes,
   assignGeneratedDocumentCode,
@@ -118,6 +119,149 @@ const sanitizeRequest = (request, pdfOverride) => {
   const hasPdf =
     pdfOverride !== undefined ? Boolean(pdfOverride) : Boolean(pdfData);
   return { ...rest, pdfAvailable: hasPdf };
+};
+
+const supplyRequestInclude = {
+  items: { include: { product: true, unit: true } },
+  approvals: {
+    include: {
+      approver: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          role: true,
+        },
+      },
+    },
+    orderBy: { stepOrder: "asc" },
+  },
+  store: true,
+  storageZone: true,
+  requestedBy: true,
+};
+
+const loadSupplyRequestDetail = async (tenantId, id) => {
+  const request = await prisma.supplyRequest.findFirst({
+    where: { id, tenantId },
+    include: supplyRequestInclude,
+  });
+  if (!request) return null;
+  return sanitizeRequest(await attachDocumentCodes("supplyRequests", request));
+};
+
+const emitSupplyRequestEvent = (tenantId, request, event) => {
+  if (request?.storeId) {
+    emitToStore(request.storeId, event, {
+      id: request.id,
+      status: request.status,
+      storeId: request.storeId,
+    });
+    return;
+  }
+
+  emitToTenant(tenantId, event, {
+    id: request?.id,
+    status: request?.status,
+  });
+};
+
+const notifyCurrentSupplyRequestApprover = async (request) => {
+  try {
+    const currentStep = (request?.approvals || []).find((item) => item.status === "PENDING");
+    if (!currentStep) return;
+
+    await notifySupplyRequestApprovalStep({
+      request,
+      approval: currentStep,
+    });
+  } catch (error) {
+    console.error("[APPROVAL][EMAIL][SUPPLY_REQUEST]", {
+      documentId: request?.id || null,
+      message: error.message || String(error),
+    });
+  }
+};
+
+const processSupplyRequestApprovalDecision = async ({
+  tenantId,
+  requestId,
+  user,
+  decision,
+  note = null,
+}) => {
+  const request = await prisma.supplyRequest.findUnique({
+    where: { id: requestId },
+  });
+
+  if (!request || request.tenantId !== tenantId) {
+    throw Object.assign(new Error("Supply request not found."), { status: 404 });
+  }
+
+  const approvalCount = await ensureSupplyRequestApprovals(tenantId, requestId);
+  if (approvalCount === 0) {
+    const updated = await prisma.supplyRequest.update({
+      where: { id: requestId },
+      data: { status: "APPROVED" },
+    });
+    const detail = await loadSupplyRequestDetail(tenantId, updated.id);
+    emitSupplyRequestEvent(tenantId, detail, "supply:request:approved");
+    return detail;
+  }
+
+  const approvals = await prisma.supplyRequestApproval.findMany({
+    where: { supplyRequestId: requestId, status: "PENDING" },
+    orderBy: { stepOrder: "asc" },
+  });
+
+  if (!approvals.length) {
+    throw Object.assign(new Error("No pending approvals."), { status: 400 });
+  }
+
+  const [currentStep] = approvals;
+  const canDecide =
+    (currentStep.approverId && currentStep.approverId === user.id) ||
+    (currentStep.approverRole && currentStep.approverRole === user.role);
+
+  if (!canDecide) {
+    throw Object.assign(
+      new Error(
+        decision === "REJECTED"
+          ? "Not allowed to reject this step."
+          : "Not allowed to approve this step.",
+      ),
+      { status: 403 },
+    );
+  }
+
+  await prisma.supplyRequestApproval.update({
+    where: { id: currentStep.id },
+    data: {
+      status: decision,
+      decidedAt: new Date(),
+      note,
+    },
+  });
+
+  const updated = await syncSupplyRequestStatus(requestId);
+  const detail = await loadSupplyRequestDetail(tenantId, updated.id);
+  const normalizedDecision = String(decision || "").trim().toUpperCase();
+
+  if (normalizedDecision === "APPROVED") {
+    emitSupplyRequestEvent(
+      tenantId,
+      detail,
+      detail?.status === "APPROVED" ? "supply:request:approved" : "supply:request:submitted",
+    );
+    if (detail?.status === "SUBMITTED") {
+      await notifyCurrentSupplyRequestApprover(detail);
+    }
+  } else {
+    emitSupplyRequestEvent(tenantId, detail, "supply:request:rejected");
+  }
+
+  return detail;
 };
 
 const createSupplyRequest = async (req, res) => {
@@ -420,161 +564,60 @@ const submitSupplyRequest = async (req, res) => {
       where: { id },
       data: { status: "APPROVED" },
     });
-    if (updated.storeId) {
-      emitToStore(updated.storeId, "supply:request:approved", {
-        id: updated.id,
-        status: updated.status,
-        storeId: updated.storeId,
-      });
-    } else {
-      emitToTenant(req.user.tenantId, "supply:request:approved", {
-        id: updated.id,
-        status: updated.status,
-      });
-    }
-    return res.json(updated);
+    const detail = await loadSupplyRequestDetail(req.user.tenantId, updated.id);
+    emitSupplyRequestEvent(req.user.tenantId, detail, "supply:request:approved");
+    return res.json(detail);
   }
 
   const updated = await syncSupplyRequestStatus(id);
+  const detail = await loadSupplyRequestDetail(req.user.tenantId, updated.id);
 
-  if (updated.storeId) {
-    emitToStore(updated.storeId, "supply:request:submitted", {
-      id: updated.id,
-      status: updated.status,
-      storeId: updated.storeId,
-    });
-  } else {
-    emitToTenant(req.user.tenantId, "supply:request:submitted", {
-      id: updated.id,
-      status: updated.status,
-    });
+  emitSupplyRequestEvent(req.user.tenantId, detail, "supply:request:submitted");
+  if (detail?.status === "SUBMITTED") {
+    await notifyCurrentSupplyRequestApprover(detail);
   }
 
-  return res.json(updated);
+  return res.json(detail);
 };
 
 const approveSupplyRequest = async (req, res) => {
   const { id } = req.params;
   const { note } = req.body || {};
 
-  const request = await prisma.supplyRequest.findUnique({ where: { id } });
-  if (!request || request.tenantId !== req.user.tenantId) {
-    return res.status(404).json({ message: "Supply request not found." });
-  }
-
-  const approvalCount = await ensureSupplyRequestApprovals(req.user.tenantId, id);
-  if (approvalCount === 0) {
-    const updated = await prisma.supplyRequest.update({
-      where: { id },
-      data: { status: "APPROVED" },
+  try {
+    const updated = await processSupplyRequestApprovalDecision({
+      tenantId: req.user.tenantId,
+      requestId: id,
+      user: req.user,
+      decision: "APPROVED",
+      note,
     });
     return res.json(updated);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Unable to approve this requisition.",
+    });
   }
-
-  const approvals = await prisma.supplyRequestApproval.findMany({
-    where: { supplyRequestId: id, status: "PENDING" },
-    orderBy: { stepOrder: "asc" },
-  });
-
-  if (!approvals.length) {
-    return res.status(400).json({ message: "No pending approvals." });
-  }
-
-  const [currentStep] = approvals;
-  const canApprove =
-    (currentStep.approverId && currentStep.approverId === req.user.id) ||
-    (currentStep.approverRole && currentStep.approverRole === req.user.role);
-
-  if (!canApprove) {
-    return res.status(403).json({ message: "Not allowed to approve this step." });
-  }
-
-  await prisma.supplyRequestApproval.update({
-    where: { id: currentStep.id },
-    data: { status: "APPROVED", decidedAt: new Date(), note },
-  });
-
-  const updated = await syncSupplyRequestStatus(id);
-
-  if (updated.status === "APPROVED") {
-    if (updated.storeId) {
-      emitToStore(updated.storeId, "supply:request:approved", {
-        id: updated.id,
-        status: updated.status,
-        storeId: updated.storeId,
-      });
-    } else {
-      emitToTenant(req.user.tenantId, "supply:request:approved", {
-        id: updated.id,
-        status: updated.status,
-      });
-    }
-  } else {
-    if (updated.storeId) {
-      emitToStore(updated.storeId, "supply:request:submitted", {
-        id: updated.id,
-        status: updated.status,
-        storeId: updated.storeId,
-      });
-    } else {
-      emitToTenant(req.user.tenantId, "supply:request:submitted", {
-        id: updated.id,
-        status: updated.status,
-      });
-    }
-  }
-
-  return res.json(updated);
 };
 
 const rejectSupplyRequest = async (req, res) => {
   const { id } = req.params;
   const { note } = req.body || {};
 
-  const request = await prisma.supplyRequest.findUnique({ where: { id } });
-  if (!request || request.tenantId !== req.user.tenantId) {
-    return res.status(404).json({ message: "Supply request not found." });
-  }
-
-  const approvals = await prisma.supplyRequestApproval.findMany({
-    where: { supplyRequestId: id, status: "PENDING" },
-    orderBy: { stepOrder: "asc" },
-  });
-
-  if (!approvals.length) {
-    return res.status(400).json({ message: "No pending approvals." });
-  }
-
-  const [currentStep] = approvals;
-  const canReject =
-    (currentStep.approverId && currentStep.approverId === req.user.id) ||
-    (currentStep.approverRole && currentStep.approverRole === req.user.role);
-
-  if (!canReject) {
-    return res.status(403).json({ message: "Not allowed to reject this step." });
-  }
-
-  await prisma.supplyRequestApproval.update({
-    where: { id: currentStep.id },
-    data: { status: "REJECTED", decidedAt: new Date(), note },
-  });
-
-  const updated = await syncSupplyRequestStatus(id);
-
-  if (request.storeId) {
-    emitToStore(request.storeId, "supply:request:rejected", {
-      id: request.id,
-      status: updated.status,
-      storeId: request.storeId,
+  try {
+    const updated = await processSupplyRequestApprovalDecision({
+      tenantId: req.user.tenantId,
+      requestId: id,
+      user: req.user,
+      decision: "REJECTED",
+      note,
     });
-  } else {
-    emitToTenant(req.user.tenantId, "supply:request:rejected", {
-      id: request.id,
-      status: updated.status,
+    return res.json(updated);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Unable to reject this requisition.",
     });
   }
-
-  return res.json(updated);
 };
 
 const updateSupplyRequest = async (req, res) => {
@@ -834,4 +877,5 @@ module.exports = {
   deleteSupplyRequest,
   createTransferFromSupplyRequest,
   createPurchaseRequestFromSupplyRequest,
+  processSupplyRequestApprovalDecision,
 };

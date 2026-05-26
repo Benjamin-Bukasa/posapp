@@ -180,5 +180,11 @@ export const buildSecondaryRateLabel = (
     return "";
   }
 
-  return `1 ${settings.primaryCurrencyCode} = ${Number(settings.exchangeRate).toFixed(4)} ${settings.secondaryCurrencyCode}`;
+  const rate = Number(settings.exchangeRate);
+  const formattedRate =
+    Math.abs(rate) >= 1
+      ? rate.toFixed(4).replace(/\.?0+$/, "")
+      : rate.toFixed(8).replace(/\.?0+$/, "");
+
+  return `1 ${settings.primaryCurrencyCode} = ${formattedRate} ${settings.secondaryCurrencyCode}`;
 };

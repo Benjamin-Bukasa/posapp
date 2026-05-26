@@ -12,6 +12,7 @@ import { apiGet, apiPost, buildUrl } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
 import useCounterStore from "../stores/counterStore";
 import useCurrencyStore from "../stores/currencyStore";
+import useReceiptSettingsStore from "../stores/receiptSettingsStore";
 import useUserPreferenceStore from "../stores/userPreferenceStore";
 import useToastStore from "../stores/toastStore";
 import useUiStore from "../stores/uiStore";
@@ -47,6 +48,8 @@ const CounterList = () => {
   const user = useAuthStore((state) => state.user);
   const currencySettings = useCurrencyStore((state) => state.settings);
   const loadCurrencySettings = useCurrencyStore((state) => state.loadSettings);
+  const receiptSettings = useReceiptSettingsStore((state) => state.settings);
+  const loadReceiptSettings = useReceiptSettingsStore((state) => state.loadSettings);
   const userPreferences = useUserPreferenceStore((state) => state.preferences);
   const isMobileCartOpen = useUiStore((state) => state.isMobileCartOpen);
   const closeMobileCart = useUiStore((state) => state.closeMobileCart);
@@ -68,7 +71,8 @@ const CounterList = () => {
 
   useEffect(() => {
     loadCurrencySettings();
-  }, [loadCurrencySettings]);
+    loadReceiptSettings();
+  }, [loadCurrencySettings, loadReceiptSettings]);
 
   const loadCashSession = async ({ silent = false } = {}) => {
     if (!silent) {
@@ -439,6 +443,7 @@ const CounterList = () => {
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
               businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+              receiptSettings,
               printerServiceUrl: userPreferences.printerServiceUrl || undefined,
               printerName: userPreferences.printerName || undefined,
             });
@@ -452,6 +457,7 @@ const CounterList = () => {
                 "Caissier",
               storeName: createdOrder?.store?.name || user?.storeName || "Boutique",
               businessName: createdOrder?.store?.name || user?.storeName || "POSapp",
+              receiptSettings,
               targetWindow: browserPrintWindow || undefined,
             });
           }

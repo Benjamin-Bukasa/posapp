@@ -21,6 +21,7 @@ const storageZoneRoutes = require("./routes/storageZoneRoutes");
 const inventoryRoutes = require("./routes/inventoryRoutes");
 const inventoryMovementRoutes = require("./routes/inventoryMovementRoutes");
 const approvalFlowRoutes = require("./routes/approvalFlowRoutes");
+const approvalActionRoutes = require("./routes/approvalActionRoutes");
 const supplyRequestRoutes = require("./routes/supplyRequestRoutes");
 const transferRoutes = require("./routes/transferRoutes");
 const purchaseRequestRoutes = require("./routes/purchaseRequestRoutes");
@@ -34,6 +35,7 @@ const cashSessionRoutes = require("./routes/cashSessionRoutes");
 const adminDashboardRoutes = require("./routes/adminDashboardRoutes");
 const reportRoutes = require("./routes/reportRoutes");
 const currencySettingsRoutes = require("./routes/currencySettingsRoutes");
+const receiptSettingsRoutes = require("./routes/receiptSettingsRoutes");
 const customerBonusProgramRoutes = require("./routes/customerBonusProgramRoutes");
 const taxRateRoutes = require("./routes/taxRateRoutes");
 const permissionProfileRoutes = require("./routes/permissionProfileRoutes");
@@ -50,7 +52,9 @@ const { ensureTenantCurrencyColumns } = require("./utils/currencySettings");
 const { ensureCashSessionTables } = require("./utils/cashSessionStore");
 const { ensureInventorySessionTables } = require("./utils/inventorySessionStore");
 const { ensureUserPreferenceTable } = require("./utils/userPreferenceStore");
+const { ensureReceiptSettingsTable } = require("./utils/receiptSettingsStore");
 const { ensureDocumentApprovalTable } = require("./utils/documentApprovalStore");
+const { ensureApprovalActionTokenTable } = require("./utils/approvalActionTokenStore");
 const { ensureSupplierReturnTables } = require("./controllers/supplierReturnController");
 const { getEmailDebugInfo } = require("./services/notificationService");
 
@@ -86,6 +90,7 @@ app.get("/api/health", (req, res) => {
   return res.json({ status: "ok" });
 });
 
+app.use("/api/approval-actions", approvalActionRoutes);
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/stores", storeRoutes);
@@ -115,6 +120,7 @@ app.use("/api/cash-sessions", cashSessionRoutes);
 app.use("/api/admin-dashboard", adminDashboardRoutes);
 app.use("/api/reports", reportRoutes);
 app.use("/api/currency-settings", currencySettingsRoutes);
+app.use("/api/receipt-settings", receiptSettingsRoutes);
 app.use("/api/customer-bonus-programs", customerBonusProgramRoutes);
 app.use("/api/tax-rates", taxRateRoutes);
 app.use("/api/permission-profiles", permissionProfileRoutes);
@@ -260,8 +266,14 @@ const bootstrap = async () => {
   await ensureUserPreferenceTable();
   bootDebug("User preferences ready.");
 
+  await ensureReceiptSettingsTable();
+  bootDebug("Receipt settings ready.");
+
   await ensureDocumentApprovalTable();
   bootDebug("Document approvals ready.");
+
+  await ensureApprovalActionTokenTable();
+  bootDebug("Approval action tokens ready.");
 
   await ensureSupplierReturnTables();
   bootDebug("Supplier returns ready.");

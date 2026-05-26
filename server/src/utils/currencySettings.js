@@ -1,4 +1,5 @@
 const DEFAULT_PRIMARY_CURRENCY = "USD";
+const CURRENCY_RATE_SCALE = 12;
 
 const DEFAULT_CURRENCY_CATALOG = {
   USD: { name: "Dollar americain", symbol: "$" },
@@ -27,6 +28,12 @@ const parseExchangeRate = (value) => {
 
   const amount = Number(value);
   return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
+
+const normalizeExchangeRatePrecision = (value) => {
+  const rate = parseExchangeRate(value);
+  if (!rate) return null;
+  return Number(rate.toFixed(CURRENCY_RATE_SCALE));
 };
 
 const getDefaultCurrencyMeta = (code) => {
@@ -62,7 +69,12 @@ const ensureTenantCurrencyColumns = async (prisma) => {
         ALTER TABLE "tenants"
         ADD COLUMN IF NOT EXISTS "primaryCurrencyCode" TEXT NOT NULL DEFAULT 'USD',
         ADD COLUMN IF NOT EXISTS "secondaryCurrencyCode" TEXT,
-        ADD COLUMN IF NOT EXISTS "exchangeRate" DECIMAL(18, 6)
+        ADD COLUMN IF NOT EXISTS "exchangeRate" DECIMAL(18, 12)
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "tenants"
+        ALTER COLUMN "exchangeRate" TYPE DECIMAL(18, 12)
       `);
 
       await prisma.$executeRawUnsafe(`
@@ -91,10 +103,15 @@ const ensureTenantCurrencyColumns = async (prisma) => {
           "tenantId" TEXT NOT NULL REFERENCES "tenants"("id") ON DELETE CASCADE,
           "fromCurrencyCode" TEXT NOT NULL,
           "toCurrencyCode" TEXT NOT NULL,
-          "rate" DECIMAL(18, 6) NOT NULL,
+          "rate" DECIMAL(18, 12) NOT NULL,
           "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
           "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
         )
+      `);
+
+      await prisma.$executeRawUnsafe(`
+        ALTER TABLE "tenantCurrencyConversions"
+        ALTER COLUMN "rate" TYPE DECIMAL(18, 12)
       `);
 
       await prisma.$executeRawUnsafe(`
@@ -149,6 +166,50 @@ const findConversionRate = (conversions = [], fromCurrencyCode, toCurrencyCode) 
 
   if (fromCode === toCode) {
     return 1;
+  }
+
+  const directConversion = conversions.find((conversion) => {
+    const conversionFromCode = normalizeCurrencyCode(
+      conversion.fromCurrencyCode,
+      DEFAULT_PRIMARY_CURRENCY,
+    );
+    const conversionToCode = normalizeCurrencyCode(
+      conversion.toCurrencyCode,
+      DEFAULT_PRIMARY_CURRENCY,
+    );
+    const conversionRate = parseExchangeRate(conversion.rate);
+
+    return (
+      conversionRate &&
+      conversionFromCode === fromCode &&
+      conversionToCode === toCode
+    );
+  });
+
+  if (directConversion) {
+    return parseExchangeRate(directConversion.rate);
+  }
+
+  const reverseConversion = conversions.find((conversion) => {
+    const conversionFromCode = normalizeCurrencyCode(
+      conversion.fromCurrencyCode,
+      DEFAULT_PRIMARY_CURRENCY,
+    );
+    const conversionToCode = normalizeCurrencyCode(
+      conversion.toCurrencyCode,
+      DEFAULT_PRIMARY_CURRENCY,
+    );
+    const conversionRate = parseExchangeRate(conversion.rate);
+
+    return (
+      conversionRate &&
+      conversionFromCode === toCode &&
+      conversionToCode === fromCode
+    );
+  });
+
+  if (reverseConversion) {
+    return 1 / parseExchangeRate(reverseConversion.rate);
   }
 
   const graph = buildConversionGraph(conversions);
@@ -570,7 +631,7 @@ const mapTenantCurrencySettings = (row = {}) => {
       secondaryCurrencyCode && secondaryCurrencyCode !== primaryCurrencyCode
         ? secondaryCurrencyCode
         : null,
-    exchangeRate: graphRate || legacyRate || null,
+    exchangeRate: normalizeExchangeRatePrecision(graphRate || legacyRate || null),
     currencies,
     conversions,
   };
@@ -708,4 +769,6 @@ module.exports = {
   listTenantCurrencyConversions,
   loadTenantCurrencySettings,
   convertAmount,
+  normalizeExchangeRatePrecision,
+  CURRENCY_RATE_SCALE,
 };
