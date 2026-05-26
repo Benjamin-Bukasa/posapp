@@ -14,8 +14,10 @@ const {
   buildDateRangeFilter,
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
+const { sendWorkbook, readSheetRows } = require("../utils/xlsxTemplates");
 const { emitToStore } = require("../socket");
 const { buildStockEntryPdf } = require("../services/stockEntryPdf");
+const { notifyStockEntryApprovalStep } = require("../services/approvalNotificationService");
 const {
   ensureInventoryLotTables,
   attachStockEntryLots,
@@ -40,6 +42,29 @@ const {
 const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
 const isSeller = (user) => user?.role === "SELLER";
+const STOCK_ENTRY_TEMPLATE_SHEET = "StockEntries";
+
+const pickFirstValue = (row, keys = []) => {
+  for (const key of keys) {
+    if (!Object.prototype.hasOwnProperty.call(row || {}, key)) continue;
+    const value = row[key];
+    if (value === null || value === undefined) continue;
+    const normalized = String(value).trim();
+    if (normalized) return normalized;
+  }
+  return "";
+};
+
+const parseOptionalDate = (value) => {
+  if (value === null || value === undefined || value === "") return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+};
+
+const parseRequiredPositiveNumber = (value) => {
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+};
 
 const resolveStockEntryFlowCodes = (sourceType, operationType = "IN") => {
   const normalizedOperationType = operationType === "OUT" ? "OUT" : "IN";
@@ -181,6 +206,171 @@ const getStockEntryApprovalConfig = async (tenantId, sourceType, operationType =
   return {
     flow,
     requiresApproval: Boolean(flow?.steps?.length),
+  };
+};
+
+const stockEntryInclude = {
+  store: true,
+  storageZone: true,
+  createdBy: true,
+  approvedBy: true,
+  items: { include: { product: true, unit: true } },
+};
+
+const loadStockEntryById = (tenantId, id) =>
+  prisma.stockEntry.findFirst({
+    where: { id, tenantId },
+    include: stockEntryInclude,
+  });
+
+const notifyCurrentStockEntryApprover = async (entry) => {
+  try {
+    const approvals = await getDocumentApprovals(
+      entry.tenantId,
+      STOCK_ENTRY_DOCUMENT_TYPE,
+      entry.id,
+    );
+    const currentStep = approvals.find((item) => item.status === "PENDING");
+    if (!currentStep) return;
+
+    await notifyStockEntryApprovalStep({
+      stockEntry: entry,
+      approval: currentStep,
+    });
+  } catch (error) {
+    console.error("[APPROVAL][EMAIL][STOCK_ENTRY]", {
+      documentId: entry?.id || null,
+      message: error.message || String(error),
+    });
+  }
+};
+
+const processStockEntryApprovalDecision = async ({
+  tenantId,
+  entryId,
+  user,
+  decision,
+  note = null,
+}) => {
+  const entry = await loadStockEntryById(tenantId, entryId);
+  if (!entry) {
+    throw Object.assign(new Error("Stock entry not found."), { status: 404 });
+  }
+
+  const approvalConfig = await getStockEntryApprovalConfig(
+    tenantId,
+    entry.sourceType,
+    getStockEntryOperationType(entry),
+  );
+
+  const normalizedDecision = String(decision || "").trim().toUpperCase();
+
+  if (normalizedDecision === "APPROVED") {
+    if (approvalConfig.requiresApproval) {
+      const approvalDecision = await decideDocumentApproval({
+        tenantId,
+        documentType: STOCK_ENTRY_DOCUMENT_TYPE,
+        documentId: entryId,
+        user,
+        decision: "APPROVED",
+        note,
+      });
+
+      let updated = entry;
+      if (approvalDecision.lifecycleStatus === "APPROVED" && entry.status !== "APPROVED") {
+        updated = await prisma.stockEntry.update({
+          where: { id: entryId },
+          data: {
+            status: "APPROVED",
+            approvedById: user.id,
+            approvedAt: new Date(),
+          },
+          include: stockEntryInclude,
+        });
+
+        emitToStore(entry.storeId || user.storeId, "stock:entry:approved", {
+          id: updated.id,
+          status: updated.status,
+          storeId: entry.storeId || user.storeId,
+        });
+      } else {
+        updated = await loadStockEntryById(tenantId, entryId);
+      }
+
+      if (approvalDecision.lifecycleStatus === "SUBMITTED") {
+        await notifyCurrentStockEntryApprover(updated);
+      }
+
+      return {
+        entry: await decorateStockEntriesWithApprovals(
+          await hydrateStockEntriesWithCurrencyCodes(updated),
+        ),
+        lifecycleStatus: approvalDecision.lifecycleStatus,
+      };
+    }
+
+    if (entry.sourceType !== "DIRECT") {
+      throw Object.assign(
+        new Error("This stock entry does not require approval."),
+        { status: 400 },
+      );
+    }
+
+    const updated = await prisma.stockEntry.update({
+      where: { id: entryId },
+      data: {
+        status: "APPROVED",
+        approvedById: user.id,
+        approvedAt: new Date(),
+      },
+      include: stockEntryInclude,
+    });
+
+    emitToStore(entry.storeId || user.storeId, "stock:entry:approved", {
+      id: updated.id,
+      status: updated.status,
+      storeId: entry.storeId || user.storeId,
+    });
+
+    return {
+      entry: await decorateStockEntriesWithApprovals(
+        await hydrateStockEntriesWithCurrencyCodes(updated),
+      ),
+      lifecycleStatus: "APPROVED",
+    };
+  }
+
+  if (!approvalConfig.requiresApproval) {
+    throw Object.assign(
+      new Error("This stock entry does not use approval workflow."),
+      { status: 400 },
+    );
+  }
+
+  await decideDocumentApproval({
+    tenantId,
+    documentType: STOCK_ENTRY_DOCUMENT_TYPE,
+    documentId: entryId,
+    user,
+    decision: "REJECTED",
+    note,
+  });
+
+  const updated = await prisma.stockEntry.update({
+    where: { id: entryId },
+    data: {
+      status: "PENDING",
+      approvedById: null,
+      approvedAt: null,
+    },
+    include: stockEntryInclude,
+  });
+
+  return {
+    entry: await decorateStockEntriesWithApprovals(
+      await hydrateStockEntriesWithCurrencyCodes(updated),
+    ),
+    lifecycleStatus: "REJECTED",
   };
 };
 
@@ -419,6 +609,9 @@ const createStockEntry = async (req, res) => {
       documentId: entry.id,
       flowCodes: resolveStockEntryFlowCodes(sourceType, normalizedOperationType),
     });
+    await notifyCurrentStockEntryApprover(
+      await loadStockEntryById(req.user.tenantId, entry.id),
+    );
   }
 
   if (deliveryNotePayload?.supplierId) {
@@ -456,6 +649,353 @@ const createStockEntry = async (req, res) => {
       })),
     }),
   );
+};
+
+const downloadStockEntryTemplate = async (_req, res) =>
+  sendWorkbook(res, "template-entrees-stock", [
+    {
+      name: STOCK_ENTRY_TEMPLATE_SHEET,
+      rows: [
+        {
+          reference: "ENT-2026-001",
+          boutique: "Boutique Gombe",
+          zone: "Depot principal",
+          produit: "Pain sandwich",
+          "code produit": "PROD00001",
+          unite: "Piece",
+          qte: 120,
+          "cout unitaire": 0.35,
+          lot: "LOT-PAIN-001",
+          "date fabrication": "2026-05-26",
+          "date expiration": "2026-05-29",
+          note: "Reception matinale",
+        },
+        {
+          reference: "ENT-2026-001",
+          boutique: "Boutique Gombe",
+          zone: "Depot principal",
+          produit: "Saucisse fumee",
+          "code produit": "PROD00002",
+          unite: "Piece",
+          qte: 120,
+          "cout unitaire": 0.6,
+          lot: "LOT-SAUC-001",
+          "date fabrication": "2026-05-24",
+          "date expiration": "2026-06-02",
+          note: "Reception matinale",
+        },
+      ],
+    },
+  ]);
+
+const importStockEntries = async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ message: "Fichier Excel requis." });
+  }
+
+  if (isSeller(req.user) && !req.user.storeId) {
+    return res.status(400).json({
+      message: "Le vendeur doit etre rattache a une boutique pour importer des mouvements.",
+    });
+  }
+
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+
+  try {
+    const rows = readSheetRows(req.file.buffer, STOCK_ENTRY_TEMPLATE_SHEET);
+    const groupedEntries = new Map();
+    const errors = [];
+
+    for (const [index, row] of rows.entries()) {
+      const line = index + 2;
+      const reference =
+        pickFirstValue(row, ["reference", "Reference", "document", "Document"]) ||
+        `IMPORT-${line}`;
+      const storeName = pickFirstValue(row, ["boutique", "Boutique", "store", "Store"]);
+      const zoneName = pickFirstValue(row, ["zone", "Zone", "zone stockage", "Zone stockage"]);
+      const productCode = pickFirstValue(row, [
+        "code produit",
+        "Code produit",
+        "sku",
+        "SKU",
+      ]);
+      const productName = pickFirstValue(row, [
+        "produit",
+        "Produit",
+        "product",
+        "Product",
+      ]);
+      const unitName = pickFirstValue(row, ["unite", "Unite", "unit", "Unit"]);
+      const quantity = parseRequiredPositiveNumber(
+        pickFirstValue(row, ["qte", "Qte", "quantite", "Quantite", "quantity", "Quantity"]),
+      );
+
+      if (!storeName || !zoneName || (!productCode && !productName) || quantity === null) {
+        if (Object.values(row || {}).some((value) => String(value || "").trim() !== "")) {
+          errors.push({
+            line,
+            identifier: productCode || productName || reference,
+            message:
+              "Boutique, zone, produit et quantite positive sont requis pour chaque ligne.",
+          });
+        }
+        continue;
+      }
+
+      const store = await prisma.store.findFirst({
+        where: {
+          tenantId: req.user.tenantId,
+          name: { equals: storeName, mode: "insensitive" },
+        },
+        select: { id: true, name: true },
+      });
+
+      if (!store) {
+        errors.push({
+          line,
+          identifier: reference,
+          message: `Boutique introuvable: ${storeName}.`,
+        });
+        continue;
+      }
+
+      if (isSeller(req.user) && store.id !== req.user.storeId) {
+        errors.push({
+          line,
+          identifier: reference,
+          message: "Le vendeur ne peut importer que pour sa propre boutique.",
+        });
+        continue;
+      }
+
+      const zone = await prisma.storageZone.findFirst({
+        where: {
+          tenantId: req.user.tenantId,
+          storeId: store.id,
+          name: { equals: zoneName, mode: "insensitive" },
+        },
+        select: { id: true, name: true, storeId: true },
+      });
+
+      if (!zone) {
+        errors.push({
+          line,
+          identifier: reference,
+          message: `Zone introuvable dans ${store.name}: ${zoneName}.`,
+        });
+        continue;
+      }
+
+      const product = await prisma.product.findFirst({
+        where: {
+          tenantId: req.user.tenantId,
+          kind: "COMPONENT",
+          isActive: true,
+          OR: [
+            ...(productCode
+              ? [{ sku: { equals: productCode, mode: "insensitive" } }]
+              : []),
+            ...(productName
+              ? [{ name: { equals: productName, mode: "insensitive" } }]
+              : []),
+          ],
+        },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          saleUnitId: true,
+          stockUnitId: true,
+        },
+      });
+
+      if (!product) {
+        errors.push({
+          line,
+          identifier: productCode || productName,
+          message: "Produit composant introuvable.",
+        });
+        continue;
+      }
+
+      let unitId = product.saleUnitId || product.stockUnitId || null;
+      if (unitName) {
+        const unit = await prisma.unitOfMeasure.findFirst({
+          where: {
+            tenantId: req.user.tenantId,
+            OR: [
+              { name: { equals: unitName, mode: "insensitive" } },
+              { symbol: { equals: unitName, mode: "insensitive" } },
+            ],
+          },
+          select: { id: true },
+        });
+        if (!unit) {
+          errors.push({
+            line,
+            identifier: product.sku || product.name,
+            message: `Unite introuvable: ${unitName}.`,
+          });
+          continue;
+        }
+        unitId = unit.id;
+      }
+
+      if (!unitId) {
+        errors.push({
+          line,
+          identifier: product.sku || product.name,
+          message:
+            "Aucune unite exploitable n'a ete trouvee pour ce produit.",
+        });
+        continue;
+      }
+
+      const groupKey = `${reference}::${store.id}::${zone.id}`;
+      const currentGroup = groupedEntries.get(groupKey) || {
+        reference,
+        storeId: store.id,
+        storageZoneId: zone.id,
+        note:
+          pickFirstValue(row, ["note", "Note", "commentaire", "Commentaire"]) ||
+          null,
+        rows: [],
+      };
+
+      currentGroup.rows.push({
+        line,
+        productId: product.id,
+        unitId,
+        quantity,
+        unitCost: Number(
+          pickFirstValue(row, [
+            "cout unitaire",
+            "Cout unitaire",
+            "unitCost",
+            "UnitCost",
+          ]) || 0,
+        ),
+        batchNumber:
+          pickFirstValue(row, ["lot", "Lot", "batch", "Batch"]) || null,
+        expiryDate: parseOptionalDate(
+          pickFirstValue(row, [
+            "date expiration",
+            "Date expiration",
+            "expiryDate",
+            "ExpiryDate",
+          ]),
+        ),
+        manufacturedAt: parseOptionalDate(
+          pickFirstValue(row, [
+            "date fabrication",
+            "Date fabrication",
+            "manufacturedAt",
+            "ManufacturedAt",
+          ]),
+        ),
+      });
+
+      groupedEntries.set(groupKey, currentGroup);
+    }
+
+    let created = 0;
+
+    for (const [, group] of groupedEntries.entries()) {
+      try {
+        const scopedItems = await ensureComponentItems({
+          tenantId: req.user.tenantId,
+          items: group.rows,
+          message:
+            "Les entrees en stock doivent etre saisies sur des produits composants.",
+        });
+        const normalizedItems = normalizeStockEntryItems(scopedItems, "IN");
+        await ensureInventoryLotTables();
+        const approvalConfig = await getStockEntryApprovalConfig(
+          req.user.tenantId,
+          "DIRECT",
+          "IN",
+        );
+        const entry = await prisma.stockEntry.create({
+          data: {
+            tenantId: req.user.tenantId,
+            sourceType: "DIRECT",
+            sourceId: null,
+            storeId: group.storeId,
+            storageZoneId: group.storageZoneId,
+            note: group.note || `Import Excel ${group.reference}`,
+            createdById: req.user.id,
+            status: "PENDING",
+            items: {
+              create: normalizedItems.map((item) => ({
+                tenantId: req.user.tenantId,
+                productId: item.productId,
+                unitId: item.unitId,
+                quantity: item.quantity,
+                unitCost: item.unitCost,
+              })),
+            },
+          },
+          include: { items: true },
+        });
+
+        await setCurrencyCodes(
+          prisma,
+          "stockEntryItems",
+          (entry.items || []).map((item) => item.id),
+          currencySettings.primaryCurrencyCode,
+        );
+        await setStockEntryItemLots(
+          prisma,
+          req.user.tenantId,
+          entry.items || [],
+          normalizedItems,
+        );
+
+        if (approvalConfig.requiresApproval) {
+          await prepareDocumentApprovals({
+            tenantId: req.user.tenantId,
+            documentType: STOCK_ENTRY_DOCUMENT_TYPE,
+            documentId: entry.id,
+            flowCodes: resolveStockEntryFlowCodes("DIRECT", "IN"),
+          });
+          await notifyCurrentStockEntryApprover(await loadStockEntryById(req.user.tenantId, entry.id));
+        }
+
+        if (entry.storeId) {
+          emitToStore(entry.storeId, "stock:entry:created", {
+            id: entry.id,
+            status: entry.status,
+            storeId: entry.storeId,
+            sourceType: entry.sourceType,
+          });
+        }
+
+        created += 1;
+      } catch (error) {
+        group.rows.forEach((row) => {
+          errors.push({
+            line: row.line,
+            identifier: group.reference,
+            message: error.message || "Impossible de creer cette entree de stock.",
+          });
+        });
+      }
+    }
+
+    return res.json({
+      message: "Import des entrees en stock termine.",
+      created,
+      failed: errors.length,
+      errors,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      message: error.message || "Impossible d'importer les entrees en stock.",
+    });
+  }
 };
 
 const listStockEntries = async (req, res) => {
@@ -861,98 +1401,20 @@ const approveStockEntry = async (req, res) => {
     });
   }
 
-  const entry = await prisma.stockEntry.findUnique({
-    where: { id },
-    include: {
-      store: true,
-      storageZone: true,
-      createdBy: true,
-      approvedBy: true,
-      items: { include: { product: true, unit: true } },
-    },
-  });
-  if (!entry || entry.tenantId !== req.user.tenantId) {
-    return res.status(404).json({ message: "Stock entry not found." });
+  try {
+    const result = await processStockEntryApprovalDecision({
+      tenantId: req.user.tenantId,
+      entryId: id,
+      user: req.user,
+      decision: "APPROVED",
+      note,
+    });
+    return res.json(result.entry);
+  } catch (error) {
+    return res.status(error.status || 500).json({
+      message: error.message || "Impossible de valider cette entree de stock.",
+    });
   }
-
-  const approvalConfig = await getStockEntryApprovalConfig(
-    req.user.tenantId,
-    entry.sourceType,
-    getStockEntryOperationType(entry),
-  );
-
-  if (approvalConfig.requiresApproval) {
-    try {
-      const decision = await decideDocumentApproval({
-        tenantId: req.user.tenantId,
-        documentType: STOCK_ENTRY_DOCUMENT_TYPE,
-        documentId: id,
-        user: req.user,
-        decision: "APPROVED",
-        note,
-      });
-
-      let updated = entry;
-      if (decision.lifecycleStatus === "APPROVED" && entry.status !== "APPROVED") {
-        updated = await prisma.stockEntry.update({
-          where: { id },
-          data: {
-            status: "APPROVED",
-            approvedById: req.user.id,
-            approvedAt: new Date(),
-          },
-          include: {
-            store: true,
-            storageZone: true,
-            createdBy: true,
-            approvedBy: true,
-            items: { include: { product: true, unit: true } },
-          },
-        });
-
-        emitToStore(entry.storeId || req.user.storeId, "stock:entry:approved", {
-          id: updated.id,
-          status: updated.status,
-          storeId: entry.storeId || req.user.storeId,
-        });
-      }
-
-      return res.json(
-        await decorateStockEntriesWithApprovals(
-          await hydrateStockEntriesWithCurrencyCodes(updated),
-        ),
-      );
-    } catch (error) {
-      return res.status(error.status || 500).json({
-        message: error.message || "Impossible de valider cette entree de stock.",
-      });
-    }
-  }
-
-  if (entry.sourceType !== "DIRECT") {
-    return res.status(400).json({ message: "This stock entry does not require approval." });
-  }
-
-  const updated = await prisma.stockEntry.update({
-    where: { id },
-    data: {
-      status: "APPROVED",
-      approvedById: req.user.id,
-      approvedAt: new Date(),
-    },
-  });
-
-  emitToStore(entry.storeId || req.user.storeId, "stock:entry:approved", {
-    id: updated.id,
-    status: updated.status,
-    storeId: entry.storeId || req.user.storeId,
-  });
-
-  return res.json(
-    await decorateStockEntriesWithApprovals(
-      await hydrateStockEntriesWithCurrencyCodes(updated),
-    ),
-  );
 };
 
 const rejectStockEntry = async (req, res) => {
@@ -965,60 +1427,15 @@ const rejectStockEntry = async (req, res) => {
     });
   }
 
-  const entry = await prisma.stockEntry.findUnique({
-    where: { id },
-    include: {
-      store: true,
-      storageZone: true,
-      createdBy: true,
-      approvedBy: true,
-      items: { include: { product: true, unit: true } },
-    },
-  });
-  if (!entry || entry.tenantId !== req.user.tenantId) {
-    return res.status(404).json({ message: "Stock entry not found." });
-  }
-
-  const approvalConfig = await getStockEntryApprovalConfig(
-    req.user.tenantId,
-    entry.sourceType,
-    getStockEntryOperationType(entry),
-  );
-  if (!approvalConfig.requiresApproval) {
-    return res.status(400).json({ message: "This stock entry does not use approval workflow." });
-  }
-
   try {
-    await decideDocumentApproval({
+    const result = await processStockEntryApprovalDecision({
       tenantId: req.user.tenantId,
-      documentType: STOCK_ENTRY_DOCUMENT_TYPE,
-      documentId: id,
+      entryId: id,
       user: req.user,
       decision: "REJECTED",
       note,
     });
-
-    const updated = await prisma.stockEntry.update({
-      where: { id },
-      data: {
-        status: "PENDING",
-        approvedById: null,
-        approvedAt: null,
-      },
-      include: {
-        store: true,
-        storageZone: true,
-        createdBy: true,
-        approvedBy: true,
-        items: { include: { product: true, unit: true } },
-      },
-    });
-
-    return res.json(
-      await decorateStockEntriesWithApprovals(
-        await hydrateStockEntriesWithCurrencyCodes(updated),
-      ),
-    );
+    return res.json(result.entry);
   } catch (error) {
     return res.status(error.status || 500).json({
       message: error.message || "Impossible de rejeter cette entree de stock.",
@@ -1139,6 +1556,8 @@ const postStockEntry = async (req, res) => {
 };
 
 module.exports = {
+  downloadStockEntryTemplate,
+  importStockEntries,
   listStockEntries,
   getStockEntry,
   getStockEntryPdf,
@@ -1148,4 +1567,5 @@ module.exports = {
   approveStockEntry,
   rejectStockEntry,
   postStockEntry,
+  processStockEntryApprovalDecision,
 };

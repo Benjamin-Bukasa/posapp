@@ -20,6 +20,7 @@ import Input from "../components/ui/input";
 import { apiGet, apiPost } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
+import useReceiptSettingsStore from "../stores/receiptSettingsStore";
 import useThemeStore from "../stores/themeStore";
 import useToastStore from "../stores/toastStore";
 import useUserPreferenceStore from "../stores/userPreferenceStore";
@@ -57,6 +58,8 @@ function Settings() {
   const currencySettings = useCurrencyStore((state) => state.settings);
   const loadCurrencySettings = useCurrencyStore((state) => state.loadSettings);
   const currencyLoading = useCurrencyStore((state) => state.loading);
+  const receiptSettings = useReceiptSettingsStore((state) => state.settings);
+  const loadReceiptSettings = useReceiptSettingsStore((state) => state.loadSettings);
   const showToast = useToastStore((state) => state.showToast);
   const preferences = useUserPreferenceStore((state) => state.preferences);
   const loadPreferences = useUserPreferenceStore((state) => state.loadPreferences);
@@ -92,8 +95,9 @@ function Settings() {
 
   useEffect(() => {
     loadCurrencySettings();
+    loadReceiptSettings();
     loadPreferences();
-  }, [loadCurrencySettings, loadPreferences]);
+  }, [loadCurrencySettings, loadPreferences, loadReceiptSettings]);
 
   const loadCashSession = async ({ silent = false } = {}) => {
     if (!silent) {
@@ -361,6 +365,7 @@ function Settings() {
           cashierName,
           storeName,
           businessName,
+          receiptSettings,
           printerServiceUrl: printerForm.printerServiceUrl || undefined,
           printerName: printerForm.printerName || undefined,
         });
@@ -378,6 +383,7 @@ function Settings() {
           cashierName,
           storeName,
           businessName,
+          receiptSettings,
           targetWindow: printWindow,
         });
       }

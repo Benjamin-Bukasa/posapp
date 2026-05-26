@@ -3,8 +3,10 @@ const prisma = require("../config/prisma");
 const { emitToTenant } = require("../socket");
 const {
   DEFAULT_PRIMARY_CURRENCY,
+  CURRENCY_RATE_SCALE,
   getDefaultCurrencyMeta,
   normalizeCurrencyCode,
+  normalizeExchangeRatePrecision,
   parseExchangeRate,
   ensureTenantCurrencyColumns,
   listTenantCurrencies,
@@ -13,6 +15,23 @@ const {
   syncTenantCurrencyColumns,
   findConversionRate,
 } = require("../utils/currencySettings");
+
+const RATE_TOLERANCE = 1 / 10 ** CURRENCY_RATE_SCALE;
+
+const computeReciprocalRate = (rate) => {
+  const numericRate = parseExchangeRate(rate);
+  if (!numericRate) return null;
+  return normalizeExchangeRatePrecision(1 / numericRate);
+};
+
+const areRatesEquivalent = (leftRate, rightRate) => {
+  const left = parseExchangeRate(leftRate);
+  const right = parseExchangeRate(rightRate);
+
+  if (!left || !right) return false;
+
+  return Math.abs(left - right) <= Math.max(RATE_TOLERANCE, Math.abs(left) * RATE_TOLERANCE);
+};
 
 const emitCurrencySettingsUpdated = async (tenantId) => {
   const settings = await loadTenantCurrencySettings(prisma, tenantId);
@@ -308,6 +327,7 @@ const replaceConversions = async (tenantId, fromCurrencyCode, conversions = []) 
   `;
 
   for (const conversion of conversions) {
+    const normalizedRate = normalizeExchangeRatePrecision(conversion.rate);
     await prisma.$executeRaw`
       INSERT INTO "tenantCurrencyConversions" (
         "id",
@@ -323,7 +343,7 @@ const replaceConversions = async (tenantId, fromCurrencyCode, conversions = []) 
         ${tenantId},
         ${conversion.fromCurrencyCode || fromCurrencyCode},
         ${conversion.toCurrencyCode},
-        ${conversion.rate},
+        ${normalizedRate},
         NOW(),
         NOW()
       )
@@ -332,6 +352,13 @@ const replaceConversions = async (tenantId, fromCurrencyCode, conversions = []) 
         "rate" = EXCLUDED."rate",
         "updatedAt" = NOW()
     `;
+
+    await syncReciprocalConversion(
+      tenantId,
+      conversion.fromCurrencyCode || fromCurrencyCode,
+      conversion.toCurrencyCode,
+      normalizedRate,
+    );
   }
 };
 
@@ -404,6 +431,57 @@ const getConversionById = async (tenantId, id) => {
   return rows[0] || null;
 };
 
+const getConversionByPair = async (tenantId, fromCurrencyCode, toCurrencyCode) => {
+  await ensureTenantCurrencyColumns(prisma);
+
+  const rows = await prisma.$queryRaw`
+    SELECT
+      "id",
+      "fromCurrencyCode",
+      "toCurrencyCode",
+      "rate",
+      "createdAt",
+      "updatedAt"
+    FROM "tenantCurrencyConversions"
+    WHERE "tenantId" = ${tenantId}
+      AND "fromCurrencyCode" = ${fromCurrencyCode}
+      AND "toCurrencyCode" = ${toCurrencyCode}
+    LIMIT 1
+  `;
+
+  return rows[0] || null;
+};
+
+const syncReciprocalConversion = async (tenantId, fromCurrencyCode, toCurrencyCode, rate) => {
+  const reciprocalRate = computeReciprocalRate(rate);
+  if (!reciprocalRate) return;
+
+  await prisma.$executeRaw`
+    INSERT INTO "tenantCurrencyConversions" (
+      "id",
+      "tenantId",
+      "fromCurrencyCode",
+      "toCurrencyCode",
+      "rate",
+      "createdAt",
+      "updatedAt"
+    )
+    VALUES (
+      ${randomUUID()},
+      ${tenantId},
+      ${toCurrencyCode},
+      ${fromCurrencyCode},
+      ${reciprocalRate},
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT ("tenantId", "fromCurrencyCode", "toCurrencyCode")
+    DO UPDATE SET
+      "rate" = EXCLUDED."rate",
+      "updatedAt" = NOW()
+  `;
+};
+
 const buildConversionPayload = async (tenantId, payload = {}, existingConversion = null) => {
   const fromCurrencyCode = normalizeCurrencyCode(
     payload.fromCurrencyCode || existingConversion?.fromCurrencyCode,
@@ -413,7 +491,9 @@ const buildConversionPayload = async (tenantId, payload = {}, existingConversion
     payload.toCurrencyCode || existingConversion?.toCurrencyCode,
     "",
   );
-  const rate = parseExchangeRate(payload.rate ?? existingConversion?.rate);
+  const rate = normalizeExchangeRatePrecision(
+    payload.rate ?? existingConversion?.rate,
+  );
 
   if (!fromCurrencyCode) {
     throw Object.assign(new Error("La devise de depart est obligatoire."), {
@@ -668,6 +748,13 @@ const createCurrencyConversion = async (req, res) => {
       )
     `;
 
+    await syncReciprocalConversion(
+      req.user.tenantId,
+      payload.fromCurrencyCode,
+      payload.toCurrencyCode,
+      payload.rate,
+    );
+
     await syncTenantCurrencyColumns(prisma, req.user.tenantId);
     await emitCurrencySettingsUpdated(req.user.tenantId);
     const conversion = await getConversionById(req.user.tenantId, id);
@@ -779,6 +866,13 @@ const updateCurrencyConversion = async (req, res) => {
         AND "id" = ${req.params.id}
     `;
 
+    await syncReciprocalConversion(
+      req.user.tenantId,
+      payload.fromCurrencyCode,
+      payload.toCurrencyCode,
+      payload.rate,
+    );
+
     await syncTenantCurrencyColumns(prisma, req.user.tenantId);
     await emitCurrencySettingsUpdated(req.user.tenantId);
     const conversion = await getConversionById(req.user.tenantId, req.params.id);
@@ -808,7 +902,7 @@ const saveCurrencySettings = async (req, res) => {
     const secondaryCurrencyCode = req.body?.secondaryCurrencyCode
       ? normalizeCurrencyCode(req.body.secondaryCurrencyCode, "")
       : null;
-    const exchangeRate = parseExchangeRate(req.body?.exchangeRate);
+    const exchangeRate = normalizeExchangeRatePrecision(req.body?.exchangeRate);
 
     if (secondaryCurrencyCode && secondaryCurrencyCode === primaryCurrencyCode) {
       throw Object.assign(
@@ -855,6 +949,13 @@ const saveCurrencySettings = async (req, res) => {
             "rate" = EXCLUDED."rate",
             "updatedAt" = NOW()
         `;
+
+        await syncReciprocalConversion(
+          req.user.tenantId,
+          primaryCurrencyCode,
+          secondaryCurrencyCode,
+          exchangeRate,
+        );
       } else {
         const conversions = await listTenantCurrencyConversions(prisma, req.user.tenantId);
         const knownRate = findConversionRate(
@@ -981,11 +1082,31 @@ const deleteCurrencyConversion = async (req, res) => {
       });
     }
 
+    const reciprocalConversion = await getConversionByPair(
+      req.user.tenantId,
+      existingConversion.toCurrencyCode,
+      existingConversion.fromCurrencyCode,
+    );
+
     await prisma.$executeRaw`
       DELETE FROM "tenantCurrencyConversions"
       WHERE "tenantId" = ${req.user.tenantId}
         AND "id" = ${req.params.id}
     `;
+
+    if (
+      reciprocalConversion &&
+      areRatesEquivalent(
+        reciprocalConversion.rate,
+        computeReciprocalRate(existingConversion.rate),
+      )
+    ) {
+      await prisma.$executeRaw`
+        DELETE FROM "tenantCurrencyConversions"
+        WHERE "tenantId" = ${req.user.tenantId}
+          AND "id" = ${reciprocalConversion.id}
+      `;
+    }
 
     await syncTenantCurrencyColumns(prisma, req.user.tenantId);
     await emitCurrencySettingsUpdated(req.user.tenantId);

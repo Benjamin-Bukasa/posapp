@@ -1,3 +1,8 @@
+import {
+  DEFAULT_RECEIPT_SETTINGS,
+  normalizeReceiptSettings,
+} from "./receiptSettings";
+
 const escapeHtml = (value) =>
   String(value ?? "")
     .replace(/&/g, "&amp;")
@@ -36,13 +41,84 @@ const methodLabels = {
   TRANSFER: "Virement",
 };
 
+const buildReceiptLineItems = ({ order, currencyCode, settings }) =>
+  settings.showItems
+    ? (order?.items || [])
+        .map((item) => {
+          const quantity = Number(item.quantity || 0);
+          const unitPrice = Number(item.unitPrice || 0);
+          const lineTotal = Number(item.total || quantity * unitPrice);
+
+          return `
+            <tr>
+              <td class="item-name">
+                <div class="item-title">${escapeHtml(item.product?.name || item.name || "Article")}</div>
+                <div class="item-meta">${quantity} x ${escapeHtml(formatAmount(unitPrice, currencyCode))}</div>
+              </td>
+              <td class="item-total">${escapeHtml(formatAmount(lineTotal, currencyCode))}</td>
+            </tr>
+          `;
+        })
+        .join("")
+    : "";
+
+const buildTotalsRows = ({
+  order,
+  payment,
+  currencyCode,
+  total,
+  paid,
+  originalPaid,
+  originalCurrencyCode,
+  showOriginalPayment,
+  change,
+  settings,
+}) => {
+  const rows = [];
+  if (settings.showSubtotal) {
+    rows.push(["Sous-total", formatAmount(order?.subtotal ?? total, currencyCode), false]);
+  }
+  if (settings.showTotal) {
+    rows.push(["Total", formatAmount(total, currencyCode), true]);
+  }
+  if (settings.showPaymentMethod) {
+    rows.push([
+      "Paiement",
+      methodLabels[payment?.method] || payment?.method || "--",
+      false,
+    ]);
+  }
+  if (settings.showAmountReceived) {
+    rows.push(["Montant recu", formatAmount(paid, currencyCode), false]);
+  }
+  if (settings.showOriginalAmount && showOriginalPayment) {
+    rows.push(["Remis client", formatAmount(originalPaid, originalCurrencyCode), false]);
+  }
+  if (settings.showChange) {
+    rows.push(["Monnaie", formatAmount(change, currencyCode), true]);
+  }
+
+  return rows
+    .map(
+      ([label, value, strong]) => `
+        <tr class="${strong ? "grand-total" : ""}">
+          <td>${escapeHtml(label)}</td>
+          <td class="value">${escapeHtml(value)}</td>
+        </tr>
+      `,
+    )
+    .join("");
+};
+
 const buildReceiptHtml = ({
   order,
   amountReceived,
   cashierName,
   storeName,
   businessName,
+  receiptSettings = DEFAULT_RECEIPT_SETTINGS,
 }) => {
+  const settings = normalizeReceiptSettings(receiptSettings);
   const payment = order?.payments?.[0] || null;
   const currencyCode = order?.currencyCode || payment?.currencyCode || "USD";
   const total = Number(order?.total || 0);
@@ -53,23 +129,20 @@ const buildReceiptHtml = ({
     originalCurrencyCode !== currencyCode ||
     Math.abs(originalPaid - paid) > 0.005;
   const change = Math.max(0, paid - total);
-  const itemsHtml = (order?.items || [])
-    .map((item) => {
-      const quantity = Number(item.quantity || 0);
-      const unitPrice = Number(item.unitPrice || 0);
-      const lineTotal = Number(item.total || quantity * unitPrice);
-
-      return `
-        <tr>
-          <td class="item-name">
-            <div class="item-title">${escapeHtml(item.product?.name || item.name || "Article")}</div>
-            <div class="item-meta">${quantity} x ${escapeHtml(formatAmount(unitPrice, currencyCode))}</div>
-          </td>
-          <td class="item-total">${escapeHtml(formatAmount(lineTotal, currencyCode))}</td>
-        </tr>
-      `;
-    })
-    .join("");
+  const paperWidth = settings.paperFormat === "58mm" ? "58mm" : "80mm";
+  const lineItemsHtml = buildReceiptLineItems({ order, currencyCode, settings });
+  const totalsRows = buildTotalsRows({
+    order,
+    payment,
+    currencyCode,
+    total,
+    paid,
+    originalPaid,
+    originalCurrencyCode,
+    showOriginalPayment,
+    change,
+    settings,
+  });
 
   return `
     <!doctype html>
@@ -78,20 +151,21 @@ const buildReceiptHtml = ({
         <meta charset="utf-8" />
         <title>Ticket ${escapeHtml(shortId(order?.id))}</title>
         <style>
-          @page { size: 80mm auto; margin: 0; }
+          @page { size: ${paperWidth} auto; margin: 0; }
           html, body {
             margin: 0;
             padding: 0;
             background: #fff;
             color: #000;
             font-family: "Courier New", monospace;
-            width: 80mm;
+            width: ${paperWidth};
           }
           body { padding: 4mm; box-sizing: border-box; }
           .receipt { width: 100%; }
           .center { text-align: center; }
           .title { font-size: 16px; font-weight: 700; text-transform: uppercase; }
-          .subtitle, .meta, .footer { font-size: 11px; line-height: 1.4; }
+          .subtitle, .meta, .footer, .header-note { font-size: 11px; line-height: 1.4; }
+          .header-note, .footer { white-space: pre-wrap; }
           .divider {
             margin: 8px 0;
             border-top: 1px dashed #000;
@@ -119,18 +193,57 @@ const buildReceiptHtml = ({
             font-size: 13px;
             font-weight: 700;
           }
+          .logo-wrap {
+            margin-bottom: 8px;
+          }
+          .logo {
+            max-width: 52mm;
+            max-height: 48px;
+            object-fit: contain;
+            ${settings.logoMonochrome ? "filter: grayscale(1) contrast(1.15);" : ""}
+          }
         </style>
       </head>
       <body>
         <section class="receipt">
           <div class="center">
-            <div class="title">${escapeHtml(storeName || businessName || "POSapp")}</div>
-            <div class="subtitle">${escapeHtml(businessName || "POSapp")}</div>
-            <div class="meta">Ticket: ${escapeHtml(shortId(order?.id))}</div>
-            <div class="meta">Date: ${escapeHtml(formatDateTime(order?.createdAt))}</div>
-            <div class="meta">Caissier: ${escapeHtml(cashierName || "--")}</div>
             ${
-              order?.customer
+              settings.showLogo && settings.logoUrl
+                ? `<div class="logo-wrap"><img class="logo" src="${escapeHtml(settings.logoUrl)}" alt="Logo" /></div>`
+                : ""
+            }
+            ${
+              settings.showStoreName
+                ? `<div class="title">${escapeHtml(storeName || businessName || "POSapp")}</div>`
+                : ""
+            }
+            ${
+              settings.showBusinessName
+                ? `<div class="subtitle">${escapeHtml(businessName || "POSapp")}</div>`
+                : ""
+            }
+            ${
+              settings.showHeaderText && settings.headerText
+                ? `<div class="header-note">${escapeHtml(settings.headerText)}</div>`
+                : ""
+            }
+            ${
+              settings.showTicketNumber
+                ? `<div class="meta">Ticket: ${escapeHtml(shortId(order?.id))}</div>`
+                : ""
+            }
+            ${
+              settings.showDateTime
+                ? `<div class="meta">Date: ${escapeHtml(formatDateTime(order?.createdAt))}</div>`
+                : ""
+            }
+            ${
+              settings.showCashier
+                ? `<div class="meta">Caissier: ${escapeHtml(cashierName || "--")}</div>`
+                : ""
+            }
+            ${
+              settings.showCustomer && order?.customer
                 ? `<div class="meta">Client: ${escapeHtml(
                     [order.customer.firstName, order.customer.lastName]
                       .filter(Boolean)
@@ -142,55 +255,20 @@ const buildReceiptHtml = ({
 
           <div class="divider"></div>
 
-          <table>
-            <tbody>
-              ${itemsHtml}
-            </tbody>
-          </table>
-
-          <div class="divider"></div>
+          ${
+            settings.showItems
+              ? `<table><tbody>${lineItemsHtml}</tbody></table><div class="divider"></div>`
+              : ""
+          }
 
           <table class="totals">
             <tbody>
-              <tr>
-                <td>Sous-total</td>
-                <td class="value">${escapeHtml(formatAmount(order?.subtotal ?? total, currencyCode))}</td>
-              </tr>
-              <tr>
-                <td>Total</td>
-                <td class="value">${escapeHtml(formatAmount(total, currencyCode))}</td>
-              </tr>
-              <tr>
-                <td>Paiement</td>
-                <td class="value">${escapeHtml(
-                  methodLabels[order?.payments?.[0]?.method] || order?.payments?.[0]?.method || "--",
-                )}</td>
-              </tr>
-              <tr>
-                <td>Montant recu</td>
-                <td class="value">${escapeHtml(formatAmount(paid, currencyCode))}</td>
-              </tr>
-              ${
-                showOriginalPayment
-                  ? `
-                    <tr>
-                      <td>Remis client</td>
-                      <td class="value">${escapeHtml(
-                        formatAmount(originalPaid, originalCurrencyCode),
-                      )}</td>
-                    </tr>
-                  `
-                  : ""
-              }
-              <tr class="grand-total">
-                <td>Monnaie</td>
-                <td class="value">${escapeHtml(formatAmount(change, currencyCode))}</td>
-              </tr>
+              ${totalsRows}
             </tbody>
           </table>
 
           ${
-            Number(order?.loyaltyPoints || 0) > 0
+            settings.showLoyaltyPoints && Number(order?.loyaltyPoints || 0) > 0
               ? `
                 <div class="divider"></div>
                 <div class="meta">Points gagnes: ${escapeHtml(order.loyaltyPoints)}</div>
@@ -199,9 +277,13 @@ const buildReceiptHtml = ({
           }
 
           <div class="divider"></div>
-          <div class="footer center">
-            Merci pour votre achat
-          </div>
+          ${
+            settings.showFooterText
+              ? `<div class="footer center">${escapeHtml(
+                  settings.footerText || "Merci pour votre achat",
+                )}</div>`
+              : ""
+          }
         </section>
         <script>
           window.onload = function () {
@@ -225,6 +307,7 @@ export const printSaleReceipt = ({
   cashierName,
   storeName,
   businessName,
+  receiptSettings,
   targetWindow,
 }) => {
   const printWindow =
@@ -243,6 +326,7 @@ export const printSaleReceipt = ({
       cashierName,
       storeName,
       businessName,
+      receiptSettings,
     }),
   );
   printWindow.document.close();

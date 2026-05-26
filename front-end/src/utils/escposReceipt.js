@@ -1,5 +1,10 @@
 const encoder = new TextEncoder();
 
+import {
+  DEFAULT_RECEIPT_SETTINGS,
+  normalizeReceiptSettings,
+} from "./receiptSettings";
+
 const ESC = 0x1b;
 const GS = 0x1d;
 
@@ -99,7 +104,9 @@ export const buildEscPosReceipt = ({
   cashierName,
   storeName,
   businessName,
+  receiptSettings = DEFAULT_RECEIPT_SETTINGS,
 }) => {
+  const settings = normalizeReceiptSettings(receiptSettings);
   const bytes = [];
   const payment = order?.payments?.[0] || null;
   const currencyCode = order?.currencyCode || payment?.currencyCode || "USD";
@@ -111,20 +118,33 @@ export const buildEscPosReceipt = ({
     originalCurrencyCode !== currencyCode ||
     Math.abs(originalPaid - paid) > 0.005;
   const change = Math.max(0, paid - total);
-  const width = 42;
+  const width = settings.paperFormat === "58mm" ? 32 : 42;
 
   bytes.push(ESC, 0x40);
   bytes.push(ESC, 0x61, 0x01);
   bytes.push(ESC, 0x45, 0x01);
   bytes.push(GS, 0x21, 0x11);
-  pushText(bytes, `${storeName || businessName || "POSapp"}\n`);
+  if (settings.showStoreName) {
+    pushText(bytes, `${storeName || businessName || "POSapp"}\n`);
+  }
   bytes.push(GS, 0x21, 0x00);
   bytes.push(ESC, 0x45, 0x00);
-  pushText(bytes, `${businessName || "POSapp"}\n`);
-  pushText(bytes, `Ticket ${shortId(order?.id)}\n`);
-  pushText(bytes, `${formatDate(order?.createdAt)}\n`);
-  pushText(bytes, `Caissier: ${cashierName || "--"}\n`);
-  if (order?.customer) {
+  if (settings.showBusinessName) {
+    pushText(bytes, `${businessName || "POSapp"}\n`);
+  }
+  if (settings.showHeaderText && settings.headerText) {
+    wrapText(settings.headerText, width).forEach((line) => pushText(bytes, `${line}\n`));
+  }
+  if (settings.showTicketNumber) {
+    pushText(bytes, `Ticket ${shortId(order?.id)}\n`);
+  }
+  if (settings.showDateTime) {
+    pushText(bytes, `${formatDate(order?.createdAt)}\n`);
+  }
+  if (settings.showCashier) {
+    pushText(bytes, `Caissier: ${cashierName || "--"}\n`);
+  }
+  if (settings.showCustomer && order?.customer) {
     pushText(
       bytes,
       `Client: ${
@@ -139,50 +159,66 @@ export const buildEscPosReceipt = ({
   pushText(bytes, `${"-".repeat(width)}\n`);
 
   bytes.push(ESC, 0x61, 0x00);
-  (order?.items || []).forEach((item) => {
-    const quantity = Number(item.quantity || 0);
-    const unitPrice = Number(item.unitPrice || 0);
-    const lineTotal = Number(item.total || quantity * unitPrice);
-    const amountText = formatAmount(lineTotal, currencyCode);
+  if (settings.showItems) {
+    (order?.items || []).forEach((item) => {
+      const quantity = Number(item.quantity || 0);
+      const unitPrice = Number(item.unitPrice || 0);
+      const lineTotal = Number(item.total || quantity * unitPrice);
+      const amountText = formatAmount(lineTotal, currencyCode);
+      const labelWidth = width > 32 ? 28 : 20;
+      const valueWidth = width - labelWidth;
 
-    wrapText(item.product?.name || item.name || "Article", 28).forEach((line, index) => {
-      const right = index === 0 ? amountText : "";
-      pushText(bytes, `${padRight(line, 28)}${padLeft(right, 14)}\n`);
+      wrapText(item.product?.name || item.name || "Article", labelWidth).forEach((line, index) => {
+        const right = index === 0 ? amountText : "";
+        pushText(bytes, `${padRight(line, labelWidth)}${padLeft(right, valueWidth)}\n`);
+      });
+      pushText(
+        bytes,
+        `${padRight(`${quantity} x ${formatAmount(unitPrice, currencyCode)}`, width)}\n`,
+      );
     });
-    pushText(
-      bytes,
-      `${padRight(`${quantity} x ${formatAmount(unitPrice, currencyCode)}`, width)}\n`,
-    );
-  });
 
-  pushText(bytes, `${"-".repeat(width)}\n`);
+    pushText(bytes, `${"-".repeat(width)}\n`);
+  }
 
-  const totals = [
-    ["Sous-total", formatAmount(order?.subtotal ?? total, currencyCode)],
-    ["Total", formatAmount(total, currencyCode)],
-    [
-      "Paiement",
-      methodLabels[payment?.method] || payment?.method || "--",
-    ],
-    ["Montant recu", formatAmount(paid, currencyCode)],
-    ...(showOriginalPayment
-      ? [["Remis client", formatAmount(originalPaid, originalCurrencyCode)]]
-      : []),
-    ["Monnaie", formatAmount(change, currencyCode)],
-  ];
+  const totals = [];
+  if (settings.showSubtotal) {
+    totals.push(["Sous-total", formatAmount(order?.subtotal ?? total, currencyCode)]);
+  }
+  if (settings.showTotal) {
+    totals.push(["Total", formatAmount(total, currencyCode)]);
+  }
+  if (settings.showPaymentMethod) {
+    totals.push(["Paiement", methodLabels[payment?.method] || payment?.method || "--"]);
+  }
+  if (settings.showAmountReceived) {
+    totals.push(["Montant recu", formatAmount(paid, currencyCode)]);
+  }
+  if (settings.showOriginalAmount && showOriginalPayment) {
+    totals.push(["Remis client", formatAmount(originalPaid, originalCurrencyCode)]);
+  }
+  if (settings.showChange) {
+    totals.push(["Monnaie", formatAmount(change, currencyCode)]);
+  }
 
+  const totalsLabelWidth = width > 32 ? 24 : 16;
+  const totalsValueWidth = width - totalsLabelWidth;
   totals.forEach(([label, value]) => {
-    pushText(bytes, `${padRight(label, 24)}${padLeft(value, 18)}\n`);
+    pushText(bytes, `${padRight(label, totalsLabelWidth)}${padLeft(value, totalsValueWidth)}\n`);
   });
 
-  if (Number(order?.loyaltyPoints || 0) > 0) {
+  if (settings.showLoyaltyPoints && Number(order?.loyaltyPoints || 0) > 0) {
     pushText(bytes, `${"-".repeat(width)}\n`);
     pushText(bytes, `Points gagnes: ${order.loyaltyPoints}\n`);
   }
 
   pushText(bytes, `${"-".repeat(width)}\n`);
   bytes.push(ESC, 0x61, 0x01);
-  pushText(bytes, "Merci pour votre achat\n");
+  if (settings.showFooterText) {
+    wrapText(settings.footerText || "Merci pour votre achat", width).forEach((line) =>
+      pushText(bytes, `${line}\n`),
+    );
+  }
   pushText(bytes, "\n\n");
   bytes.push(GS, 0x56, 0x41, 0x00);
 

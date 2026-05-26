@@ -9,6 +9,7 @@ export const printReceiptViaLocalService = async ({
   cashierName,
   storeName,
   businessName,
+  receiptSettings,
   printerServiceUrl,
   printerName,
 }) => {
@@ -18,6 +19,7 @@ export const printReceiptViaLocalService = async ({
     cashierName,
     storeName,
     businessName,
+    receiptSettings,
   });
 
   const targetUrl = printerServiceUrl || LOCAL_PRINTER_URL;
