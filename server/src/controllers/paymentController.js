@@ -14,6 +14,8 @@ const {
   buildDateRangeFilter,
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
+const { sendErrorResponse } = require("../utils/httpErrors");
+const { cancelOrderSale } = require("./orderController");
 
 const hydratePaymentsWithCurrencyCodes = async (records) => {
   const list = Array.isArray(records)
@@ -147,7 +149,60 @@ const getPayment = async (req, res) => {
   return res.json(await hydratePaymentsWithCurrencyCodes(payment));
 };
 
+const refundPayment = async (req, res) => {
+  const { id } = req.params;
+  const reason = req.body?.reason
+    ? String(req.body.reason).trim()
+    : "Remboursement client.";
+
+  const payment = await prisma.payment.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    include: {
+      order: {
+        include: {
+          customer: true,
+        },
+      },
+    },
+  });
+
+  if (!payment) {
+    return res.status(404).json({ message: "Payment not found." });
+  }
+
+  if (!payment.orderId) {
+    return res.status(409).json({
+      message: "Ce paiement n'est rattache a aucune vente remboursable.",
+    });
+  }
+
+  try {
+    const canceledOrder = await cancelOrderSale({
+      tenantId: req.user.tenantId,
+      orderId: payment.orderId,
+      actorUserId: req.user.id,
+      reason,
+      auditAction: "REFUNDED",
+      auditReasonFallback: "Remboursement client.",
+    });
+
+    const refreshedPayment = await prisma.payment.findFirst({
+      where: { id, tenantId: req.user.tenantId },
+      include: { order: { include: { customer: true } } },
+    });
+
+    return res.json({
+      message: "Client rembourse et vente annulee.",
+      order: canceledOrder,
+      payment: await hydratePaymentsWithCurrencyCodes(refreshedPayment),
+    });
+  } catch (error) {
+    return sendErrorResponse(res, error, "Impossible de rembourser ce client.");
+  }
+};
+
 module.exports = {
   listPayments,
   getPayment,
+  refundPayment,
 };

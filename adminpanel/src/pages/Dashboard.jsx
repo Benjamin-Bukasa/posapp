@@ -371,6 +371,7 @@ function Dashboard() {
   const [metricMode, setMetricMode] = useState("quantity");
   const [search, setSearch] = useState("");
   const [filters, setFilters] = useState({
+    collection: "all",
     category: "all",
     family: "all",
     isActive: "all",
@@ -600,6 +601,12 @@ function Dashboard() {
         render: (row) => row.sku || "--",
       },
       {
+        key: "collection",
+        header: "Collection",
+        accessor: "family.collection.name",
+        render: (row) => row.family?.collection?.name || "--",
+      },
+      {
         key: "category",
         header: "Categorie",
         accessor: "category.name",
@@ -610,6 +617,12 @@ function Dashboard() {
         header: "Famille",
         accessor: "family.name",
         render: (row) => row.family?.name || "--",
+      },
+      {
+        key: "subFamily",
+        header: "Sous-famille",
+        accessor: "subFamily.name",
+        render: (row) => row.subFamily?.name || "--",
       },
       {
         key: "managementUnit",
@@ -645,6 +658,14 @@ function Dashboard() {
   );
 
   const productFilterSections = useMemo(() => {
+    const collectionOptions = Array.from(
+      new Map(
+        products
+          .filter((item) => item.family?.collection?.name)
+          .map((item) => [item.family.collection.name, item.family.collection.name]),
+      ).entries(),
+    ).map(([value, label]) => ({ value, label }));
+
     const categoryOptions = Array.from(
       new Map(
         products
@@ -662,6 +683,13 @@ function Dashboard() {
     ).map(([value, label]) => ({ value, label }));
 
     return [
+      {
+        id: "collection",
+        label: "Collection",
+        type: "select",
+        value: filters.collection,
+        options: [{ value: "all", label: "Toutes" }, ...collectionOptions],
+      },
       {
         id: "category",
         label: "Categorie",
@@ -688,14 +716,16 @@ function Dashboard() {
         ],
       },
     ];
-  }, [filters.category, filters.family, filters.isActive, products]);
+  }, [filters.collection, filters.category, filters.family, filters.isActive, products]);
 
   const productSortItems = useMemo(
     () => [
       { id: "name", label: "Article", accessor: "name" },
       { id: "sku", label: "SKU", accessor: "sku" },
+      { id: "family.collection.name", label: "Collection", accessor: "family.collection.name" },
       { id: "category.name", label: "Categorie", accessor: "category.name" },
       { id: "family.name", label: "Famille", accessor: "family.name" },
+      { id: "subFamily.name", label: "Sous-famille", accessor: "subFamily.name" },
       { id: "unitPrice", label: "Prix", accessor: "unitPrice" },
       { id: "isActive", label: "Etat", accessor: "isActive" },
     ],
@@ -710,12 +740,21 @@ function Dashboard() {
         product.name,
         product.sku,
         product.description,
+        product.family?.collection?.name,
         product.category?.name,
         product.family?.name,
+        product.subFamily?.name,
         product.managementUnit?.name || product.saleUnit?.name,
       ].join(" "));
 
       if (normalizedSearch && !haystack.includes(normalizedSearch)) {
+        return false;
+      }
+
+      if (
+        filters.collection !== "all" &&
+        product.family?.collection?.name !== filters.collection
+      ) {
         return false;
       }
 
@@ -733,7 +772,7 @@ function Dashboard() {
 
       return true;
     });
-  }, [filters.category, filters.family, filters.isActive, products, search]);
+  }, [filters.collection, filters.category, filters.family, filters.isActive, products, search]);
 
   const sortedProducts = useMemo(() => {
     const accessor = sort.sortBy || "name";

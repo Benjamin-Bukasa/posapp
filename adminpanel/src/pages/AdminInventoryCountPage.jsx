@@ -1,9 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Download, Save, Send } from "lucide-react";
-import { Link, useLocation, useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, requestBlob, requestJson } from "../api/client";
 import SearchSelect from "../components/ui/SearchSelect";
-import { findRouteByPath, getCreatePageConfig, getRouteActionPermissions } from "../routes/router";
+import {
+  findRouteByPath,
+  getCreatePageConfig,
+  getEditPageConfig,
+  getRouteActionPermissions,
+} from "../routes/router";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
 import { hasAnyPermission } from "../utils/permissions";
@@ -70,8 +75,13 @@ const renderVariance = (amount) => {
 const AdminInventoryCountPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
-  const route = findRouteByPath(location.pathname);
-  const pageConfig = getCreatePageConfig(location.pathname);
+  const [searchParams] = useSearchParams();
+  const createConfig = getCreatePageConfig(location.pathname);
+  const editConfig = getEditPageConfig(location.pathname);
+  const pageConfig = editConfig || createConfig;
+  const isEditing = Boolean(editConfig);
+  const route = findRouteByPath(pageConfig?.resourcePath || location.pathname);
+  const targetSessionId = searchParams.get("id") || "";
   const accessToken = useAuthStore((state) => state.accessToken);
   const currentUser = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
@@ -79,7 +89,7 @@ const AdminInventoryCountPage = () => {
   const canAccessPage = hasAnyPermission(
     currentUser,
     pageConfig?.requiredPermissions ||
-      getRouteActionPermissions("/inventaire/inventaire", "create"),
+      getRouteActionPermissions("/inventaire/inventaire", isEditing ? "edit" : "create"),
   );
 
   const [stores, setStores] = useState([]);
@@ -171,11 +181,15 @@ const AdminInventoryCountPage = () => {
 
     setLoading(true);
     try {
-      const data = await requestJson("/api/inventory/sessions/current", {
+      const endpoint = targetSessionId
+        ? `/api/inventory/sessions/${targetSessionId}`
+        : "/api/inventory/sessions/current";
+      const data = await requestJson(endpoint, {
         token: accessToken,
       });
       setSession(data);
       hydrateDrafts(data);
+      setOpeningNote(data?.note || "");
       if (data?.storeId) {
         setSelectedStoreId(data.storeId);
       }
@@ -186,6 +200,14 @@ const AdminInventoryCountPage = () => {
       if (error instanceof ApiError && error.status === 404) {
         setSession(null);
         setDraftItems({});
+        if (targetSessionId) {
+          showToast({
+            title: "Inventaire introuvable",
+            message: "Cette session d'inventaire n'existe plus ou n'est plus accessible.",
+            variant: "danger",
+          });
+          navigate("/inventaire/inventaire", { replace: true });
+        }
         return;
       }
 
@@ -202,7 +224,7 @@ const AdminInventoryCountPage = () => {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, handleUnauthorized, hydrateDrafts, showToast]);
+  }, [accessToken, handleUnauthorized, hydrateDrafts, navigate, showToast, targetSessionId]);
 
   useEffect(() => {
     if (!canAccessPage) {
@@ -466,7 +488,7 @@ const AdminInventoryCountPage = () => {
               {route.sectionLabel || "Inventaire"}
             </p>
             <h1 className="mt-2 text-2xl font-semibold text-text-primary">
-              {pageConfig?.title || "Faire l'inventaire"}
+              {isEditing ? "Modifier l'inventaire" : pageConfig?.title || "Faire l'inventaire"}
             </h1>
             <p className="mt-2 max-w-3xl text-sm text-text-secondary">
               Selectionnez une zone de stockage, chargez les quantites systeme puis

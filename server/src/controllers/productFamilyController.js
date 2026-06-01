@@ -15,25 +15,26 @@ const {
   updateProductFamilyByKind,
   deleteProductFamilyByKind,
 } = require("../utils/productFamilyKindStore");
-const { ensureProductCategoryStructure } = require("../utils/productCategoryHierarchyStore");
+const {
+  ensureProductCategoryStructure,
+  findCollectionById,
+  findCollectionByName,
+} = require("../utils/productCategoryHierarchyStore");
 
 const createFamily = async (req, res) => {
-  const { name, categoryId } = req.body || {};
+  const { name, collectionId } = req.body || {};
   if (!name) {
     return res.status(400).json({ message: "Le nom est requis." });
   }
 
   await ensureProductCategoryStructure();
-  if (categoryId) {
-    const category = await prisma.$queryRawUnsafe(`
-      SELECT "id"
-      FROM "productCategories"
-      WHERE "tenantId" = '${String(req.user.tenantId).replace(/'/g, "''")}'
-        AND "id" = '${String(categoryId).replace(/'/g, "''")}'
-      LIMIT 1
-    `);
-    if (!category[0]) {
-      return res.status(400).json({ message: "La categorie selectionnee est invalide." });
+  if (collectionId) {
+    const collection = await findCollectionById({
+      tenantId: req.user.tenantId,
+      id: collectionId,
+    });
+    if (!collection) {
+      return res.status(400).json({ message: "La collection selectionnee est invalide." });
     }
   }
 
@@ -41,7 +42,7 @@ const createFamily = async (req, res) => {
     tenantId: req.user.tenantId,
     name,
     kind: FAMILY_KIND.FAMILY,
-    categoryId: categoryId || null,
+    collectionId: collectionId || null,
   });
 
   return res.status(201).json(family);
@@ -71,6 +72,7 @@ const listFamilies = async (req, res) => {
       rows.map((item) => ({
         id: item.id,
         name: item.name,
+        collection: item.collection?.name || "",
         createdAt: item.createdAt,
       })),
       "product-families",
@@ -90,7 +92,7 @@ const listFamilies = async (req, res) => {
 
 const updateFamily = async (req, res) => {
   const { id } = req.params;
-  const { name, categoryId } = req.body || {};
+  const { name, collectionId } = req.body || {};
 
   const family = await getProductFamilyByKind({
     tenantId: req.user.tenantId,
@@ -101,16 +103,13 @@ const updateFamily = async (req, res) => {
     return res.status(404).json({ message: "Famille introuvable." });
   }
 
-  if (categoryId) {
-    const category = await prisma.$queryRawUnsafe(`
-      SELECT "id"
-      FROM "productCategories"
-      WHERE "tenantId" = '${String(req.user.tenantId).replace(/'/g, "''")}'
-        AND "id" = '${String(categoryId).replace(/'/g, "''")}'
-      LIMIT 1
-    `);
-    if (!category[0]) {
-      return res.status(400).json({ message: "La categorie selectionnee est invalide." });
+  if (collectionId) {
+    const collection = await findCollectionById({
+      tenantId: req.user.tenantId,
+      id: collectionId,
+    });
+    if (!collection) {
+      return res.status(400).json({ message: "La collection selectionnee est invalide." });
     }
   }
 
@@ -119,8 +118,8 @@ const updateFamily = async (req, res) => {
     id,
     name: name || family.name,
     kind: FAMILY_KIND.FAMILY,
-    categoryId:
-      categoryId === undefined ? family.categoryId || null : categoryId || null,
+    collectionId:
+      collectionId === undefined ? family.collectionId || null : collectionId || null,
   });
 
   return res.json(updated);
@@ -161,7 +160,7 @@ const downloadFamiliesTemplate = async (_req, res) =>
   sendWorkbook(res, "template-familles", [
     {
       name: "Families",
-      rows: [{ name: "Antalgiques", categoryName: "Medicaments" }],
+      rows: [{ name: "Antalgiques", collectionName: "Vendeur generale" }],
     },
   ]);
 
@@ -177,7 +176,9 @@ const importFamilies = async (req, res) => {
 
     for (const [index, row] of rows.entries()) {
       const name = String(row.name || row.Name || "").trim();
-      const categoryName = String(row.categoryName || row.CategoryName || "").trim();
+      const collectionName = String(
+        row.collectionName || row.CollectionName || "",
+      ).trim();
       if (!name) {
         continue;
       }
@@ -190,25 +191,22 @@ const importFamilies = async (req, res) => {
         });
 
         if (!existing) {
-          let categoryId = null;
-          if (categoryName) {
-            const categoryRows = await prisma.$queryRawUnsafe(`
-              SELECT "id"
-              FROM "productCategories"
-              WHERE "tenantId" = '${String(req.user.tenantId).replace(/'/g, "''")}'
-                AND LOWER("name") = LOWER('${String(categoryName).replace(/'/g, "''")}')
-              LIMIT 1
-            `);
-            if (!categoryRows[0]) {
-              throw new Error("Categorie introuvable.");
+          let collectionId = null;
+          if (collectionName) {
+            const collection = await findCollectionByName({
+              tenantId: req.user.tenantId,
+              name: collectionName,
+            });
+            if (!collection) {
+              throw new Error("Collection introuvable.");
             }
-            categoryId = categoryRows[0].id;
+            collectionId = collection.id;
           }
           await createProductFamilyByKind({
             tenantId: req.user.tenantId,
             name,
             kind: FAMILY_KIND.FAMILY,
-            categoryId,
+            collectionId,
           });
           created += 1;
         }

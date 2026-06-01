@@ -14,12 +14,23 @@ router.post(
   requirePermission("purchase_requests.create"),
   purchaseRequestController.createPurchaseRequest
 );
-router.patch("/:id", auth, purchaseRequestController.updatePurchaseRequest);
+router.patch(
+  "/:id",
+  auth,
+  requirePermission("purchase_requests.update", "purchase_requests.update_own_draft"),
+  purchaseRequestController.updatePurchaseRequest
+);
 router.delete(
   "/:id",
   auth,
-  requirePermission("purchase_requests.delete"),
+  requirePermission("purchase_requests.delete", "purchase_requests.delete_own_draft"),
   purchaseRequestController.deletePurchaseRequest
+);
+router.post(
+  "/:id/devalidate",
+  auth,
+  requirePermission("purchase_requests.devalidate"),
+  purchaseRequestController.devalidatePurchaseRequest
 );
 router.post(
   "/:id/submit",

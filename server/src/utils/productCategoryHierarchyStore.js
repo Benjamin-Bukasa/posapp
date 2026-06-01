@@ -10,12 +10,28 @@ const ensureProductCategoryStructure = async () => {
     ADD COLUMN IF NOT EXISTS "categoryId" TEXT NULL
   `);
   await prisma.$executeRawUnsafe(`
+    ALTER TABLE "productFamilies"
+    ADD COLUMN IF NOT EXISTS "collectionId" TEXT NULL
+  `);
+  await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "productCategories_collectionId_idx"
     ON "productCategories" ("collectionId")
   `);
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "productFamilies_categoryId_idx"
     ON "productFamilies" ("categoryId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "productFamilies_collectionId_idx"
+    ON "productFamilies" ("collectionId")
+  `);
+  await prisma.$executeRawUnsafe(`
+    UPDATE "productFamilies" family
+    SET "collectionId" = category."collectionId"
+    FROM "productCategories" category
+    WHERE family."collectionId" IS NULL
+      AND family."categoryId" = category."id"
+      AND category."collectionId" IS NOT NULL
   `);
 };
 

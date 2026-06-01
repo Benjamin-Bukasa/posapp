@@ -17,14 +17,20 @@ router.post(
 router.patch(
   "/:id",
   auth,
-  requirePermission("purchase_orders.update"),
+  requirePermission("purchase_orders.update", "purchase_orders.update_own_draft"),
   purchaseOrderController.updatePurchaseOrder
 );
 router.delete(
   "/:id",
   auth,
-  requirePermission("purchase_orders.delete"),
+  requirePermission("purchase_orders.delete", "purchase_orders.delete_own_draft"),
   purchaseOrderController.deletePurchaseOrder
+);
+router.post(
+  "/:id/devalidate",
+  auth,
+  requirePermission("purchase_orders.devalidate"),
+  purchaseOrderController.devalidatePurchaseOrder
 );
 router.post(
   "/:id/send",

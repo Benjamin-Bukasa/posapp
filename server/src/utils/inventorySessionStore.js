@@ -573,11 +573,30 @@ const updateInventorySessionCounts = async ({ tenantId, sessionId, items = [] })
   if (!session) {
     throw Object.assign(new Error("Inventaire introuvable."), { status: 404 });
   }
-  if (!["DRAFT", "REJECTED"].includes(session.status)) {
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(session.status)) {
     throw Object.assign(
-      new Error("Les quantites physiques ne peuvent etre modifiees que sur un inventaire non soumis."),
+      new Error("Les quantites physiques ne peuvent etre modifiees que sur un inventaire non valide."),
       { status: 409 },
     );
+  }
+
+  if (["SUBMITTED", "REJECTED"].includes(session.status)) {
+    await prisma.$executeRawUnsafe(`
+      UPDATE "inventorySessionApprovals"
+      SET
+        "status" = 'PENDING',
+        "decidedAt" = NULL,
+        "note" = NULL
+      WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+        AND "sessionId" = ${escapeSqlValue(sessionId)}
+    `);
+
+    await prisma.$executeRawUnsafe(`
+      UPDATE "inventorySessions"
+      SET "status" = 'DRAFT', "updatedAt" = NOW()
+      WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+        AND "id" = ${escapeSqlValue(sessionId)}
+    `);
   }
 
   const normalizedItems = (Array.isArray(items) ? items : [])
@@ -626,6 +645,67 @@ const updateInventorySessionCounts = async ({ tenantId, sessionId, items = [] })
       WHERE "id" = ${escapeSqlValue(sessionId)}
     `);
   });
+
+  return getInventorySessionById(tenantId, sessionId);
+};
+
+const deleteInventorySession = async ({ tenantId, sessionId }) => {
+  await ensureInventorySessionTables();
+  const session = await getInventorySessionById(tenantId, sessionId);
+  if (!session) {
+    throw Object.assign(new Error("Inventaire introuvable."), { status: 404 });
+  }
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(session.status)) {
+    throw Object.assign(
+      new Error("Seuls les inventaires non valides peuvent etre supprimes."),
+      { status: 409 },
+    );
+  }
+
+  await prisma.$executeRawUnsafe(`
+    DELETE FROM "inventorySessions"
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "id" = ${escapeSqlValue(sessionId)}
+  `);
+
+  return session;
+};
+
+const devalidateInventorySession = async ({ tenantId, sessionId }) => {
+  await ensureInventorySessionTables();
+  const session = await getInventorySessionById(tenantId, sessionId);
+  if (!session) {
+    throw Object.assign(new Error("Inventaire introuvable."), { status: 404 });
+  }
+  if (session.status === "CLOSED") {
+    throw Object.assign(
+      new Error("Un inventaire cloture ne peut pas etre devalide."),
+      { status: 409 },
+    );
+  }
+  if (!["SUBMITTED", "APPROVED", "REJECTED"].includes(session.status)) {
+    throw Object.assign(
+      new Error("Cet inventaire est deja en brouillon."),
+      { status: 409 },
+    );
+  }
+
+  await prisma.$executeRawUnsafe(`
+    UPDATE "inventorySessionApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "sessionId" = ${escapeSqlValue(sessionId)}
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    UPDATE "inventorySessions"
+    SET "status" = 'DRAFT', "updatedAt" = NOW()
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "id" = ${escapeSqlValue(sessionId)}
+  `);
 
   return getInventorySessionById(tenantId, sessionId);
 };
@@ -901,6 +981,8 @@ module.exports = {
   getInventorySessionApprovals,
   createInventorySession,
   updateInventorySessionCounts,
+  deleteInventorySession,
+  devalidateInventorySession,
   submitInventorySession,
   decideInventorySessionApproval,
   closeInventorySession,

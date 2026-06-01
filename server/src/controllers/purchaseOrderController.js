@@ -22,9 +22,13 @@ const {
   getDocumentApprovalMap,
   getDocumentApprovals,
   prepareDocumentApprovals,
+  resetDocumentApprovals,
   decideDocumentApproval,
   ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
+const { sendErrorResponse } = require("../utils/httpErrors");
+const { hasPermission } = require("../utils/permissionAccess");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 
 const PURCHASE_ORDER_DOCUMENT_TYPE = "PURCHASE_ORDER";
 const PURCHASE_ORDER_FLOW_CODE = "PURCHASE_ORDER";
@@ -67,17 +71,11 @@ const canModifyPurchaseOrder = async (tenantId, order) => {
 };
 
 const resetPurchaseOrderApprovals = async (tenantId, orderId) => {
-  await ensureDocumentApprovalTable();
-  await prisma.$executeRawUnsafe(`
-    UPDATE "documentApprovals"
-    SET
-      "status" = 'PENDING',
-      "decidedAt" = NULL,
-      "note" = NULL
-    WHERE "tenantId" = ${JSON.stringify(tenantId)}
-      AND "documentType" = ${JSON.stringify(PURCHASE_ORDER_DOCUMENT_TYPE)}
-      AND "documentId" = ${JSON.stringify(orderId)}
-  `);
+  await resetDocumentApprovals({
+    tenantId,
+    documentType: PURCHASE_ORDER_DOCUMENT_TYPE,
+    documentId: orderId,
+  });
 };
 
 const hydratePurchaseOrdersWithCurrencyCodes = async (records) => {
@@ -135,9 +133,7 @@ const createPurchaseOrder = async (req, res) => {
         "Les commandes fournisseur doivent etre saisies sur des produits composants.",
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Commande fournisseur invalide.",
-    });
+    return sendErrorResponse(res, error, "Commande fournisseur invalide.");
   }
 
   const purchaseRequest = await prisma.purchaseRequest.findFirst({
@@ -545,9 +541,7 @@ const approvePurchaseOrder = async (req, res) => {
       ),
     );
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de valider cette commande.",
-    });
+    return sendErrorResponse(res, error, "Impossible de valider cette commande.");
   }
 };
 
@@ -602,9 +596,7 @@ const rejectPurchaseOrder = async (req, res) => {
       ),
     );
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de rejeter cette commande.",
-    });
+    return sendErrorResponse(res, error, "Impossible de rejeter cette commande.");
   }
 };
 
@@ -627,6 +619,21 @@ const updatePurchaseOrder = async (req, res) => {
 
   if (!order) {
     return res.status(404).json({ message: "Purchase order not found." });
+  }
+
+  const canUpdate = hasScopedPermission({
+    user: req.user,
+    fullPermission: "purchase_orders.update",
+    ownPermission: "purchase_orders.update_own_draft",
+    ownerId: order.orderedById,
+    status: order.status,
+    allowedStatuses: ["DRAFT", "IN_TRANSIT"],
+  });
+
+  if (!canUpdate) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de modifier cette commande.",
+    });
   }
 
   if (!(await canModifyPurchaseOrder(req.user.tenantId, order))) {
@@ -655,9 +662,7 @@ const updatePurchaseOrder = async (req, res) => {
         "Les commandes fournisseur doivent etre saisies sur des produits composants.",
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Commande fournisseur invalide.",
-    });
+    return sendErrorResponse(res, error, "Commande fournisseur invalide.");
   }
 
   const currencySettings = await loadTenantCurrencySettings(
@@ -755,6 +760,21 @@ const deletePurchaseOrder = async (req, res) => {
     return res.status(404).json({ message: "Purchase order not found." });
   }
 
+  const canDelete = hasScopedPermission({
+    user: req.user,
+    fullPermission: "purchase_orders.delete",
+    ownPermission: "purchase_orders.delete_own_draft",
+    ownerId: order.orderedById,
+    status: order.status,
+    allowedStatuses: ["DRAFT"],
+  });
+
+  if (!canDelete) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de supprimer cette commande.",
+    });
+  }
+
   if (!(await canModifyPurchaseOrder(req.user.tenantId, order))) {
     return res.status(400).json({ message: "Only draft orders can be deleted." });
   }
@@ -771,6 +791,74 @@ const deletePurchaseOrder = async (req, res) => {
   return res.json({ message: "Purchase order deleted." });
 };
 
+const devalidatePurchaseOrder = async (req, res) => {
+  const { id } = req.params;
+
+  const order = await prisma.purchaseOrder.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    include: {
+      items: { include: { product: true, unit: true } },
+      supplier: true,
+      store: true,
+      purchaseRequest: true,
+      orderedBy: true,
+      deliveryNotes: true,
+    },
+  });
+
+  if (!order) {
+    return res.status(404).json({ message: "Purchase order not found." });
+  }
+
+  if (["PARTIAL", "COMPLETED", "CANCELED"].includes(order.status)) {
+    return res.status(409).json({
+      message: "This purchase order can no longer be devalidated.",
+    });
+  }
+
+  if ((order.deliveryNotes || []).length > 0) {
+    return res.status(409).json({
+      message: "A purchase order with delivery notes cannot be devalidated.",
+    });
+  }
+
+  const approvals = await getDocumentApprovals(
+    req.user.tenantId,
+    PURCHASE_ORDER_DOCUMENT_TYPE,
+    id,
+  );
+
+  if (
+    order.status !== "SENT" &&
+    !approvals.some((item) => ["APPROVED", "REJECTED", "PENDING"].includes(item.status))
+  ) {
+    return res.status(409).json({
+      message: "This purchase order is already in draft state.",
+    });
+  }
+
+  await resetPurchaseOrderApprovals(req.user.tenantId, id);
+
+  const updated = await prisma.purchaseOrder.update({
+    where: { id },
+    data: { status: "DRAFT" },
+    include: {
+      items: { include: { product: true, unit: true } },
+      supplier: true,
+      store: true,
+      purchaseRequest: true,
+      orderedBy: true,
+      deliveryNotes: true,
+    },
+  });
+
+  return res.json(
+    await decoratePurchaseOrdersWithApprovals(
+      await hydratePurchaseOrdersWithCurrencyCodes(updated),
+    ),
+  );
+};
+
 module.exports = {
   createPurchaseOrder,
   listPurchaseOrders,
@@ -781,4 +869,5 @@ module.exports = {
   rejectPurchaseOrder,
   updatePurchaseOrder,
   deletePurchaseOrder,
+  devalidatePurchaseOrder,
 };

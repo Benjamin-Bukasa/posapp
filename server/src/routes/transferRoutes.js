@@ -11,14 +11,20 @@ router.get("/:id", auth, requirePermission("transfers.read"), transferController
 router.patch(
   "/:id",
   auth,
-  requirePermission("transfers.update"),
+  requirePermission("transfers.update", "transfers.update_own_draft"),
   transferController.updateTransfer
 );
 router.delete(
   "/:id",
   auth,
-  requirePermission("transfers.delete"),
+  requirePermission("transfers.delete", "transfers.delete_own_draft"),
   transferController.deleteTransfer
+);
+router.post(
+  "/:id/devalidate",
+  auth,
+  requirePermission("transfers.devalidate"),
+  transferController.devalidateTransfer
 );
 router.post(
   "/",

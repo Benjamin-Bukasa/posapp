@@ -28,6 +28,15 @@ import printReceiptViaLocalService from "../utils/localPrintService";
 import printSaleReceipt from "../utils/printSaleReceipt";
 
 const normalizeScanValue = (value) => String(value || "").trim().toLowerCase();
+const formatProductTree = (product) =>
+  [
+    product?.collection,
+    product?.family,
+    product?.subFamily,
+    product?.category,
+  ]
+    .filter((value) => value && value !== "N/A")
+    .join(" / ") || "N/A";
 
 const CounterList = () => {
   const cartItems = useCounterStore((state) => state.cartItems);
@@ -588,9 +597,7 @@ const CounterList = () => {
                         <div className="flex-1">
                           <div>
                             <p className="text-[11px] text-text-secondary">
-                              {[product.collection, product.category, product.family, product.subFamily]
-                                .filter((value) => value && value !== "N/A")
-                                .join(" / ") || "N/A"}
+                              {formatProductTree(product)}
                             </p>
                             <h3 className="text-[13px] font-semibold text-text-primary">
                               {product.product}
@@ -765,9 +772,7 @@ const CounterList = () => {
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-text-primary">{item.product}</p>
                         <p className="text-xs text-text-secondary">
-                          {[item.collection, item.category, item.family, item.subFamily]
-                            .filter((value) => value && value !== "N/A")
-                            .join(" / ") || "N/A"}
+                          {formatProductTree(item)}
                         </p>
                         <p className="text-xs text-text-secondary">
                           {formatConvertedPrimaryAmount(

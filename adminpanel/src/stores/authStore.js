@@ -6,11 +6,17 @@ const TOKEN_KEY = "adminpanel.token";
 const REFRESH_KEY = "adminpanel.refreshToken";
 const USER_KEY = "adminpanel.user";
 const ADMIN_ROLES = new Set(["SUPERADMIN", "ADMIN"]);
+const NETWORK_ERROR_MESSAGES = new Set([
+  "failed to fetch",
+  "network request failed",
+  "load failed",
+  "fetch failed",
+]);
 
 const parseJson = async (response) => {
   try {
     return await response.json();
-  } catch (error) {
+  } catch {
     return {};
   }
 };
@@ -46,7 +52,7 @@ const getStoredAuth = () => {
   if (userRaw) {
     try {
       user = JSON.parse(userRaw);
-    } catch (error) {
+    } catch {
       user = null;
     }
   }
@@ -55,6 +61,26 @@ const getStoredAuth = () => {
 };
 
 const hasAdminAccess = (role) => ADMIN_ROLES.has(role);
+
+const isNetworkError = (error) => {
+  const message = String(error?.message || "")
+    .trim()
+    .toLowerCase();
+
+  return error?.name === "TypeError" || NETWORK_ERROR_MESSAGES.has(message);
+};
+
+const createRequestError = (message, status) => {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+};
+
+const getErrorMessage = (error, fallback) =>
+  translateMessage(
+    isNetworkError(error) ? "Connection failed" : error?.message,
+    fallback,
+  );
 
 const clearState = (set) => {
   clearAuthStorage();
@@ -99,11 +125,21 @@ const useAuthStore = create((set, get) => ({
     try {
       await get().refreshCurrentUser();
     } catch (error) {
+      if (isNetworkError(error)) {
+        set({ error: getErrorMessage(error, "Connexion impossible.") });
+        return;
+      }
+
       if (refreshToken) {
         try {
           await get().refreshSession();
           await get().refreshCurrentUser();
         } catch (refreshError) {
+          if (isNetworkError(refreshError)) {
+            set({ error: getErrorMessage(refreshError, "Connexion impossible.") });
+            return;
+          }
+
           clearState(set);
         }
       } else {
@@ -232,7 +268,10 @@ const useAuthStore = create((set, get) => ({
     const data = await parseJson(response);
 
     if (!response.ok) {
-      throw new Error(translateMessage(data.message, "Session expiree."));
+      throw createRequestError(
+        translateMessage(data.message, "Session expiree."),
+        response.status,
+      );
     }
 
     persistAuth({
@@ -264,8 +303,9 @@ const useAuthStore = create((set, get) => ({
     const data = await parseJson(response);
 
     if (!response.ok) {
-      throw new Error(
+      throw createRequestError(
         translateMessage(data.message, "Impossible de charger le profil."),
+        response.status,
       );
     }
 
@@ -300,7 +340,7 @@ const useAuthStore = create((set, get) => ({
           body: JSON.stringify({ refreshToken }),
         });
       }
-    } catch (error) {
+    } catch {
       // ignore logout transport errors
     } finally {
       clearState(set);

@@ -4,7 +4,6 @@ import {
   Banknote,
   CreditCard,
   EllipsisVertical,
-  Eye,
   Smartphone,
   TrendingUp,
   WalletCards,
@@ -13,9 +12,11 @@ import DataTable from "../components/ui/datatable";
 import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
+import Modal from "../components/ui/modal";
 import useToastStore from "../stores/toastStore";
 import useCurrencyStore from "../stores/currencyStore";
-import { apiGet } from "../services/apiClient";
+import useAuthStore from "../stores/authStore";
+import { apiGet, apiPost } from "../services/apiClient";
 import {
   formatAmount,
   formatDate,
@@ -31,8 +32,10 @@ import {
   percentChange,
 } from "../utils/metrics";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
+import { hasAnyPermission } from "../utils/permissions";
 
-const mapPaymentStatus = (status) => {
+const mapPaymentStatus = (status, orderStatus) => {
+  if (status === "FAILED" && orderStatus === "CANCELED") return "Rembourse";
   if (status === "COMPLETED") return "Paye";
   if (status === "FAILED") return "Echoue";
   return "En attente";
@@ -49,6 +52,7 @@ const mapPaymentMethod = (method) => {
 const resolvePaymentVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
   if (normalized.includes("paye")) return "success";
+  if (normalized.includes("rembours")) return "warning";
   if (normalized.includes("attente")) return "warning";
   if (normalized.includes("echoue")) return "danger";
   return "neutral";
@@ -65,6 +69,7 @@ function Payments() {
   const displayCurrencyCode = useCurrencyStore(
     (state) => state.settings.primaryCurrencyCode,
   );
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.showToast);
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -73,27 +78,33 @@ function Payments() {
   const [sortValues, setSortValues] = useState(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
+  const [refundPayment, setRefundPayment] = useState(null);
+  const [refundReason, setRefundReason] = useState("");
+  const [submittingRefund, setSubmittingRefund] = useState(false);
+  const canReadPayments = hasAnyPermission(user, ["payments.read"]);
+  const canRefundPayments = hasAnyPermission(user, ["payments.refund"]);
+
+  const loadPayments = async (isMounted = true) => {
+    setLoading(true);
+    try {
+      const data = await apiGet("/api/payments");
+      if (!isMounted) return;
+      const list = Array.isArray(data?.data) ? data.data : data;
+      setPayments(Array.isArray(list) ? list : []);
+    } catch (error) {
+      showToast({
+        title: "Erreur",
+        message: error.message || "Impossible de charger les paiements.",
+        variant: "danger",
+      });
+    } finally {
+      if (isMounted) setLoading(false);
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
-    const load = async () => {
-      setLoading(true);
-      try {
-        const data = await apiGet("/api/payments");
-        if (!isMounted) return;
-        const list = Array.isArray(data?.data) ? data.data : data;
-        setPayments(Array.isArray(list) ? list : []);
-      } catch (error) {
-        showToast({
-          title: "Erreur",
-          message: error.message || "Impossible de charger les paiements.",
-          variant: "danger",
-        });
-      } finally {
-        if (isMounted) setLoading(false);
-      }
-    };
-    load();
+    loadPayments(isMounted);
     return () => {
       isMounted = false;
     };
@@ -103,6 +114,7 @@ function Payments() {
     () =>
       payments.map((payment) => ({
         id: payment.id,
+        raw: payment,
         paymentId: `#PAY-${shortId(payment.id)}`,
         orderId: payment.orderId
           ? `#ORD-${shortId(payment.orderId)}`
@@ -111,8 +123,16 @@ function Payments() {
           ? formatName(payment.order.customer)
           : "Client comptoir",
         method: mapPaymentMethod(payment.method),
-        amount: formatAmount(payment.amount, payment.currencyCode),
-        status: mapPaymentStatus(payment.status),
+        saleAmount: formatAmount(payment.amount, payment.currencyCode),
+        receivedAmount: formatAmount(
+          payment.originalAmount ?? payment.amount,
+          payment.originalCurrencyCode || payment.currencyCode,
+        ),
+        hasOriginalAmount:
+          Number(payment.originalAmount ?? payment.amount) !== Number(payment.amount) ||
+          String(payment.originalCurrencyCode || payment.currencyCode) !==
+            String(payment.currencyCode),
+        status: mapPaymentStatus(payment.status, payment.order?.status),
         date: formatDate(payment.createdAt),
       })),
     [payments, displayCurrencyCode]
@@ -311,7 +331,16 @@ function Payments() {
           );
         },
       },
-      { header: "Montant", accessor: "amount" },
+      {
+        header: "Montant remis",
+        accessor: "receivedAmount",
+        render: (row) => (
+          <div>
+            <p className="font-medium text-text-primary">{row.receivedAmount}</p>
+            <p className="text-xs text-text-secondary">Vente: {row.saleAmount}</p>
+          </div>
+        ),
+      },
       {
         header: "Statut",
         accessor: "status",
@@ -324,10 +353,31 @@ function Payments() {
     []
   );
 
-  const actionItems = [
-    { id: "view", label: "Voir", icon: Eye },
-    { id: "refund", label: "Rembourser", icon: TrendingUp },
-  ];
+  const handleRefundPayment = async () => {
+    if (!refundPayment?.raw?.id) return;
+    setSubmittingRefund(true);
+    try {
+      await apiPost(`/api/payments/${refundPayment.raw.id}/refund`, {
+        reason: refundReason,
+      });
+      await loadPayments(true);
+      setRefundPayment(null);
+      setRefundReason("");
+      showToast({
+        title: "Remboursement effectue",
+        message: "Le client a ete rembourse et la vente a ete annulee.",
+        variant: "success",
+      });
+    } catch (error) {
+      showToast({
+        title: "Remboursement impossible",
+        message: error.message || "Impossible de rembourser ce client.",
+        variant: "danger",
+      });
+    } finally {
+      setSubmittingRefund(false);
+    }
+  };
 
   return (
     <section className="w-full h-full flex flex-col gap-4 p-4">
@@ -349,16 +399,38 @@ function Payments() {
         description="Toutes les transactions enregistrees"
         columns={columns}
         data={pagedPayments}
-        emptyMessage={loading ? "Chargement..." : "Aucune donnee"}
+        emptyMessage={
+          !canReadPayments
+            ? "Vous n'avez pas la permission de consulter les paiements."
+            : loading
+              ? "Chargement..."
+              : "Aucune donnee"
+        }
         enableSelection={false}
         actionsHeader="Action"
-        renderActions={() => (
-          <DropdownAction
-            label={<EllipsisVertical size={18} strokeWidth={1.5} />}
-            items={actionItems}
-            buttonClassName="rounded-lg bg-transparent p-1 text-text-primary hover:bg-header"
-          />
-        )}
+        renderActions={(row) =>
+          canRefundPayments ? (
+            <DropdownAction
+              label={<EllipsisVertical size={18} strokeWidth={1.5} />}
+              items={[
+                {
+                  id: "refund",
+                  label: "Rembourser",
+                  icon: TrendingUp,
+                  variant: "danger",
+                  disabled:
+                    row.raw?.status !== "COMPLETED" ||
+                    row.raw?.order?.status === "CANCELED",
+                  onClick: () => {
+                    setRefundPayment(row);
+                    setRefundReason("");
+                  },
+                },
+              ]}
+              buttonClassName="rounded-lg bg-transparent p-1 text-text-primary hover:bg-header"
+            />
+          ) : null
+        }
         searchInput={{
           name: "search",
           value: search,
@@ -399,6 +471,32 @@ function Payments() {
         }}
         tableMaxHeightClass="max-h-[46vh]"
       />
+
+      <Modal
+        isOpen={Boolean(refundPayment)}
+        title="Rembourser le client"
+        description="Le remboursement annulera aussi la vente et remettra le stock des composants en boutique."
+        confirmLabel={submittingRefund ? "Remboursement..." : "Rembourser"}
+        cancelLabel="Annuler"
+        onCancel={() => {
+          if (submittingRefund) return;
+          setRefundPayment(null);
+          setRefundReason("");
+        }}
+        onConfirm={handleRefundPayment}
+        confirmButtonClassName="bg-red-600 hover:bg-red-700"
+      >
+        <label className="flex flex-col gap-2 text-sm text-text-primary">
+          <span>Motif</span>
+          <textarea
+            value={refundReason}
+            onChange={(event) => setRefundReason(event.target.value)}
+            rows={3}
+            className="rounded-lg border border-border bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-accent"
+            placeholder="Expliquez le remboursement pour l'historique"
+          />
+        </label>
+      </Modal>
     </section>
   );
 }
