@@ -1,12 +1,17 @@
 const SELLER_DEFAULT_PERMISSION_CODES = Object.freeze([
+  "sales.read",
+  "sales.create",
+  "payments.read",
   "stock_state.read",
   "movements.read",
   "movements.create",
   "movements.update",
+  "movements.delete_own_draft",
   "transfers.read",
   "purchase_requests.read",
   "purchase_requests.create",
   "purchase_requests.update_own_draft",
+  "purchase_requests.delete_own_draft",
 ]);
 
 const normalizePermissionCode = (entry) => {

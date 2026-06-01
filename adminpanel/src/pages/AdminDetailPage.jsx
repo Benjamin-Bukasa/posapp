@@ -434,7 +434,7 @@ const AdminDetailPage = () => {
   }, [currentApproval, currentUser, isApprovalRequest]);
 
   const canEdit =
-    detailConfig?.canEdit?.(record) &&
+    detailConfig?.canEdit?.(record, currentUser) &&
     hasAnyPermission(
       currentUser,
       detailConfig?.editPermissions ||
@@ -461,11 +461,11 @@ const AdminDetailPage = () => {
   const canSendPurchaseOrder =
     isPurchaseOrder &&
     ["DRAFT", "REJECTED"].includes(record?.status) &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["purchase_orders.update"]);
+  const canDevalidatePurchaseOrder =
+    isPurchaseOrder &&
+    ["SUBMITTED", "REJECTED", "SENT", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["purchase_orders.devalidate"]);
   const currentStockEntryApproval = useMemo(() => {
     if (!isStockEntry) return null;
     return (
@@ -492,7 +492,11 @@ const AdminDetailPage = () => {
   const canRejectStockEntry =
     isStockEntry && Boolean(record?.approvals?.length) && canDecideStockEntryApproval;
   const canPostStockEntry =
-    isStockEntry && record?.status === "APPROVED" && isAdminUser;
+    isStockEntry && record?.status === "APPROVED" && hasAnyPermission(currentUser, ["movements.update"]);
+  const canDevalidateStockEntry =
+    isStockEntry &&
+    ["SUBMITTED", "REJECTED", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["movements.devalidate"]);
   const currentTransferApproval = useMemo(() => {
     if (!isTransfer) return null;
     return (
@@ -514,11 +518,11 @@ const AdminDetailPage = () => {
   const canSubmitTransfer =
     isTransfer &&
     ["DRAFT", "REJECTED"].includes(record?.status) &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["transfers.update"]);
+  const canDevalidateTransfer =
+    isTransfer &&
+    ["SUBMITTED", "REJECTED", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["transfers.devalidate"]);
   const currentSupplierReturnApproval = useMemo(() => {
     if (!isSupplierReturn) return null;
     return (
@@ -540,19 +544,15 @@ const AdminDetailPage = () => {
   const canSubmitSupplierReturn =
     isSupplierReturn &&
     ["DRAFT", "REJECTED"].includes(record?.status) &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["movements.update"]);
   const canPostSupplierReturn =
     isSupplierReturn &&
     record?.status === "APPROVED" &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["movements.update"]);
+  const canDevalidateSupplierReturn =
+    isSupplierReturn &&
+    ["SUBMITTED", "REJECTED", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["movements.devalidate"]);
   const currentInventoryApproval = useMemo(() => {
     if (!isInventorySession) return null;
 
@@ -576,19 +576,19 @@ const AdminDetailPage = () => {
   const canSubmitInventorySession =
     isInventorySession &&
     ["DRAFT", "REJECTED"].includes(record?.status) &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["inventory.update"]);
   const canCloseInventorySession =
     isInventorySession &&
     record?.status === "APPROVED" &&
-    hasAnyPermission(
-      currentUser,
-      detailConfig?.editPermissions ||
-        getRouteActionPermissions(detailConfig?.resourcePath || currentRoute.path, "edit"),
-    );
+    hasAnyPermission(currentUser, ["inventory.update"]);
+  const canDevalidateInventorySession =
+    isInventorySession &&
+    ["SUBMITTED", "REJECTED", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["inventory.devalidate"]);
+  const canDevalidatePurchaseRequest =
+    detailConfig?.resourcePath === "/commande/demande-achat" &&
+    ["SUBMITTED", "REJECTED", "APPROVED"].includes(record?.status) &&
+    hasAnyPermission(currentUser, ["purchase_requests.devalidate"]);
 
   const runAction = async ({ key, endpoint, body, successMessage }) => {
     if (!recordId || !accessToken) {
@@ -1019,49 +1019,72 @@ const cashSessionMovementColumns = useMemo(
                     </p>
                   )}
 
-                  {canDecideApproval ? (
+                  {canDecideApproval || canDevalidatePurchaseRequest ? (
                     <div className="mt-4 space-y-3">
-                      <textarea
-                        rows={4}
-                        value={decisionNote}
-                        onChange={(event) => setDecisionNote(event.target.value)}
-                        placeholder="Note de validation ou de rejet"
-                        className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
-                      />
+                      {canDecideApproval ? (
+                        <textarea
+                          rows={4}
+                          value={decisionNote}
+                          onChange={(event) => setDecisionNote(event.target.value)}
+                          placeholder="Note de validation ou de rejet"
+                          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
+                        />
+                      ) : null}
 
                       <div className="flex flex-wrap items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() =>
-                            runAction({
-                              key: "approve",
-                              endpoint: `${approvalBase}/${recordId}/approve`,
-                              body: decisionNote ? { note: decisionNote } : undefined,
-                              successMessage: "Document valide.",
-                            })
-                          }
-                          disabled={Boolean(pendingAction)}
-                          className="inline-flex items-center gap-2 rounded-xl bg-success px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <CheckCircle2 size={16} />
-                          Valider
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            runAction({
-                              key: "reject",
-                              endpoint: `${approvalBase}/${recordId}/reject`,
-                              body: decisionNote ? { note: decisionNote } : undefined,
-                              successMessage: "Document rejete.",
-                            })
-                          }
-                          disabled={Boolean(pendingAction)}
-                          className="inline-flex items-center gap-2 rounded-xl bg-danger px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
-                        >
-                          <XCircle size={16} />
-                          Rejeter
-                        </button>
+                        {canDevalidatePurchaseRequest ? (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              runAction({
+                                key: "devalidate-purchase-request",
+                                endpoint: `/api/purchase-requests/${recordId}/devalidate`,
+                                successMessage: "Demande d'achat remise en brouillon.",
+                              })
+                            }
+                            disabled={Boolean(pendingAction)}
+                            className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            <Pencil size={16} />
+                            Devalider
+                          </button>
+                        ) : null}
+                        {canDecideApproval ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "approve",
+                                  endpoint: `${approvalBase}/${recordId}/approve`,
+                                  body: decisionNote ? { note: decisionNote } : undefined,
+                                  successMessage: "Document valide.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl bg-success px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <CheckCircle2 size={16} />
+                              Valider
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "reject",
+                                  endpoint: `${approvalBase}/${recordId}/reject`,
+                                  body: decisionNote ? { note: decisionNote } : undefined,
+                                  successMessage: "Document rejete.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl bg-danger px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <XCircle size={16} />
+                              Rejeter
+                            </button>
+                          </>
+                        ) : null}
                       </div>
                     </div>
                   ) : (
@@ -1118,17 +1141,38 @@ const cashSessionMovementColumns = useMemo(
                       </p>
                     )}
 
-                    {canSendPurchaseOrder || canDecidePurchaseOrderApproval ? (
+                    {canSendPurchaseOrder ||
+                    canDecidePurchaseOrderApproval ||
+                    canDevalidatePurchaseOrder ? (
                       <div className="space-y-3">
-                        <textarea
-                          rows={4}
-                          value={decisionNote}
-                          onChange={(event) => setDecisionNote(event.target.value)}
-                          placeholder="Note de workflow"
-                          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
-                        />
+                        {canSendPurchaseOrder || canDecidePurchaseOrderApproval ? (
+                          <textarea
+                            rows={4}
+                            value={decisionNote}
+                            onChange={(event) => setDecisionNote(event.target.value)}
+                            placeholder="Note de workflow"
+                            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
+                          />
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {canDevalidatePurchaseOrder ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "devalidate-purchase-order",
+                                  endpoint: `/api/purchase-orders/${recordId}/devalidate`,
+                                  successMessage: "Commande remise en brouillon.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Pencil size={16} />
+                              Devalider
+                            </button>
+                          ) : null}
                           {canSendPurchaseOrder ? (
                             <button
                               type="button"
@@ -1273,6 +1317,24 @@ const cashSessionMovementColumns = useMemo(
                       </button>
                     ) : null}
 
+                    {canDevalidateStockEntry ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          runAction({
+                            key: "devalidate-stock-entry",
+                            endpoint: `/api/stock-entries/${recordId}/devalidate`,
+                            successMessage: "Mouvement remis en attente.",
+                          })
+                        }
+                        disabled={Boolean(pendingAction)}
+                        className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Pencil size={16} />
+                        Devalider
+                      </button>
+                    ) : null}
+
                     {canRejectStockEntry ? (
                       <button
                         type="button"
@@ -1310,7 +1372,7 @@ const cashSessionMovementColumns = useMemo(
                       </button>
                     ) : null}
 
-                    {!canApproveStockEntry && !canPostStockEntry ? (
+                    {!canApproveStockEntry && !canPostStockEntry && !canDevalidateStockEntry ? (
                       <p className="text-sm text-text-secondary">
                         Aucune action disponible pour cette entree de stock dans son etat actuel.
                       </p>
@@ -1365,17 +1427,38 @@ const cashSessionMovementColumns = useMemo(
                       </p>
                     )}
 
-                    {canSubmitTransfer || canDecideTransferApproval ? (
+                    {canSubmitTransfer ||
+                    canDecideTransferApproval ||
+                    canDevalidateTransfer ? (
                       <div className="space-y-3">
-                        <textarea
-                          rows={4}
-                          value={decisionNote}
-                          onChange={(event) => setDecisionNote(event.target.value)}
-                          placeholder="Note de workflow"
-                          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
-                        />
+                        {canSubmitTransfer || canDecideTransferApproval ? (
+                          <textarea
+                            rows={4}
+                            value={decisionNote}
+                            onChange={(event) => setDecisionNote(event.target.value)}
+                            placeholder="Note de workflow"
+                            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
+                          />
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {canDevalidateTransfer ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "devalidate-transfer",
+                                  endpoint: `/api/transfers/${recordId}/devalidate`,
+                                  successMessage: "Transfert remis en brouillon.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Pencil size={16} />
+                              Devalider
+                            </button>
+                          ) : null}
                           {canSubmitTransfer ? (
                             <button
                               type="button"
@@ -1487,17 +1570,39 @@ const cashSessionMovementColumns = useMemo(
 
                     {canSubmitSupplierReturn ||
                     canDecideSupplierReturnApproval ||
-                    canPostSupplierReturn ? (
+                    canPostSupplierReturn ||
+                    canDevalidateSupplierReturn ? (
                       <div className="space-y-3">
-                        <textarea
-                          rows={4}
-                          value={decisionNote}
-                          onChange={(event) => setDecisionNote(event.target.value)}
-                          placeholder="Note de workflow"
-                          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
-                        />
+                        {canSubmitSupplierReturn ||
+                        canDecideSupplierReturnApproval ||
+                        canPostSupplierReturn ? (
+                          <textarea
+                            rows={4}
+                            value={decisionNote}
+                            onChange={(event) => setDecisionNote(event.target.value)}
+                            placeholder="Note de workflow"
+                            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
+                          />
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {canDevalidateSupplierReturn ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "devalidate-supplier-return",
+                                  endpoint: `/api/supplier-returns/${recordId}/devalidate`,
+                                  successMessage: "Retour fournisseur remis en brouillon.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Pencil size={16} />
+                              Devalider
+                            </button>
+                          ) : null}
                           {canSubmitSupplierReturn ? (
                             <button
                               type="button"
@@ -1643,17 +1748,41 @@ const cashSessionMovementColumns = useMemo(
                       </p>
                     )}
 
-                    {canSubmitInventorySession || canDecideInventoryApproval || canCloseInventorySession ? (
+                    {canSubmitInventorySession ||
+                    canDecideInventoryApproval ||
+                    canCloseInventorySession ||
+                    canDevalidateInventorySession ? (
                       <div className="space-y-3">
-                        <textarea
-                          rows={4}
-                          value={decisionNote}
-                          onChange={(event) => setDecisionNote(event.target.value)}
-                          placeholder="Note de workflow"
-                          className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
-                        />
+                        {canSubmitInventorySession ||
+                        canDecideInventoryApproval ||
+                        canCloseInventorySession ? (
+                          <textarea
+                            rows={4}
+                            value={decisionNote}
+                            onChange={(event) => setDecisionNote(event.target.value)}
+                            placeholder="Note de workflow"
+                            className="w-full rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary"
+                          />
+                        ) : null}
 
                         <div className="flex flex-wrap items-center gap-2">
+                          {canDevalidateInventorySession ? (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                runAction({
+                                  key: "devalidate-inventory",
+                                  endpoint: `/api/inventory/sessions/${recordId}/devalidate`,
+                                  successMessage: "Inventaire remis en brouillon.",
+                                })
+                              }
+                              disabled={Boolean(pendingAction)}
+                              className="inline-flex items-center gap-2 rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary transition hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              <Pencil size={16} />
+                              Devalider
+                            </button>
+                          ) : null}
                           {canSubmitInventorySession ? (
                             <button
                               type="button"

@@ -54,8 +54,20 @@ router.post(
 router.patch(
   "/sessions/:id/counts",
   auth,
-  requirePermission("inventory.update"),
+  requirePermission("inventory.update", "inventory.update_own_draft"),
   inventorySessionController.updateCounts
+);
+router.delete(
+  "/sessions/:id",
+  auth,
+  requirePermission("inventory.delete", "inventory.delete_own_draft"),
+  inventorySessionController.remove
+);
+router.post(
+  "/sessions/:id/devalidate",
+  auth,
+  requirePermission("inventory.devalidate"),
+  inventorySessionController.devalidate
 );
 router.post(
   "/sessions/:id/submit",

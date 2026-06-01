@@ -399,6 +399,10 @@ const AdminCreatePage = () => {
 
       const stateRow = location.state?.row;
       if (stateRow && formConfig.buildFormValues) {
+        if (formConfig.canEdit && !formConfig.canEdit(stateRow, user)) {
+          setError("Vous n'avez pas la permission de modifier cette fiche.");
+          return;
+        }
         setValues((current) => ({
           ...current,
           ...formConfig.buildFormValues(stateRow),
@@ -418,6 +422,10 @@ const AdminCreatePage = () => {
         });
 
         if (ignore) return;
+        if (formConfig.canEdit && !formConfig.canEdit(payload, user)) {
+          setError("Vous n'avez pas la permission de modifier cette fiche.");
+          return;
+        }
         if (formConfig.buildFormValues) {
           setValues((current) => ({
             ...current,
@@ -461,6 +469,7 @@ const AdminCreatePage = () => {
     navigate,
     recordId,
     showToast,
+    user,
   ]);
 
   useEffect(() => {
@@ -872,7 +881,9 @@ const AdminCreatePage = () => {
             <div
               key={field.name}
               className={
-                field.type === "textarea" || field.type === "image-upload"
+                field.type === "textarea" ||
+                field.type === "image-upload" ||
+                field.type === "permission-matrix"
                   ? "md:col-span-2"
                   : ""
               }

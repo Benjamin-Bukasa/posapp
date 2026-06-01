@@ -100,16 +100,16 @@ const deleteProductCollection = async (req, res) => {
     return res.status(404).json({ message: "Collection introuvable." });
   }
 
-  const categoryRows = await prisma.$queryRawUnsafe(`
+  const familyRows = await prisma.$queryRawUnsafe(`
     SELECT COUNT(*)::int AS "count"
-    FROM "productCategories"
+    FROM "productFamilies"
     WHERE "tenantId" = '${String(req.user.tenantId).replace(/'/g, "''")}'
       AND "collectionId" = '${String(id).replace(/'/g, "''")}'
   `);
 
-  if ((categoryRows?.[0]?.count || 0) > 0) {
+  if ((familyRows?.[0]?.count || 0) > 0) {
     return res.status(400).json({
-      message: "La collection contient des categories. Supprimez-les d'abord.",
+      message: "La collection contient des familles. Supprimez-les d'abord.",
     });
   }
 

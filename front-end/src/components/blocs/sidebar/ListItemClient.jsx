@@ -3,6 +3,11 @@ import { NavLink, useLocation } from "react-router-dom";
 import { ChevronDown } from "lucide-react";
 import { items } from "../../../utils/sidebarItems";
 import useUiStore from "../../../stores/uiStore";
+import useAuthStore from "../../../stores/authStore";
+import {
+  canAccessSidebarItem,
+  filterSidebarChildren,
+} from "../../../utils/routePermissions";
 
 const CLIENT_LINKS = new Set([
   "dashboard",
@@ -19,14 +24,26 @@ const CLIENT_LINKS = new Set([
 const ListItemClient = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
   const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
+  const user = useAuthStore((state) => state.user);
   const location = useLocation();
   const [openGroups, setOpenGroups] = useState({});
   const expandedContentClass = isSidebarOpen ? "block" : "block lg:hidden";
   const expandedFlexClass = isSidebarOpen ? "" : "lg:hidden";
 
   const navItems = useMemo(
-    () => items.filter((item) => CLIENT_LINKS.has(item.link)),
-    []
+    () =>
+      items
+        .filter((item) => CLIENT_LINKS.has(item.link))
+        .map((item) =>
+          item.children?.length
+            ? {
+                ...item,
+                children: filterSidebarChildren(user, item.children),
+              }
+            : item,
+        )
+        .filter((item) => canAccessSidebarItem(user, item)),
+    [user]
   );
 
   const isPathActive = (path) => {

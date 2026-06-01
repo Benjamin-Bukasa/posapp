@@ -10,11 +10,13 @@ const { sendExport } = require("../utils/exporter");
 const { emitToStore, emitToTenant } = require("../socket");
 const { buildPurchaseRequestPdf } = require("../services/purchaseRequestPdf");
 const { hasPermission } = require("../utils/permissionAccess");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 const {
   attachDocumentCodes,
   assignGeneratedDocumentCode,
 } = require("../utils/documentCodeStore");
 const { expandArticleItems } = require("../utils/expandArticleItems");
+const { sendErrorResponse } = require("../utils/httpErrors");
 
 const isSeller = (user) => user?.role === "SELLER";
 
@@ -154,9 +156,11 @@ const createPurchaseRequest = async (req, res) => {
       items,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de preparer les lignes de demande d'achat.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible de preparer les lignes de demande d'achat.",
+    );
   }
 
   let purchaseRequest = await prisma.purchaseRequest.create({
@@ -568,7 +572,7 @@ const updatePurchaseRequest = async (req, res) => {
   const canUpdateOwnDraft =
     hasPermission(req.user, "purchase_requests.update_own_draft") &&
     request.requestedById === req.user.id &&
-    request.status === "DRAFT";
+    ["DRAFT", "SUBMITTED", "REJECTED"].includes(request.status);
 
   if (!canUpdateAny && !canUpdateOwnDraft) {
     return res.status(403).json({
@@ -614,9 +618,11 @@ const updatePurchaseRequest = async (req, res) => {
       items,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de preparer les lignes de demande d'achat.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible de preparer les lignes de demande d'achat.",
+    );
   }
 
   if (request.status !== "DRAFT") {
@@ -667,7 +673,23 @@ const deletePurchaseRequest = async (req, res) => {
     return res.status(404).json({ message: "Purchase request not found." });
   }
 
-  if (request.status !== "DRAFT") {
+  const canDelete = hasScopedPermission({
+    user: req.user,
+    fullPermission: "purchase_requests.delete",
+    ownPermission: "purchase_requests.delete_own_draft",
+    ownerId: request.requestedById,
+    status: request.status,
+    allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+  });
+
+  if (!canDelete) {
+    return res.status(403).json({
+      message:
+        "Vous n'avez pas la permission de supprimer cette demande d'achat.",
+    });
+  }
+
+  if (!["DRAFT", "SUBMITTED", "REJECTED"].includes(request.status)) {
     return res.status(400).json({
       message: "Only non-validated purchase requests can be deleted.",
     });
@@ -675,6 +697,46 @@ const deletePurchaseRequest = async (req, res) => {
 
   await prisma.purchaseRequest.delete({ where: { id } });
   return res.json({ message: "Purchase request deleted." });
+};
+
+const devalidatePurchaseRequest = async (req, res) => {
+  const { id } = req.params;
+
+  const request = await prisma.purchaseRequest.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+  });
+
+  if (!request) {
+    return res.status(404).json({ message: "Purchase request not found." });
+  }
+
+  if (request.status === "ORDERED") {
+    return res.status(409).json({
+      message: "A purchase request already linked to an order cannot be devalidated.",
+    });
+  }
+
+  if (!["SUBMITTED", "APPROVED", "REJECTED"].includes(request.status)) {
+    return res.status(409).json({
+      message: "Only non-closed validated purchase requests can be devalidated.",
+    });
+  }
+
+  await resetPurchaseRequestApprovals(id);
+
+  const updated = await prisma.purchaseRequest.update({
+    where: { id },
+    data: { status: "DRAFT" },
+    include: {
+      items: { include: { product: true, unit: true } },
+      approvals: true,
+      store: true,
+      requestedBy: true,
+      supplyRequest: true,
+    },
+  });
+
+  return res.json(await attachDocumentCodes("purchaseRequests", updated));
 };
 
 module.exports = {
@@ -687,4 +749,5 @@ module.exports = {
   rejectPurchaseRequest,
   updatePurchaseRequest,
   deletePurchaseRequest,
+  devalidatePurchaseRequest,
 };

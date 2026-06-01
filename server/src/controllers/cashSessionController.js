@@ -13,6 +13,7 @@ const {
   recordCashMovement,
 } = require("../utils/cashSessionStore");
 const { emitToStore, emitToTenant, emitToUser } = require("../socket");
+const { sendErrorResponse } = require("../utils/httpErrors");
 
 const toMoney = (value) => {
   const amount = Number(value);
@@ -190,9 +191,7 @@ const open = async (req, res) => {
       currencyCode: currencySettings.primaryCurrencyCode,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible d'ouvrir la caisse.",
-    });
+    return sendErrorResponse(res, error, "Impossible d'ouvrir la caisse.");
   }
 };
 
@@ -249,9 +248,7 @@ const close = async (req, res) => {
       currencyCode: currencySettings.primaryCurrencyCode,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de cloturer la caisse.",
-    });
+    return sendErrorResponse(res, error, "Impossible de cloturer la caisse.");
   }
 };
 
@@ -391,9 +388,11 @@ const addMovement = async (req, res) => {
       currencyCode: currencySettings.primaryCurrencyCode,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible d'enregistrer le mouvement de caisse.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible d'enregistrer le mouvement de caisse.",
+    );
   }
 };
 

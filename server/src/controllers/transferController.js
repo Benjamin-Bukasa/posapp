@@ -22,10 +22,13 @@ const {
   getDocumentApprovalMap,
   getDocumentApprovals,
   prepareDocumentApprovals,
+  resetDocumentApprovals,
   decideDocumentApproval,
   ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
 const { expandArticleItems } = require("../utils/expandArticleItems");
+const { sendErrorResponse } = require("../utils/httpErrors");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 
 const TRANSFER_DOCUMENT_TYPE = "TRANSFER";
 const TRANSFER_FLOW_CODE = "TRANSFER";
@@ -73,22 +76,16 @@ const decorateTransfersWithApprovals = async (records, { includeApprovals = true
 };
 
 const canModifyTransfer = async (tenantId, transfer) => {
-  if (transfer.status !== "DRAFT") return false;
+  if (!["DRAFT", "IN_TRANSIT"].includes(transfer.status)) return false;
   return true;
 };
 
 const resetTransferApprovals = async (tenantId, transferId) => {
-  await ensureDocumentApprovalTable();
-  await prisma.$executeRawUnsafe(`
-    UPDATE "documentApprovals"
-    SET
-      "status" = 'PENDING',
-      "decidedAt" = NULL,
-      "note" = NULL
-    WHERE "tenantId" = ${JSON.stringify(tenantId)}
-      AND "documentType" = ${JSON.stringify(TRANSFER_DOCUMENT_TYPE)}
-      AND "documentId" = ${JSON.stringify(transferId)}
-  `);
+  await resetDocumentApprovals({
+    tenantId,
+    documentType: TRANSFER_DOCUMENT_TYPE,
+    documentId: transferId,
+  });
 };
 
 const includesSearch = (value, search) =>
@@ -256,9 +253,7 @@ const createTransfer = async (req, res) => {
       items,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Transfert invalide.",
-    });
+    return sendErrorResponse(res, error, "Transfert invalide.");
   }
 
   try {
@@ -267,9 +262,7 @@ const createTransfer = async (req, res) => {
       items: expandedItems,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Transfert invalide.",
-    });
+    return sendErrorResponse(res, error, "Transfert invalide.");
   }
 
   const transfer = await prisma.productTransfer.create({
@@ -490,8 +483,23 @@ const updateTransfer = async (req, res) => {
     return res.status(404).json({ message: "Transfer not found." });
   }
 
+  const canUpdate = hasScopedPermission({
+    user: req.user,
+    fullPermission: "transfers.update",
+    ownPermission: "transfers.update_own_draft",
+    ownerId: transfer.requestedById,
+    status: transfer.status,
+    allowedStatuses: ["DRAFT", "IN_TRANSIT"],
+  });
+
+  if (!canUpdate) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de modifier ce transfert.",
+    });
+  }
+
   if (!(await canModifyTransfer(req.user.tenantId, transfer))) {
-    return res.status(400).json({ message: "Only draft transfers can be edited." });
+    return res.status(400).json({ message: "Only non-validated transfers can be edited." });
   }
 
   await resetTransferApprovals(req.user.tenantId, id);
@@ -510,9 +518,7 @@ const updateTransfer = async (req, res) => {
       items,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Transfert invalide.",
-    });
+    return sendErrorResponse(res, error, "Transfert invalide.");
   }
 
   try {
@@ -521,9 +527,7 @@ const updateTransfer = async (req, res) => {
       items: expandedItems,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Transfert invalide.",
-    });
+    return sendErrorResponse(res, error, "Transfert invalide.");
   }
 
   await prisma.productTransferItem.deleteMany({
@@ -533,6 +537,7 @@ const updateTransfer = async (req, res) => {
   const updated = await prisma.productTransfer.update({
     where: { id },
     data: {
+      status: "DRAFT",
       fromStoreId,
       toStoreId,
       fromZoneId,
@@ -575,12 +580,74 @@ const deleteTransfer = async (req, res) => {
     return res.status(404).json({ message: "Transfer not found." });
   }
 
+  const canDelete = hasScopedPermission({
+    user: req.user,
+    fullPermission: "transfers.delete",
+    ownPermission: "transfers.delete_own_draft",
+    ownerId: transfer.requestedById,
+    status: transfer.status,
+    allowedStatuses: ["DRAFT", "IN_TRANSIT"],
+  });
+
+  if (!canDelete) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de supprimer ce transfert.",
+    });
+  }
+
   if (!(await canModifyTransfer(req.user.tenantId, transfer))) {
-    return res.status(400).json({ message: "Only draft transfers can be deleted." });
+    return res.status(400).json({ message: "Only non-validated transfers can be deleted." });
   }
 
   await prisma.productTransfer.delete({ where: { id } });
   return res.json({ message: "Transfer deleted." });
+};
+
+const devalidateTransfer = async (req, res) => {
+  const { id } = req.params;
+
+  const transfer = await prisma.productTransfer.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    include: {
+      items: { include: { product: true, unit: true } },
+      fromStore: true,
+      toStore: true,
+      fromZone: true,
+      toZone: true,
+      requestedBy: true,
+    },
+  });
+
+  if (!transfer) {
+    return res.status(404).json({ message: "Transfer not found." });
+  }
+
+  if (["COMPLETED", "CANCELED"].includes(transfer.status)) {
+    return res.status(409).json({
+      message: "This transfer can no longer be devalidated.",
+    });
+  }
+
+  await resetTransferApprovals(req.user.tenantId, id);
+
+  const updated = await prisma.productTransfer.update({
+    where: { id },
+    data: { status: "DRAFT" },
+    include: {
+      items: { include: { product: true, unit: true } },
+      fromStore: true,
+      toStore: true,
+      fromZone: true,
+      toZone: true,
+      requestedBy: true,
+    },
+  });
+
+  return res.json(
+    await decorateTransfersWithApprovals(
+      await attachDocumentCodes("productTransferts", updated),
+    ),
+  );
 };
 
 const executeTransferCompletion = async (transfer, userId) => {
@@ -737,9 +804,7 @@ const completeTransfer = async (req, res) => {
       });
     }
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de finaliser ce transfert.",
-    });
+    return sendErrorResponse(res, error, "Impossible de finaliser ce transfert.");
   }
 
   return res.json(
@@ -802,9 +867,7 @@ const approveTransfer = async (req, res) => {
       ),
     );
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de valider ce transfert.",
-    });
+    return sendErrorResponse(res, error, "Impossible de valider ce transfert.");
   }
 };
 
@@ -869,9 +932,7 @@ const rejectTransfer = async (req, res) => {
       ),
     );
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de rejeter ce transfert.",
-    });
+    return sendErrorResponse(res, error, "Impossible de rejeter ce transfert.");
   }
 };
 
@@ -911,6 +972,7 @@ module.exports = {
   getTransferPdf,
   updateTransfer,
   deleteTransfer,
+  devalidateTransfer,
   completeTransfer,
   approveTransfer,
   rejectTransfer,

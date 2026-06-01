@@ -19,9 +19,11 @@ const {
   getDocumentApprovals,
   getDocumentApprovalMap,
   prepareDocumentApprovals,
+  resetDocumentApprovals,
   decideDocumentApproval,
   ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 
 const SUPPLIER_RETURN_DOCUMENT_TYPE = "SUPPLIER_RETURN";
 const SUPPLIER_RETURN_FLOW_CODE = "SUPPLIER_RETURN";
@@ -247,17 +249,11 @@ const canModifySupplierReturn = async (tenantId, record) => {
 };
 
 const resetSupplierReturnApprovals = async (tenantId, supplierReturnId) => {
-  await ensureDocumentApprovalTable();
-  await prisma.$executeRawUnsafe(`
-    UPDATE "documentApprovals"
-    SET
-      "status" = 'PENDING',
-      "decidedAt" = NULL,
-      "note" = NULL
-    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
-      AND "documentType" = ${escapeSqlValue(SUPPLIER_RETURN_DOCUMENT_TYPE)}
-      AND "documentId" = ${escapeSqlValue(supplierReturnId)}
-  `);
+  await resetDocumentApprovals({
+    tenantId,
+    documentType: SUPPLIER_RETURN_DOCUMENT_TYPE,
+    documentId: supplierReturnId,
+  });
 };
 
 const listSupplierReturns = async (req, res) => {
@@ -434,6 +430,19 @@ const updateSupplierReturn = async (req, res) => {
   if (!record) {
     return res.status(404).json({ message: "Supplier return not found." });
   }
+  const canUpdate = hasScopedPermission({
+    user: req.user,
+    fullPermission: "movements.update",
+    ownPermission: "movements.update_own_draft",
+    ownerId: record.requestedById,
+    status: record.status,
+    allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+  });
+  if (!canUpdate) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de modifier ce retour fournisseur.",
+    });
+  }
   if (!(await canModifySupplierReturn(req.user.tenantId, record))) {
     return res.status(400).json({ message: "Only draft supplier returns can be edited." });
   }
@@ -508,8 +517,21 @@ const deleteSupplierReturn = async (req, res) => {
   if (!record) {
     return res.status(404).json({ message: "Supplier return not found." });
   }
+  const canDelete = hasScopedPermission({
+    user: req.user,
+    fullPermission: "movements.delete",
+    ownPermission: "movements.delete_own_draft",
+    ownerId: record.requestedById,
+    status: record.status,
+    allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+  });
+  if (!canDelete) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de supprimer ce retour fournisseur.",
+    });
+  }
   if (!(await canModifySupplierReturn(req.user.tenantId, record))) {
-    return res.status(400).json({ message: "Only draft supplier returns can be deleted." });
+    return res.status(400).json({ message: "Only non-validated supplier returns can be deleted." });
   }
   await prisma.$executeRawUnsafe(`
     DELETE FROM "supplierReturns"
@@ -517,6 +539,39 @@ const deleteSupplierReturn = async (req, res) => {
       AND "id" = ${escapeSqlValue(record.id)}
   `);
   return res.json({ message: "Supplier return deleted." });
+};
+
+const devalidateSupplierReturn = async (req, res) => {
+  await ensureSupplierReturnTables();
+  const record = await getSupplierReturnById(req.user.tenantId, req.params.id);
+  if (!record) {
+    return res.status(404).json({ message: "Supplier return not found." });
+  }
+  if (record.status === "POSTED") {
+    return res.status(409).json({
+      message: "A posted supplier return cannot be devalidated.",
+    });
+  }
+  if (!["SUBMITTED", "APPROVED", "REJECTED"].includes(record.status)) {
+    return res.status(409).json({
+      message: "This supplier return cannot be devalidated in its current state.",
+    });
+  }
+
+  await resetSupplierReturnApprovals(req.user.tenantId, record.id);
+
+  await prisma.$executeRawUnsafe(`
+    UPDATE "supplierReturns"
+    SET
+      "status" = 'DRAFT',
+      "approvedById" = NULL,
+      "approvedAt" = NULL,
+      "updatedAt" = NOW()
+    WHERE "tenantId" = ${escapeSqlValue(req.user.tenantId)}
+      AND "id" = ${escapeSqlValue(record.id)}
+  `);
+
+  return res.json(await getSupplierReturnById(req.user.tenantId, record.id));
 };
 
 const submitSupplierReturn = async (req, res) => {
@@ -697,6 +752,7 @@ module.exports = {
   getSupplierReturn,
   updateSupplierReturn,
   deleteSupplierReturn,
+  devalidateSupplierReturn,
   submitSupplierReturn,
   approveSupplierReturn,
   rejectSupplierReturn,

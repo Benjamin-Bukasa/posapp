@@ -12,12 +12,16 @@ const {
   getInventorySessionApprovals,
   createInventorySession,
   updateInventorySessionCounts,
+  deleteInventorySession,
+  devalidateInventorySession,
   submitInventorySession,
   decideInventorySessionApproval,
   closeInventorySession,
 } = require("../utils/inventorySessionStore");
 const { emitLotExpiryNotifications } = require("../utils/inventoryLotStore");
 const { emitToStore, emitToTenant } = require("../socket");
+const { sendErrorResponse } = require("../utils/httpErrors");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 
 const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
 const INVENTORY_TEMPLATE_SHEET = "InventoryCounts";
@@ -401,9 +405,7 @@ const importTemplate = async (req, res) => {
       session: updated,
     });
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible d'importer cet inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible d'importer cet inventaire.");
   }
 };
 
@@ -456,14 +458,32 @@ const create = async (req, res) => {
 
     return res.status(201).json(await loadInventorySessionDetail(req.user.tenantId, session.id));
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de creer l'inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible de creer l'inventaire.");
   }
 };
 
 const updateCounts = async (req, res) => {
   try {
+    const current = await getInventorySessionById(req.user.tenantId, req.params.id);
+    if (!current) {
+      return res.status(404).json({ message: "Inventaire introuvable." });
+    }
+
+    const canUpdate = hasScopedPermission({
+      user: req.user,
+      fullPermission: "inventory.update",
+      ownPermission: "inventory.update_own_draft",
+      ownerId: current.requestedById,
+      status: current.status,
+      allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+    });
+
+    if (!canUpdate) {
+      return res.status(403).json({
+        message: "Vous n'avez pas la permission de modifier cet inventaire.",
+      });
+    }
+
     const session = await updateInventorySessionCounts({
       tenantId: req.user.tenantId,
       sessionId: req.params.id,
@@ -479,9 +499,67 @@ const updateCounts = async (req, res) => {
 
     return res.json(await loadInventorySessionDetail(req.user.tenantId, session.id));
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de mettre a jour les comptages.",
+    return sendErrorResponse(res, error, "Impossible de mettre a jour les comptages.");
+  }
+};
+
+const remove = async (req, res) => {
+  try {
+    const current = await getInventorySessionById(req.user.tenantId, req.params.id);
+    if (!current) {
+      return res.status(404).json({ message: "Inventaire introuvable." });
+    }
+
+    const canDelete = hasScopedPermission({
+      user: req.user,
+      fullPermission: "inventory.delete",
+      ownPermission: "inventory.delete_own_draft",
+      ownerId: current.requestedById,
+      status: current.status,
+      allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
     });
+
+    if (!canDelete) {
+      return res.status(403).json({
+        message: "Vous n'avez pas la permission de supprimer cet inventaire.",
+      });
+    }
+
+    const session = await deleteInventorySession({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+    });
+
+    emitInventoryEvent(req.user.tenantId, session.storeId, "inventory:session:deleted", {
+      id: session.id,
+      code: session.code,
+      status: session.status,
+      storeId: session.storeId,
+    });
+
+    return res.json({ message: "Inventaire supprime." });
+  } catch (error) {
+    return sendErrorResponse(res, error, "Impossible de supprimer cet inventaire.");
+  }
+};
+
+const devalidate = async (req, res) => {
+  try {
+    const session = await devalidateInventorySession({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+    });
+
+    emitInventoryEvent(req.user.tenantId, session.storeId, "inventory:session:updated", {
+      id: session.id,
+      code: session.code,
+      status: session.status,
+      storeId: session.storeId,
+    });
+
+    return res.json(await loadInventorySessionDetail(req.user.tenantId, session.id));
+  } catch (error) {
+    return sendErrorResponse(res, error, "Impossible de devalider cet inventaire.");
   }
 };
 
@@ -503,9 +581,7 @@ const submit = async (req, res) => {
 
     return res.json(detail);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de soumettre cet inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible de soumettre cet inventaire.");
   }
 };
 
@@ -521,9 +597,7 @@ const approve = async (req, res) => {
 
     return res.json(session);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de valider cet inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible de valider cet inventaire.");
   }
 };
 
@@ -539,9 +613,7 @@ const reject = async (req, res) => {
 
     return res.json(session);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de rejeter cet inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible de rejeter cet inventaire.");
   }
 };
 
@@ -565,9 +637,7 @@ const close = async (req, res) => {
 
     return res.json(await loadInventorySessionDetail(req.user.tenantId, session.id));
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de cloturer cet inventaire.",
-    });
+    return sendErrorResponse(res, error, "Impossible de cloturer cet inventaire.");
   }
 };
 
@@ -580,6 +650,8 @@ module.exports = {
   importTemplate,
   create,
   updateCounts,
+  remove,
+  devalidate,
   submit,
   approve,
   reject,

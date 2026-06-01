@@ -4,8 +4,6 @@ const { parseListParams, buildMeta, buildDateRangeFilter } = require("../utils/l
 const { sendExport } = require("../utils/exporter");
 const {
   ensureProductCategoryStructure,
-  findCollectionById,
-  findCollectionByName,
 } = require("../utils/productCategoryHierarchyStore");
 
 const escapeSqlValue = (value) => `'${String(value).replace(/'/g, "''")}'`;
@@ -14,10 +12,6 @@ const mapCategory = (row) => ({
   id: row.id,
   tenantId: row.tenantId,
   name: row.name,
-  collectionId: row.collectionId || null,
-  collection: row.collectionId
-    ? { id: row.collectionId, name: row.collectionName || null }
-    : null,
   createdAt: row.createdAt,
   updatedAt: row.updatedAt,
 });
@@ -54,12 +48,9 @@ const listCategoryRows = async ({
         base."id",
         base."tenantId",
         base."name",
-        base."collectionId",
         base."createdAt",
-        base."updatedAt",
-        collection."name" AS "collectionName"
+        base."updatedAt"
       FROM "productCategories" base
-      LEFT JOIN "productCollections" collection ON collection."id" = base."collectionId"
       WHERE ${whereSql}
       ORDER BY ${orderSql}
     `);
@@ -77,12 +68,9 @@ const listCategoryRows = async ({
         base."id",
         base."tenantId",
         base."name",
-        base."collectionId",
         base."createdAt",
-        base."updatedAt",
-        collection."name" AS "collectionName"
+        base."updatedAt"
       FROM "productCategories" base
-      LEFT JOIN "productCollections" collection ON collection."id" = base."collectionId"
       WHERE ${whereSql}
       ORDER BY ${orderSql}
       LIMIT ${Number(pageSize)}
@@ -103,12 +91,9 @@ const getCategoryById = async ({ tenantId, id }) => {
       base."id",
       base."tenantId",
       base."name",
-      base."collectionId",
       base."createdAt",
-      base."updatedAt",
-      collection."name" AS "collectionName"
+      base."updatedAt"
     FROM "productCategories" base
-    LEFT JOIN "productCollections" collection ON collection."id" = base."collectionId"
     WHERE base."tenantId" = ${escapeSqlValue(tenantId)}
       AND base."id" = ${escapeSqlValue(id)}
     LIMIT 1
@@ -117,32 +102,16 @@ const getCategoryById = async ({ tenantId, id }) => {
 };
 
 const createCategory = async (req, res) => {
-  const { name, collectionId } = req.body || {};
+  const { name } = req.body || {};
   if (!name) {
     return res.status(400).json({ message: "Le nom est requis." });
   }
 
   await ensureProductCategoryStructure();
 
-  if (collectionId) {
-    const collection = await findCollectionById({
-      tenantId: req.user.tenantId,
-      id: collectionId,
-    });
-    if (!collection) {
-      return res.status(400).json({ message: "La collection selectionnee est invalide." });
-    }
-  }
-
   const category = await prisma.productCategory.create({
     data: { tenantId: req.user.tenantId, name },
   });
-
-  await prisma.$executeRawUnsafe(`
-    UPDATE "productCategories"
-    SET "collectionId" = ${collectionId ? escapeSqlValue(collectionId) : "NULL"}
-    WHERE "id" = ${escapeSqlValue(category.id)}
-  `);
 
   return res.status(201).json(await getCategoryById({
     tenantId: req.user.tenantId,
@@ -173,7 +142,6 @@ const listCategories = async (req, res) => {
       result.rows.map((item) => ({
         id: item.id,
         name: item.name,
-        collection: item.collection?.name || "",
         createdAt: item.createdAt,
       })),
       "product-categories",
@@ -193,7 +161,7 @@ const listCategories = async (req, res) => {
 
 const updateCategory = async (req, res) => {
   const { id } = req.params;
-  const { name, collectionId } = req.body || {};
+  const { name } = req.body || {};
 
   const category = await getCategoryById({
     tenantId: req.user.tenantId,
@@ -203,35 +171,10 @@ const updateCategory = async (req, res) => {
     return res.status(404).json({ message: "Categorie introuvable." });
   }
 
-  if (collectionId) {
-    const collection = await findCollectionById({
-      tenantId: req.user.tenantId,
-      id: collectionId,
-    });
-    if (!collection) {
-      return res.status(400).json({ message: "La collection selectionnee est invalide." });
-    }
-  }
-
   await prisma.productCategory.update({
     where: { id },
     data: { name: name || category.name },
   });
-
-  await prisma.$executeRawUnsafe(`
-    UPDATE "productCategories"
-    SET
-      "collectionId" = ${
-        collectionId === undefined
-          ? category.collectionId
-            ? escapeSqlValue(category.collectionId)
-            : "NULL"
-          : collectionId
-          ? escapeSqlValue(collectionId)
-          : "NULL"
-      }
-    WHERE "id" = ${escapeSqlValue(id)}
-  `);
 
   return res.json(await getCategoryById({ tenantId: req.user.tenantId, id }));
 };
@@ -245,18 +188,6 @@ const deleteCategory = async (req, res) => {
   });
   if (!category) {
     return res.status(404).json({ message: "Categorie introuvable." });
-  }
-
-  const familyRows = await prisma.$queryRawUnsafe(`
-    SELECT COUNT(*)::int AS "count"
-    FROM "productFamilies"
-    WHERE "tenantId" = ${escapeSqlValue(req.user.tenantId)}
-      AND "categoryId" = ${escapeSqlValue(id)}
-  `);
-  if ((familyRows?.[0]?.count || 0) > 0) {
-    return res.status(400).json({
-      message: "La categorie contient des familles. Supprimez-les d'abord.",
-    });
   }
 
   const productCount = await prisma.product.count({
@@ -274,7 +205,7 @@ const downloadCategoriesTemplate = async (_req, res) =>
   sendWorkbook(res, "template-categories", [
     {
       name: "Categories",
-      rows: [{ name: "Medicaments", collectionName: "Vendeur" }],
+      rows: [{ name: "Medicaments" }],
     },
   ]);
 
@@ -290,9 +221,6 @@ const importCategories = async (req, res) => {
 
     for (const [index, row] of rows.entries()) {
       const name = String(row.name || row.Name || "").trim();
-      const collectionName = String(
-        row.collectionName || row.CollectionName || "",
-      ).trim();
       if (!name) continue;
 
       try {
@@ -301,27 +229,9 @@ const importCategories = async (req, res) => {
         });
 
         if (!existing) {
-          let collectionId = null;
-          if (collectionName) {
-            const collection = await findCollectionByName({
-              tenantId: req.user.tenantId,
-              name: collectionName,
-            });
-            if (!collection) {
-              throw new Error("Collection introuvable.");
-            }
-            collectionId = collection.id;
-          }
-
-          const category = await prisma.productCategory.create({
+          await prisma.productCategory.create({
             data: { tenantId: req.user.tenantId, name },
           });
-
-          await prisma.$executeRawUnsafe(`
-            UPDATE "productCategories"
-            SET "collectionId" = ${collectionId ? escapeSqlValue(collectionId) : "NULL"}
-            WHERE "id" = ${escapeSqlValue(category.id)}
-          `);
 
           created += 1;
         }

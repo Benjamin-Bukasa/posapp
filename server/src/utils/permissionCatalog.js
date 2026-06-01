@@ -8,6 +8,18 @@ const PERMISSION_MODULES = [
       { code: "transfers.create", label: "Creer" },
       { code: "transfers.update", label: "Modifier" },
       { code: "transfers.delete", label: "Supprimer" },
+      {
+        code: "transfers.update_own_draft",
+        label: "Modifier ses propres creations non validees",
+      },
+      {
+        code: "transfers.delete_own_draft",
+        label: "Supprimer ses propres creations non validees",
+      },
+      {
+        code: "transfers.devalidate",
+        label: "Devalider / remettre en brouillon",
+      },
     ],
   },
   {
@@ -21,7 +33,15 @@ const PERMISSION_MODULES = [
       { code: "purchase_requests.delete", label: "Supprimer" },
       {
         code: "purchase_requests.update_own_draft",
-        label: "Modifier sa propre demande non validee",
+        label: "Modifier ses propres creations non validees",
+      },
+      {
+        code: "purchase_requests.delete_own_draft",
+        label: "Supprimer ses propres creations non validees",
+      },
+      {
+        code: "purchase_requests.devalidate",
+        label: "Devalider / remettre en brouillon",
       },
     ],
   },
@@ -45,6 +65,18 @@ const PERMISSION_MODULES = [
       { code: "purchase_orders.create", label: "Creer" },
       { code: "purchase_orders.update", label: "Modifier" },
       { code: "purchase_orders.delete", label: "Supprimer" },
+      {
+        code: "purchase_orders.update_own_draft",
+        label: "Modifier ses propres creations non validees",
+      },
+      {
+        code: "purchase_orders.delete_own_draft",
+        label: "Supprimer ses propres creations non validees",
+      },
+      {
+        code: "purchase_orders.devalidate",
+        label: "Devalider / remettre en brouillon",
+      },
     ],
   },
   {
@@ -62,6 +94,18 @@ const PERMISSION_MODULES = [
       { code: "inventory.create", label: "Creer" },
       { code: "inventory.update", label: "Modifier" },
       { code: "inventory.delete", label: "Supprimer" },
+      {
+        code: "inventory.update_own_draft",
+        label: "Modifier ses propres creations non validees",
+      },
+      {
+        code: "inventory.delete_own_draft",
+        label: "Supprimer ses propres creations non validees",
+      },
+      {
+        code: "inventory.devalidate",
+        label: "Devalider / remettre en brouillon",
+      },
     ],
   },
   {
@@ -85,6 +129,38 @@ const PERMISSION_MODULES = [
       { code: "movements.create", label: "Creer" },
       { code: "movements.update", label: "Modifier" },
       { code: "movements.delete", label: "Supprimer" },
+      {
+        code: "movements.update_own_draft",
+        label: "Modifier ses propres creations non validees",
+      },
+      {
+        code: "movements.delete_own_draft",
+        label: "Supprimer ses propres creations non validees",
+      },
+      {
+        code: "movements.devalidate",
+        label: "Devalider / remettre en brouillon",
+      },
+    ],
+  },
+  {
+    key: "sales",
+    label: "Vente",
+    description: "Ventes en caisse, consultation, modification et annulation.",
+    actions: [
+      { code: "sales.read", label: "Voir" },
+      { code: "sales.create", label: "Creer" },
+      { code: "sales.update", label: "Modifier" },
+      { code: "sales.cancel", label: "Annuler / supprimer" },
+    ],
+  },
+  {
+    key: "payments",
+    label: "Paiement",
+    description: "Consultation des paiements et remboursement client.",
+    actions: [
+      { code: "payments.read", label: "Voir" },
+      { code: "payments.refund", label: "Rembourser" },
     ],
   },
 ];

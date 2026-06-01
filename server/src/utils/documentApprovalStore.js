@@ -298,6 +298,38 @@ const decideDocumentApproval = async ({
   };
 };
 
+const resetDocumentApprovals = async ({
+  tenantId,
+  documentType,
+  documentId,
+}) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    UPDATE "documentApprovals"
+    SET
+      "status" = 'PENDING',
+      "decidedAt" = NULL,
+      "note" = NULL
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "documentType" = ${escapeSqlValue(documentType)}
+      AND "documentId" = ${escapeSqlValue(documentId)}
+  `);
+};
+
+const deleteDocumentApprovals = async ({
+  tenantId,
+  documentType,
+  documentId,
+}) => {
+  await ensureDocumentApprovalTable();
+  await prisma.$executeRawUnsafe(`
+    DELETE FROM "documentApprovals"
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "documentType" = ${escapeSqlValue(documentType)}
+      AND "documentId" = ${escapeSqlValue(documentId)}
+  `);
+};
+
 module.exports = {
   ensureDocumentApprovalTable,
   loadApprovalFlow,
@@ -305,5 +337,7 @@ module.exports = {
   getDocumentApprovalMap,
   deriveApprovalLifecycle,
   prepareDocumentApprovals,
+  resetDocumentApprovals,
+  deleteDocumentApprovals,
   decideDocumentApproval,
 };

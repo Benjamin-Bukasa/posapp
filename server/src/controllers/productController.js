@@ -39,7 +39,7 @@ const findCategoryById = async (tenantId, id) => {
   if (!id) return null;
   await ensureProductCategoryStructure();
   const rows = await prisma.$queryRawUnsafe(`
-    SELECT "id", "name", "collectionId"
+    SELECT "id", "name"
     FROM "productCategories"
     WHERE "tenantId" = ${escapeSqlValue(tenantId)}
       AND "id" = ${escapeSqlValue(id)}
@@ -204,24 +204,24 @@ const getProductExtendedFieldMap = async (productIds = []) => {
   );
 };
 
-const getCategoryCollectionMap = async (categoryIds = []) => {
+const getFamilyCollectionMap = async (familyIds = []) => {
   await ensureProductCategoryStructure();
-  const ids = [...new Set((categoryIds || []).filter(Boolean))];
+  const ids = [...new Set((familyIds || []).filter(Boolean))];
   if (!ids.length) return new Map();
 
   const rows = await prisma.$queryRawUnsafe(`
     SELECT
-      category."id" AS "categoryId",
-      category."collectionId",
+      family."id" AS "familyId",
+      family."collectionId",
       collection."name" AS "collectionName"
-    FROM "productCategories" category
-    LEFT JOIN "productCollections" collection ON collection."id" = category."collectionId"
-    WHERE category."id" IN (${ids.map(escapeSqlValue).join(", ")})
+    FROM "productFamilies" family
+    LEFT JOIN "productCollections" collection ON collection."id" = family."collectionId"
+    WHERE family."id" IN (${ids.map(escapeSqlValue).join(", ")})
   `);
 
   return new Map(
     rows.map((row) => [
-      row.categoryId,
+      row.familyId,
       row.collectionId
         ? {
             id: row.collectionId,
@@ -386,8 +386,8 @@ const hydrateProductsWithCurrencyCodes = async (records) => {
   }
 
   const extendedMap = await getProductExtendedFieldMap(list.map((item) => item.id));
-  const categoryCollectionMap = await getCategoryCollectionMap(
-    list.map((item) => item.categoryId || item.category?.id).filter(Boolean),
+  const familyCollectionMap = await getFamilyCollectionMap(
+    list.map((item) => item.familyId || item.family?.id).filter(Boolean),
   );
   const hydrated = list.map((item) => ({
     ...item,
@@ -397,7 +397,12 @@ const hydrateProductsWithCurrencyCodes = async (records) => {
     category: item.category
       ? {
           ...item.category,
-          collection: categoryCollectionMap.get(item.category.id) || null,
+        }
+      : null,
+    family: item.family
+      ? {
+          ...item.family,
+          collection: familyCollectionMap.get(item.family.id) || null,
         }
       : null,
     ...(extendedMap.get(item.id) || {
@@ -887,16 +892,6 @@ const createProduct = async (req, res) => {
       if (!family) {
         return res.status(400).json({ message: "La famille selectionnee est invalide." });
       }
-      if (!categoryId) {
-        return res.status(400).json({
-          message: "Choisissez d'abord une categorie avant de selectionner une famille.",
-        });
-      }
-      if (family.categoryId && family.categoryId !== categoryId) {
-        return res.status(400).json({
-          message: "La famille selectionnee n'appartient pas a cette categorie.",
-        });
-      }
     }
 
     let subFamily = null;
@@ -1242,7 +1237,7 @@ const listCashierArticles = async (req, res) => {
         category: product.category?.name || "N/A",
         family: product.family?.name || "N/A",
         subFamily: product.subFamily?.name || "N/A",
-        collection: product.category?.collection?.name || "N/A",
+        collection: product.family?.collection?.name || "N/A",
         status: product.isActive ? "Actif" : "Inactif",
         quantity,
         stock:
@@ -1363,16 +1358,6 @@ const updateProduct = async (req, res) => {
     });
     if (!family) {
       return res.status(400).json({ message: "La famille selectionnee est invalide." });
-    }
-    if (!categoryId) {
-      return res.status(400).json({
-        message: "Choisissez d'abord une categorie avant de selectionner une famille.",
-      });
-    }
-    if (family.categoryId && family.categoryId !== categoryId) {
-      return res.status(400).json({
-        message: "La famille selectionnee n'appartient pas a cette categorie.",
-      });
     }
   }
 
@@ -2066,7 +2051,7 @@ const importProducts = async (req, res) => {
     return existing || createCollection({ tenantId: req.user.tenantId, name });
   };
 
-  const findOrCreateFamily = async (name, categoryId = null) => {
+  const findOrCreateFamily = async (name, collectionId = null) => {
     if (!name) return null;
     const existing = await findProductFamilyByName({
       tenantId: req.user.tenantId,
@@ -2074,8 +2059,8 @@ const importProducts = async (req, res) => {
       kind: FAMILY_KIND.FAMILY,
     });
     if (existing) {
-      if (categoryId && existing.categoryId && existing.categoryId !== categoryId) {
-        throw new Error("La famille importee n'appartient pas a la categorie selectionnee.");
+      if (collectionId && existing.collectionId && existing.collectionId !== collectionId) {
+        throw new Error("La famille importee n'appartient pas a la collection selectionnee.");
       }
       return existing;
     }
@@ -2083,7 +2068,7 @@ const importProducts = async (req, res) => {
           tenantId: req.user.tenantId,
           name,
           kind: FAMILY_KIND.FAMILY,
-          categoryId,
+          collectionId,
         });
   };
 
@@ -2248,16 +2233,8 @@ const importProducts = async (req, res) => {
     ]);
 
     const collection = await findOrCreateCollection(collectionName);
-    let category = await findOrCreateCategory(categoryName);
-    if (category && collection?.id && category.collectionId !== collection.id) {
-      await prisma.$executeRawUnsafe(`
-        UPDATE "productCategories"
-        SET "collectionId" = ${escapeSqlValue(collection.id)}
-        WHERE "id" = ${escapeSqlValue(category.id)}
-      `);
-      category = await findCategoryById(req.user.tenantId, category.id);
-    }
-    const family = await findOrCreateFamily(familyName, category?.id || null);
+    const category = await findOrCreateCategory(categoryName);
+    const family = await findOrCreateFamily(familyName, collection?.id || null);
     const subFamily = await findOrCreateSubFamily(subFamilyName, family?.id || null);
     const taxRate = await findOrCreateTaxRate(taxLabel);
     const managementUnit = await findOrCreateUnit(managementUnitName, "SALE");

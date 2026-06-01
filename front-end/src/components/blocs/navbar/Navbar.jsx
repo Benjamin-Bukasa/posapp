@@ -22,6 +22,7 @@ import useAuthStore from "../../../stores/authStore";
 import useUiStore from "../../../stores/uiStore";
 import useCounterStore from "../../../stores/counterStore";
 import { formatName } from "../../../utils/formatters";
+import { canAccessPath } from "../../../utils/routePermissions";
 
 const SEARCH_CATALOG = [
   { id: "dashboard", label: "Dashboard", path: "/dashboard", summary: "Vue generale de l'activite", order: 1 },
@@ -185,7 +186,7 @@ const Navbar = () => {
     const matched = SEARCH_CATALOG.map((item) => ({
       ...item,
       score: scoreSearchItem(item, query),
-    })).filter((item) => item.score > 0);
+    })).filter((item) => item.score > 0 && canAccessPath(authUser, item.path));
 
     if (searchSort === "A-Z") {
       return matched.sort((a, b) => a.label.localeCompare(b.label, "fr"));
@@ -204,7 +205,7 @@ const Navbar = () => {
       if (b.score !== a.score) return b.score - a.score;
       return a.order - b.order;
     });
-  }, [searchScope, searchSort, searchValue]);
+  }, [authUser, searchScope, searchSort, searchValue]);
 
   const resolveSearchTarget = () => {
     const scope = searchScope.toLowerCase();

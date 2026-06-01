@@ -32,14 +32,20 @@ router.post(
 router.patch(
   "/:id",
   auth,
-  requirePermission("movements.update"),
+  requirePermission("movements.update", "movements.update_own_draft"),
   stockEntryController.updateStockEntry
 );
 router.delete(
   "/:id",
   auth,
-  requirePermission("movements.delete"),
+  requirePermission("movements.delete", "movements.delete_own_draft"),
   stockEntryController.deleteStockEntry
+);
+router.post(
+  "/:id/devalidate",
+  auth,
+  requirePermission("movements.devalidate"),
+  stockEntryController.devalidateStockEntry
 );
 router.post(
   "/:id/approve",

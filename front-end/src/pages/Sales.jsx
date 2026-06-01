@@ -20,6 +20,7 @@ import SaleEditModal from "../components/ui/saleEditModal";
 import SaleHistoryModal from "../components/ui/saleHistoryModal";
 import useToastStore from "../stores/toastStore";
 import useCurrencyStore from "../stores/currencyStore";
+import useAuthStore from "../stores/authStore";
 import { apiDelete, apiGet, apiPatch } from "../services/apiClient";
 import {
   formatAmount,
@@ -31,6 +32,7 @@ import {
 import { percentChange } from "../utils/metrics";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
+import { hasAnyPermission } from "../utils/permissions";
 
 const startOfDay = (value = new Date()) => {
   const date = new Date(value);
@@ -92,6 +94,7 @@ function Sales() {
     "cash:session:movement",
   ]);
   const currencySettings = useCurrencyStore((state) => state.settings);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.showToast);
   const [orders, setOrders] = useState([]);
   const [cashSessions, setCashSessions] = useState([]);
@@ -109,6 +112,9 @@ function Sales() {
   const [submittingDelete, setSubmittingDelete] = useState(false);
 
   const isDetailOpen = location.pathname.endsWith("/details");
+  const canEditSales = hasAnyPermission(user, ["sales.update"]);
+  const canCancelSales = hasAnyPermission(user, ["sales.cancel"]);
+  const canReadSales = hasAnyPermission(user, ["sales.read"]);
 
   useEffect(() => {
     let isMounted = true;
@@ -498,31 +504,45 @@ function Sales() {
         description="Toutes les transactions en caisse"
         columns={columns}
         data={pagedSales}
-        emptyMessage={loading ? "Chargement..." : "Aucune donnee"}
+        emptyMessage={
+          !canReadSales
+            ? "Vous n'avez pas la permission de consulter les ventes."
+            : loading
+              ? "Chargement..."
+              : "Aucune donnee"
+        }
         enableSelection={false}
         actionsHeader="Action"
         renderActions={(row) => (
           <DropdownAction
             label={<EllipsisVertical size={18} strokeWidth={1.5} />}
             items={[
-              {
-                id: "edit",
-                label: "Modifier",
-                icon: Pencil,
-                disabled: row.raw?.status === "CANCELED",
-                onClick: () => setSelectedSale(row),
-              },
-              {
-                id: "delete",
-                label: "Supprimer",
-                icon: Trash2,
-                variant: "danger",
-                disabled: row.raw?.status === "CANCELED",
-                onClick: () => {
-                  setDeleteSale(row);
-                  setDeleteReason("");
-                },
-              },
+              ...(canEditSales
+                ? [
+                    {
+                      id: "edit",
+                      label: "Modifier",
+                      icon: Pencil,
+                      disabled: row.raw?.status === "CANCELED",
+                      onClick: () => setSelectedSale(row),
+                    },
+                  ]
+                : []),
+              ...(canCancelSales
+                ? [
+                    {
+                      id: "delete",
+                      label: "Supprimer",
+                      icon: Trash2,
+                      variant: "danger",
+                      disabled: row.raw?.status === "CANCELED",
+                      onClick: () => {
+                        setDeleteSale(row);
+                        setDeleteReason("");
+                      },
+                    },
+                  ]
+                : []),
               {
                 id: "history",
                 label: "Historique",

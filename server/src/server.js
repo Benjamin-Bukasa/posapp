@@ -57,6 +57,7 @@ const { ensureDocumentApprovalTable } = require("./utils/documentApprovalStore")
 const { ensureApprovalActionTokenTable } = require("./utils/approvalActionTokenStore");
 const { ensureSupplierReturnTables } = require("./controllers/supplierReturnController");
 const { getEmailDebugInfo } = require("./services/notificationService");
+const { normalizeError } = require("./utils/httpErrors");
 
 const app = express();
 const server = http.createServer(app);
@@ -127,8 +128,41 @@ app.use("/api/permission-profiles", permissionProfileRoutes);
 app.use("/api/mobile/driver", mobileDriverRoutes);
 
 app.use((err, req, res, next) => {
-  console.error(err);
-  res.status(500).json({ message: "Internal server error." });
+  const normalized = normalizeError(err);
+  console.error("[HTTP_ERROR]", {
+    method: req.method,
+    path: req.originalUrl,
+    status: normalized.status,
+    message: normalized.message,
+    code: err?.code || null,
+    rawMessage: err?.message || null,
+  });
+
+  if (res.headersSent) {
+    return next(err);
+  }
+
+  return res.status(normalized.status).json({ message: normalized.message });
+});
+
+process.on("unhandledRejection", (reason) => {
+  const normalized = normalizeError(reason);
+  console.error("[UNHANDLED_REJECTION]", {
+    status: normalized.status,
+    message: normalized.message,
+    code: reason?.code || null,
+    rawMessage: reason?.message || String(reason),
+  });
+});
+
+process.on("uncaughtException", (error) => {
+  const normalized = normalizeError(error);
+  console.error("[UNCAUGHT_EXCEPTION]", {
+    status: normalized.status,
+    message: normalized.message,
+    code: error?.code || null,
+    rawMessage: error?.message || String(error),
+  });
 });
 
 const port = process.env.PORT || 5000;

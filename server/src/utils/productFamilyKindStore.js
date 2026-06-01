@@ -35,11 +35,11 @@ const mapFamilyRow = (row) => ({
   tenantId: row.tenantId,
   name: row.name,
   kind: row.kind || FAMILY_KIND.FAMILY,
-  categoryId: row.categoryId || null,
-  category: row.categoryId
+  collectionId: row.collectionId || null,
+  collection: row.collectionId
     ? {
-        id: row.categoryId,
-        name: row.categoryName || null,
+        id: row.collectionId,
+        name: row.collectionName || null,
       }
     : null,
   parentFamilyId: row.parentFamilyId || null,
@@ -136,14 +136,14 @@ const listProductFamiliesByKind = async ({
         pf."tenantId",
         pf."name",
         pf."kind",
-        pf."categoryId",
+        pf."collectionId",
         pf."parentFamilyId",
         pf."createdAt",
         pf."updatedAt",
-        category."name" AS "categoryName",
+        collection."name" AS "collectionName",
         parent."name" AS "parentFamilyName"
       FROM "productFamilies" pf
-      LEFT JOIN "productCategories" category ON category."id" = pf."categoryId"
+      LEFT JOIN "productCollections" collection ON collection."id" = pf."collectionId"
       LEFT JOIN "productFamilies" parent ON parent."id" = pf."parentFamilyId"
       WHERE ${whereSql}
       ORDER BY ${orderSql}
@@ -167,14 +167,14 @@ const listProductFamiliesByKind = async ({
         pf."tenantId",
         pf."name",
         pf."kind",
-        pf."categoryId",
+        pf."collectionId",
         pf."parentFamilyId",
         pf."createdAt",
         pf."updatedAt",
-        category."name" AS "categoryName",
+        collection."name" AS "collectionName",
         parent."name" AS "parentFamilyName"
       FROM "productFamilies" pf
-      LEFT JOIN "productCategories" category ON category."id" = pf."categoryId"
+      LEFT JOIN "productCollections" collection ON collection."id" = pf."collectionId"
       LEFT JOIN "productFamilies" parent ON parent."id" = pf."parentFamilyId"
       WHERE ${whereSql}
       ORDER BY ${orderSql}
@@ -199,14 +199,14 @@ const getProductFamilyByKind = async ({ tenantId, id, kind }) => {
       pf."tenantId",
       pf."name",
       pf."kind",
-      pf."categoryId",
+      pf."collectionId",
       pf."parentFamilyId",
       pf."createdAt",
       pf."updatedAt",
-      category."name" AS "categoryName",
+      collection."name" AS "collectionName",
       parent."name" AS "parentFamilyName"
     FROM "productFamilies" pf
-    LEFT JOIN "productCategories" category ON category."id" = pf."categoryId"
+    LEFT JOIN "productCollections" collection ON collection."id" = pf."collectionId"
     LEFT JOIN "productFamilies" parent ON parent."id" = pf."parentFamilyId"
     WHERE pf."id" = ${id}
       AND pf."tenantId" = ${tenantId}
@@ -240,6 +240,7 @@ const findProductFamilyByName = async ({ tenantId, name, kind }) => {
       pf."tenantId",
       pf."name",
       pf."kind",
+      pf."collectionId",
       pf."parentFamilyId",
       pf."createdAt",
       pf."updatedAt"
@@ -257,7 +258,7 @@ const createProductFamilyByKind = async ({
   tenantId,
   name,
   kind,
-  categoryId = null,
+  collectionId = null,
   parentFamilyId = null,
 }) => {
   await ensureProductFamilyStructure();
@@ -274,7 +275,8 @@ const createProductFamilyByKind = async ({
     UPDATE "productFamilies"
     SET
       "kind" = ${kind},
-      "categoryId" = ${kind === FAMILY_KIND.FAMILY ? categoryId : null},
+      "collectionId" = ${kind === FAMILY_KIND.FAMILY ? collectionId : null},
+      "categoryId" = NULL,
       "parentFamilyId" = ${kind === FAMILY_KIND.SUB_FAMILY ? parentFamilyId : null}
     WHERE "id" = ${created.id}
   `;
@@ -287,7 +289,7 @@ const updateProductFamilyByKind = async ({
   id,
   name,
   kind,
-  categoryId = null,
+  collectionId = null,
   parentFamilyId = null,
 }) => {
   await ensureProductFamilyStructure();
@@ -298,7 +300,8 @@ const updateProductFamilyByKind = async ({
     SET
       "name" = ${name},
       "kind" = ${kind},
-      "categoryId" = ${kind === FAMILY_KIND.FAMILY ? categoryId : null},
+      "collectionId" = ${kind === FAMILY_KIND.FAMILY ? collectionId : null},
+      "categoryId" = NULL,
       "parentFamilyId" = ${kind === FAMILY_KIND.SUB_FAMILY ? parentFamilyId : null},
       "updatedAt" = NOW()
     WHERE "id" = ${id}
@@ -312,7 +315,16 @@ const deleteProductFamilyByKind = async ({ tenantId, id, kind }) => {
   await ensureProductFamilyStructure();
 
   const productCount = await prisma.product.count({
-    where: { tenantId, familyId: id },
+    where:
+      kind === FAMILY_KIND.SUB_FAMILY
+        ? {
+            tenantId,
+            subFamilyId: id,
+          }
+        : {
+            tenantId,
+            familyId: id,
+          },
   });
 
   if (productCount > 0) {

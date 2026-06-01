@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Download, FileSpreadsheet, FileText, Search } from "lucide-react";
+import { Download, FileSpreadsheet, FileText, Search, Trash2 } from "lucide-react";
 import DropdownAction from "./dropdownAction";
 import DropdownFilter from "./dropdownFilter";
 import DropdownSort from "./dropdownSort";
@@ -64,6 +64,7 @@ const AdminDataTable = ({
   actionSlot = null,
   enableSelection = true,
   onSelectionChange,
+  onDeleteSelected,
   renderActions,
   actionsHeader = "Actions",
   filterSections = [],
@@ -96,6 +97,7 @@ const AdminDataTable = ({
     allKeys.length > 0 && allKeys.every((key) => selectedKeys.has(key));
   const someSelected = allKeys.some((key) => selectedKeys.has(key));
   const showSelection = enableSelection;
+  const showBulkDelete = showSelection && typeof onDeleteSelected === "function";
   const showActions = typeof renderActions === "function";
   const resolvedExportItems = exportItems?.length ? exportItems : defaultExportItems;
   const colSpan =
@@ -206,6 +208,28 @@ const AdminDataTable = ({
                 ))}
               </select>
             </label>
+          ) : null}
+
+          {showBulkDelete ? (
+            <button
+              type="button"
+              disabled={selectedCount === 0}
+              onClick={() => {
+                const selectedRows = rows.filter((row, index) =>
+                  selectedKeys.has(getRowKey(row, index)),
+                );
+                onDeleteSelected(selectedRows, Array.from(selectedKeys));
+              }}
+              className={[
+                "inline-flex w-full items-center justify-center gap-2 rounded-lg border px-4 py-2 text-sm font-medium transition sm:w-auto",
+                selectedCount === 0
+                  ? "cursor-not-allowed border-border bg-surface text-text-secondary opacity-80"
+                  : "border-danger/20 bg-danger/10 text-danger hover:bg-danger/15",
+              ].join(" ")}
+            >
+              <span>Supprimer</span>
+              <Trash2 size={16} strokeWidth={1.5} />
+            </button>
           ) : null}
 
           {actionSlot}

@@ -30,6 +30,7 @@ const {
   upsertUserPreferences,
   ensureUserPreferenceTable,
 } = require("../utils/userPreferenceStore");
+const { normalizeError } = require("../utils/httpErrors");
 
 const queueAccountCreationNotification = ({
   email,
@@ -96,6 +97,68 @@ const queueAccountCreationNotification = ({
 };
 
 const USER_ROLE_VALUES = ["SUPERADMIN", "ADMIN", "MANAGER", "USER", "SELLER", "DRIVER"];
+const normalizeOptionalText = (value) => {
+  const trimmed = String(value || "").trim();
+  return trimmed || null;
+};
+
+const ensureUserIdentityAvailable = async ({
+  email,
+  phone,
+  excludeUserId = null,
+}) => {
+  const normalizedEmail = normalizeOptionalText(email);
+  const normalizedPhone = normalizeOptionalText(phone);
+  const orClauses = [];
+
+  if (normalizedEmail) {
+    orClauses.push({ email: normalizedEmail });
+  }
+
+  if (normalizedPhone) {
+    orClauses.push({ phone: normalizedPhone });
+  }
+
+  if (!orClauses.length) {
+    return;
+  }
+
+  const existing = await prisma.user.findFirst({
+    where: {
+      ...(excludeUserId ? { id: { not: excludeUserId } } : {}),
+      OR: orClauses,
+    },
+    select: {
+      id: true,
+      email: true,
+      phone: true,
+    },
+  });
+
+  if (!existing) {
+    return;
+  }
+
+  if (
+    normalizedEmail &&
+    existing.email &&
+    String(existing.email).toLowerCase() === normalizedEmail.toLowerCase()
+  ) {
+    throw Object.assign(new Error("Cet email existe deja."), { status: 409 });
+  }
+
+  if (
+    normalizedPhone &&
+    existing.phone &&
+    String(existing.phone).trim() === normalizedPhone
+  ) {
+    throw Object.assign(new Error("Ce numero de telephone existe deja."), {
+      status: 409,
+    });
+  }
+
+  throw Object.assign(new Error("Utilisateur deja existant."), { status: 409 });
+};
 
 const resolveUserScope = async ({
   tenantId,
@@ -189,12 +252,7 @@ const createUserRecord = async ({
     );
   }
 
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { phone }] },
-  });
-  if (existing) {
-    throw Object.assign(new Error("Utilisateur deja existant."), { status: 409 });
-  }
+  await ensureUserIdentityAvailable({ email, phone });
 
   if (permissionProfileId) {
     const profile = await getProfileById(tenantId, permissionProfileId);
@@ -312,7 +370,8 @@ const createUser = async (req, res) => {
       permissionProfileId,
     });
   } catch (error) {
-    return res.status(error?.status || 500).json({ message: error.message });
+    const normalized = normalizeError(error);
+    return res.status(normalized.status).json({ message: normalized.message });
   }
 
   return res.status(201).json({
@@ -645,6 +704,11 @@ const updateUser = async (req, res) => {
 
   let userScope;
   try {
+    await ensureUserIdentityAvailable({
+      email: email === undefined ? user.email : email,
+      phone: phone === undefined ? user.phone : phone,
+      excludeUserId: id,
+    });
     userScope = await resolveUserScope({
       tenantId: req.user.tenantId,
       storeId: hasStoreId ? storeId : user.storeId,
@@ -653,23 +717,30 @@ const updateUser = async (req, res) => {
         : user.defaultStorageZoneId,
     });
   } catch (error) {
-    return res.status(error?.status || 500).json({ message: error.message });
+    const normalized = normalizeError(error);
+    return res.status(normalized.status).json({ message: normalized.message });
   }
 
-  const updated = await prisma.user.update({
-    where: { id },
-    data: {
-      firstName,
-      lastName,
-      email,
-      phone,
-      role,
-      storeId: hasStoreId || hasDefaultStorageZoneId ? userScope.storeId : undefined,
-      defaultStorageZoneId:
-        hasStoreId || hasDefaultStorageZoneId ? userScope.defaultStorageZoneId : undefined,
-      isActive,
-    },
-  });
+  let updated;
+  try {
+    updated = await prisma.user.update({
+      where: { id },
+      data: {
+        firstName,
+        lastName,
+        email,
+        phone,
+        role,
+        storeId: hasStoreId || hasDefaultStorageZoneId ? userScope.storeId : undefined,
+        defaultStorageZoneId:
+          hasStoreId || hasDefaultStorageZoneId ? userScope.defaultStorageZoneId : undefined,
+        isActive,
+      },
+    });
+  } catch (error) {
+    const normalized = normalizeError(error);
+    return res.status(normalized.status).json({ message: normalized.message });
+  }
 
   if (Object.prototype.hasOwnProperty.call(req.body || {}, "permissionProfileId")) {
     await assignProfileToUser({

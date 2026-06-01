@@ -41,10 +41,11 @@ const {
   ensureInventoryLotTables,
   synchronizeInventoryAggregate,
 } = require("../utils/inventoryLotStore");
+const { normalizeError } = require("../utils/httpErrors");
 
 const LONG_TRANSACTION_OPTIONS = {
-  maxWait: 10000,
-  timeout: 20000,
+  maxWait: 15000,
+  timeout: 45000,
 };
 
 const PAYMENT_METHOD_MAP = {
@@ -244,20 +245,20 @@ const buildSaleFromItems = async ({
       throw Object.assign(new Error("Invalid article selected."), { status: 400 });
     }
 
-    const unitPrice = roundMoney(
+    const convertedUnitPrice = Number(
       convertAmount(
         article.unitPrice,
         articleCurrencyMap.get(article.id),
         currencySettings.primaryCurrencyCode,
         currencySettings,
-      ),
+      ) || 0,
     );
-    const lineTotal = roundMoney(unitPrice * item.quantity);
-    subtotal += lineTotal;
+    const lineTotal = roundMoney(convertedUnitPrice * item.quantity);
+    subtotal += convertedUnitPrice * item.quantity;
     orderItems.push({
       productId: article.id,
       quantity: item.quantity,
-      unitPrice,
+      unitPrice: roundMoney(convertedUnitPrice),
       total: lineTotal,
     });
 
@@ -617,233 +618,459 @@ const getOrderHistory = async (req, res) => {
   return res.json(history);
 };
 
-const updateOrder = async (req, res) => {
+const cancelOrderSale = async ({
+  tenantId,
+  orderId,
+  actorUserId,
+  reason,
+  auditAction = "DELETED",
+  auditReasonFallback = "Suppression logique de la vente.",
+}) => {
   await ensureInventoryLotTables();
-  const { id } = req.params;
-  const {
-    customerId,
-    paymentMethod,
-    amountReceived,
-    originalAmountReceived,
-    paymentCurrencyCode,
-    reference,
-    items,
-    reason,
-  } = req.body || {};
 
-  const existingOrder = await getOrderWithRelations(req.user.tenantId, id);
+  const existingOrder = await getOrderWithRelations(tenantId, orderId);
   if (!existingOrder) {
-    return res.status(404).json({ message: "Order not found." });
+    throw Object.assign(new Error("Order not found."), { status: 404 });
   }
   if (existingOrder.status === "CANCELED") {
-    return res.status(409).json({ message: "Impossible de modifier une vente supprimee." });
+    throw Object.assign(new Error("Cette vente est deja annulee."), { status: 409 });
   }
 
-  const existingPayment = existingOrder.payments?.[0];
-  if (!existingPayment) {
-    return res.status(409).json({ message: "Cette vente ne contient aucun paiement." });
+  const payment = existingOrder.payments?.[0];
+  if (!payment) {
+    throw Object.assign(new Error("Cette vente ne contient aucun paiement."), { status: 409 });
   }
 
-  let nextItems = (existingOrder.items || []).map((item) => ({
-    productId: item.productId,
-    quantity: Number(item.quantity || 0),
-  }));
-  if (items !== undefined) {
-    if (!Array.isArray(items) || !items.length) {
-      return res.status(400).json({ message: "items array required." });
-    }
+  const cashSession = await getCashSessionByPaymentId({
+    tenantId,
+    paymentId: payment.id,
+  });
 
-    try {
-      nextItems = normalizeOrderItemsInput(items);
-    } catch (error) {
-      return res.status(error.status || 500).json({ message: error.message || "Invalid sale." });
-    }
+  if (!cashSession?.storageZoneId) {
+    throw Object.assign(
+      new Error("Impossible de determiner la zone de stock de cette vente."),
+      { status: 409 },
+    );
   }
 
-  let customer = null;
-  if (customerId) {
-    customer = await prisma.customer.findFirst({
-      where: { id: customerId, tenantId: req.user.tenantId },
-      select: { id: true, firstName: true, lastName: true, phone: true },
-    });
-
-    if (!customer) {
-      return res.status(404).json({ message: "Customer not found." });
-    }
-  }
-
-  const currencySettings = await loadTenantCurrencySettings(prisma, req.user.tenantId);
-  const primaryCurrencyCode = currencySettings.primaryCurrencyCode;
-  const previousSaleSnapshot = await buildSaleFromItems({
-    tenantId: req.user.tenantId,
+  const saleSnapshot = await buildSaleFromItems({
+    tenantId,
     items: (existingOrder.items || []).map((item) => ({
       productId: item.productId,
       quantity: Number(item.quantity || 0),
     })),
-    currencySettings,
+    currencySettings: await loadTenantCurrencySettings(prisma, tenantId),
     allowInactiveArticles: true,
     allowInactiveComponents: true,
   });
-  const nextSaleSnapshot = await buildSaleFromItems({
-    tenantId: req.user.tenantId,
-    items: nextItems,
-    currencySettings,
-    allowInactiveArticles: true,
-    allowInactiveComponents: true,
-  });
-  const normalizedPaymentCurrencyCode = normalizeCurrencyCode(
-    paymentCurrencyCode ||
-      existingPayment.originalCurrencyCode ||
-      existingPayment.currencyCode ||
-      primaryCurrencyCode,
-    primaryCurrencyCode,
+
+  const beforeSnapshot = buildOrderAuditSnapshot(
+    await hydrateOrdersWithCurrencyCodes(existingOrder),
   );
-  const rawOriginalPaidAmount =
-    originalAmountReceived !== undefined
-      ? Number(originalAmountReceived)
-      : amountReceived !== undefined
-        ? Number(amountReceived)
-        : Number(existingPayment.originalAmount ?? existingOrder.total);
 
-  const convertedPaidAmount = roundMoney(
-    convertAmount(
-      rawOriginalPaidAmount,
-      normalizedPaymentCurrencyCode,
-      primaryCurrencyCode,
-      currencySettings,
-    ),
-  );
-  const nextOrderTotal = Number(nextSaleSnapshot.total || 0);
+  const runCancelTransaction = async ({ aggregateOnly = false } = {}) => {
+    await prisma.$transaction(async (tx) => {
+      let movementRows = [];
 
-  if (!Number.isFinite(convertedPaidAmount) || convertedPaidAmount < nextOrderTotal) {
-    return res.status(400).json({
-      message: "Received amount must cover the sale total.",
-    });
-  }
+      if (aggregateOnly) {
+        movementRows = await restoreAggregateInventoryForRequirements(tx, {
+          tenantId,
+          storeId: existingOrder.storeId,
+          storageZoneId: cashSession.storageZoneId,
+          inventoryRequirements: saleSnapshot.inventoryRequirements,
+          sourceId: existingOrder.id,
+          createdById: actorUserId,
+        });
+      } else {
+        const restoredProductIds = new Set();
+        movementRows = [];
 
-  const normalizedMethod = paymentMethod
-    ? normalizePaymentMethod(paymentMethod)
-    : existingPayment.method;
-  if (!normalizedMethod) {
-    return res.status(400).json({ message: "Invalid payment method." });
-  }
+        for (const [productId, quantity] of saleSnapshot.inventoryRequirements.entries()) {
+          await incrementInventoryLot(tx, {
+            tenantId,
+            storeId: existingOrder.storeId,
+            storageZoneId: cashSession.storageZoneId,
+            productId,
+            quantity,
+            syncAggregate: false,
+          });
 
-  const beforeSnapshot = buildOrderAuditSnapshot({
-    ...existingOrder,
-    payments: attachPaymentOriginalDetails(existingOrder.payments || [], new Map([
-      [
-        existingPayment.id,
-        {
-          originalAmount:
-            existingPayment.originalAmount == null
-              ? Number(existingOrder.total || 0)
-              : Number(existingPayment.originalAmount),
-          originalCurrencyCode:
-            existingPayment.originalCurrencyCode ||
-            existingPayment.currencyCode ||
-            primaryCurrencyCode,
+          restoredProductIds.add(productId);
+          movementRows.push({
+            tenantId,
+            productId,
+            storageZoneId: cashSession.storageZoneId,
+            quantity,
+            movementType: "IN",
+            sourceType: "DIRECT",
+            sourceId: existingOrder.id,
+            createdById: actorUserId,
+          });
+        }
+
+        for (const productId of restoredProductIds) {
+          await synchronizeInventoryAggregate(tx, {
+            tenantId,
+            storeId: existingOrder.storeId,
+            storageZoneId: cashSession.storageZoneId,
+            productId,
+          });
+        }
+      }
+
+      if (movementRows.length) {
+        await tx.inventoryMovement.createMany({
+          data: movementRows,
+        });
+      }
+
+      await tx.order.update({
+        where: { id: existingOrder.id },
+        data: { status: "CANCELED" },
+      });
+
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: "FAILED",
+          reference: payment.reference,
         },
-      ],
-    ])),
+      });
+
+      await adjustLinkedPaymentCashTotals(tx, {
+        tenantId,
+        paymentId: payment.id,
+        previousAmount: Number(existingOrder.total || 0),
+        previousMethod: payment.method,
+        nextAmount: 0,
+        nextMethod: payment.method,
+      });
+    }, LONG_TRANSACTION_OPTIONS);
+  };
+
+  let aggregateRestockOnly = await hasLegacyOrderWithoutLots({
+    tenantId,
+    storageZoneId: cashSession.storageZoneId,
+    productIds: [...saleSnapshot.inventoryRequirements.keys()],
   });
 
-  const cashSession = await getCashSessionByPaymentId({
-    tenantId: req.user.tenantId,
-    paymentId: existingPayment.id,
+  try {
+    await runCancelTransaction({ aggregateOnly: aggregateRestockOnly });
+  } catch (transactionError) {
+    const isTransactionTimeout =
+      transactionError?.code === "P2028" ||
+      String(transactionError?.message || "").includes("Transaction already closed");
+
+    if (!isTransactionTimeout || aggregateRestockOnly) {
+      throw transactionError;
+    }
+
+    aggregateRestockOnly = true;
+    await runCancelTransaction({ aggregateOnly: true });
+  }
+
+  const canceledOrder = await hydrateOrdersWithCurrencyCodes(
+    await getOrderWithRelations(tenantId, existingOrder.id),
+  );
+  const afterSnapshot = buildOrderAuditSnapshot(canceledOrder);
+  await recordOrderAudit(prisma, {
+    tenantId,
+    orderId: existingOrder.id,
+    action: auditAction,
+    actorUserId,
+    reason: reason || auditReasonFallback,
+    details: {
+      before: beforeSnapshot,
+      after: afterSnapshot,
+      changes: buildAuditChanges(beforeSnapshot, afterSnapshot),
+      aggregateRestockOnly,
+    },
   });
 
-  if (!cashSession?.storageZoneId) {
-    return res.status(409).json({
-      message: "Impossible de determiner la zone de stock de cette vente.",
+  emitToTenant(tenantId, "sale:updated", {
+    id: canceledOrder.id,
+    storeId: canceledOrder.storeId,
+    total: canceledOrder.total,
+    status: canceledOrder.status,
+  });
+  emitToTenant(tenantId, "payment:updated", {
+    id: payment.id,
+    orderId: canceledOrder.id,
+    status: "FAILED",
+  });
+
+  if (canceledOrder.storeId) {
+    emitToStore(canceledOrder.storeId, "sale:updated", {
+      id: canceledOrder.id,
+      storeId: canceledOrder.storeId,
+      total: canceledOrder.total,
+      status: canceledOrder.status,
+    });
+    emitToStore(canceledOrder.storeId, "payment:updated", {
+      id: payment.id,
+      orderId: canceledOrder.id,
+      status: "FAILED",
     });
   }
 
-  const requirementsDiff = mapRequirementsDiff(
-    previousSaleSnapshot.inventoryRequirements,
-    nextSaleSnapshot.inventoryRequirements,
-  );
-  const positiveAdjustments = requirementsDiff.filter((item) => item.diff > 0);
+  await emitLotExpiryNotifications(tenantId);
 
-  if (positiveAdjustments.length) {
-    const inventoryRows = await prisma.inventory.findMany({
-      where: {
-        tenantId: req.user.tenantId,
-        storageZoneId: cashSession.storageZoneId,
-        productId: { in: positiveAdjustments.map((item) => item.productId) },
-      },
-      select: {
-        productId: true,
-        quantity: true,
-      },
-    });
-    const inventoryMap = new Map(
-      inventoryRows.map((row) => [row.productId, Number(row.quantity || 0)]),
-    );
+  return canceledOrder;
+};
 
-    for (const adjustment of positiveAdjustments) {
-      const available = Number(inventoryMap.get(adjustment.productId) || 0);
-      if (available < adjustment.diff) {
-        return res.status(400).json({
-          message: `Insufficient stock for ${
-            nextSaleSnapshot.requirementLabels.get(adjustment.productId) || adjustment.productId
-          }.`,
+const updateOrder = async (req, res) => {
+  try {
+    await ensureInventoryLotTables();
+    const { id } = req.params;
+    const {
+      customerId,
+      paymentMethod,
+      amountReceived,
+      originalAmountReceived,
+      paymentCurrencyCode,
+      reference,
+      items,
+      reason,
+    } = req.body || {};
+
+    const existingOrder = await getOrderWithRelations(req.user.tenantId, id);
+    if (!existingOrder) {
+      return res.status(404).json({ message: "Order not found." });
+    }
+    if (existingOrder.status === "CANCELED") {
+      return res.status(409).json({ message: "Impossible de modifier une vente supprimee." });
+    }
+
+    const existingPayment = existingOrder.payments?.[0];
+    if (!existingPayment) {
+      return res.status(409).json({ message: "Cette vente ne contient aucun paiement." });
+    }
+
+    let nextItems = (existingOrder.items || []).map((item) => ({
+      productId: item.productId,
+      quantity: Number(item.quantity || 0),
+    }));
+    if (items !== undefined) {
+      if (!Array.isArray(items) || !items.length) {
+        return res.status(400).json({ message: "items array required." });
+      }
+
+      try {
+        nextItems = normalizeOrderItemsInput(items);
+      } catch (error) {
+        const normalized = normalizeError(error);
+        return res.status(normalized.status).json({
+          message: normalized.message || "Invalid sale.",
         });
       }
     }
-  }
 
-  await prisma.$transaction(async (tx) => {
-    await tx.order.update({
-      where: { id: existingOrder.id },
-      data: {
-        customerId: customerId === undefined ? existingOrder.customerId : customer?.id || null,
-        subtotal: nextOrderTotal,
-        total: nextOrderTotal,
-        items:
-          items !== undefined
-            ? {
-                deleteMany: {},
-                create: nextSaleSnapshot.orderItems,
-              }
-            : undefined,
-      },
+    let customer = null;
+    if (customerId) {
+      customer = await prisma.customer.findFirst({
+        where: { id: customerId, tenantId: req.user.tenantId },
+        select: { id: true, firstName: true, lastName: true, phone: true },
+      });
+
+      if (!customer) {
+        return res.status(404).json({ message: "Customer not found." });
+      }
+    }
+
+    const currencySettings = await loadTenantCurrencySettings(prisma, req.user.tenantId);
+    const primaryCurrencyCode = currencySettings.primaryCurrencyCode;
+    const previousSaleSnapshot = await buildSaleFromItems({
+      tenantId: req.user.tenantId,
+      items: (existingOrder.items || []).map((item) => ({
+        productId: item.productId,
+        quantity: Number(item.quantity || 0),
+      })),
+      currencySettings,
+      allowInactiveArticles: true,
+      allowInactiveComponents: true,
+    });
+    const nextSaleSnapshot = await buildSaleFromItems({
+      tenantId: req.user.tenantId,
+      items: nextItems,
+      currencySettings,
+      allowInactiveArticles: true,
+      allowInactiveComponents: true,
+    });
+    const normalizedPaymentCurrencyCode = normalizeCurrencyCode(
+      paymentCurrencyCode ||
+        existingPayment.originalCurrencyCode ||
+        existingPayment.currencyCode ||
+        primaryCurrencyCode,
+      primaryCurrencyCode,
+    );
+    const rawOriginalPaidAmount =
+      originalAmountReceived !== undefined
+        ? Number(originalAmountReceived)
+        : amountReceived !== undefined
+          ? Number(amountReceived)
+          : Number(existingPayment.originalAmount ?? existingOrder.total);
+
+    const convertedPaidAmount = roundMoney(
+      convertAmount(
+        rawOriginalPaidAmount,
+        normalizedPaymentCurrencyCode,
+        primaryCurrencyCode,
+        currencySettings,
+      ),
+    );
+    const nextOrderTotal = Number(nextSaleSnapshot.total || 0);
+
+    if (!Number.isFinite(convertedPaidAmount) || convertedPaidAmount < nextOrderTotal) {
+      return res.status(400).json({
+        message: "Received amount must cover the sale total.",
+      });
+    }
+
+    const normalizedMethod = paymentMethod
+      ? normalizePaymentMethod(paymentMethod)
+      : existingPayment.method;
+    if (!normalizedMethod) {
+      return res.status(400).json({ message: "Invalid payment method." });
+    }
+
+    const beforeSnapshot = buildOrderAuditSnapshot({
+      ...existingOrder,
+      payments: attachPaymentOriginalDetails(existingOrder.payments || [], new Map([
+        [
+          existingPayment.id,
+          {
+            originalAmount:
+              existingPayment.originalAmount == null
+                ? Number(existingOrder.total || 0)
+                : Number(existingPayment.originalAmount),
+            originalCurrencyCode:
+              existingPayment.originalCurrencyCode ||
+              existingPayment.currencyCode ||
+              primaryCurrencyCode,
+          },
+        ],
+      ])),
     });
 
-    await tx.payment.update({
-      where: { id: existingPayment.id },
-      data: {
-        amount: nextOrderTotal,
-        method: normalizedMethod,
-        reference:
-          reference === undefined ? existingPayment.reference : reference || null,
-      },
-    });
-
-    await setPaymentOriginal(tx, existingPayment.id, {
-      originalAmount: rawOriginalPaidAmount,
-      originalCurrencyCode: normalizedPaymentCurrencyCode,
-    });
-
-    await adjustLinkedPaymentCashTotals(tx, {
+    const cashSession = await getCashSessionByPaymentId({
       tenantId: req.user.tenantId,
       paymentId: existingPayment.id,
-      previousAmount: Number(existingOrder.total || 0),
-      previousMethod: existingPayment.method,
-      nextAmount: nextOrderTotal,
-      nextMethod: normalizedMethod,
     });
 
-    if (items !== undefined) {
-      for (const adjustment of requirementsDiff) {
-        if (!adjustment.diff) continue;
+    if (!cashSession?.storageZoneId) {
+      return res.status(409).json({
+        message: "Impossible de determiner la zone de stock de cette vente.",
+      });
+    }
+    const requirementsDiff = mapRequirementsDiff(
+      previousSaleSnapshot.inventoryRequirements,
+      nextSaleSnapshot.inventoryRequirements,
+    );
+    const positiveAdjustments = requirementsDiff.filter((item) => item.diff > 0);
 
-        if (adjustment.diff > 0) {
-          await consumeInventoryLotsFefo(tx, {
+    if (positiveAdjustments.length) {
+      const inventoryRows = await prisma.inventory.findMany({
+        where: {
+          tenantId: req.user.tenantId,
+          storageZoneId: cashSession.storageZoneId,
+          productId: { in: positiveAdjustments.map((item) => item.productId) },
+        },
+        select: {
+          productId: true,
+          quantity: true,
+        },
+      });
+      const inventoryMap = new Map(
+        inventoryRows.map((row) => [row.productId, Number(row.quantity || 0)]),
+      );
+
+      for (const adjustment of positiveAdjustments) {
+        const available = Number(inventoryMap.get(adjustment.productId) || 0);
+        if (available < adjustment.diff) {
+          return res.status(400).json({
+            message: `Insufficient stock for ${
+              nextSaleSnapshot.requirementLabels.get(adjustment.productId) || adjustment.productId
+            }.`,
+          });
+        }
+      }
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: existingOrder.id },
+        data: {
+          customerId: customerId === undefined ? existingOrder.customerId : customer?.id || null,
+          subtotal: nextOrderTotal,
+          total: nextOrderTotal,
+          items:
+            items !== undefined
+              ? {
+                  deleteMany: {},
+                  create: nextSaleSnapshot.orderItems,
+                }
+              : undefined,
+        },
+      });
+
+      await tx.payment.update({
+        where: { id: existingPayment.id },
+        data: {
+          amount: nextOrderTotal,
+          method: normalizedMethod,
+          reference:
+            reference === undefined ? existingPayment.reference : reference || null,
+        },
+      });
+
+      await setPaymentOriginal(tx, existingPayment.id, {
+        originalAmount: rawOriginalPaidAmount,
+        originalCurrencyCode: normalizedPaymentCurrencyCode,
+      });
+
+      await adjustLinkedPaymentCashTotals(tx, {
+        tenantId: req.user.tenantId,
+        paymentId: existingPayment.id,
+        previousAmount: Number(existingOrder.total || 0),
+        previousMethod: existingPayment.method,
+        nextAmount: nextOrderTotal,
+        nextMethod: normalizedMethod,
+      });
+
+      if (items !== undefined) {
+        for (const adjustment of requirementsDiff) {
+          if (!adjustment.diff) continue;
+
+          if (adjustment.diff > 0) {
+            await consumeInventoryLotsFefo(tx, {
+              tenantId: req.user.tenantId,
+              storeId: existingOrder.storeId,
+              storageZoneId: cashSession.storageZoneId,
+              productId: adjustment.productId,
+              quantity: adjustment.diff,
+            });
+
+            await tx.inventoryMovement.create({
+              data: {
+                tenantId: req.user.tenantId,
+                productId: adjustment.productId,
+                storageZoneId: cashSession.storageZoneId,
+                quantity: adjustment.diff,
+                movementType: "OUT",
+                sourceType: "DIRECT",
+                sourceId: existingOrder.id,
+                createdById: req.user.id,
+              },
+            });
+            continue;
+          }
+
+          await incrementInventoryLot(tx, {
             tenantId: req.user.tenantId,
             storeId: existingOrder.storeId,
             storageZoneId: cashSession.storageZoneId,
             productId: adjustment.productId,
-            quantity: adjustment.diff,
+            quantity: Math.abs(adjustment.diff),
           });
 
           await tx.inventoryMovement.create({
@@ -851,265 +1078,90 @@ const updateOrder = async (req, res) => {
               tenantId: req.user.tenantId,
               productId: adjustment.productId,
               storageZoneId: cashSession.storageZoneId,
-              quantity: adjustment.diff,
-              movementType: "OUT",
+              quantity: Math.abs(adjustment.diff),
+              movementType: "IN",
               sourceType: "DIRECT",
               sourceId: existingOrder.id,
               createdById: req.user.id,
             },
           });
-          continue;
         }
-
-        await incrementInventoryLot(tx, {
-          tenantId: req.user.tenantId,
-          storeId: existingOrder.storeId,
-          storageZoneId: cashSession.storageZoneId,
-          productId: adjustment.productId,
-          quantity: Math.abs(adjustment.diff),
-        });
-
-        await tx.inventoryMovement.create({
-          data: {
-            tenantId: req.user.tenantId,
-            productId: adjustment.productId,
-            storageZoneId: cashSession.storageZoneId,
-            quantity: Math.abs(adjustment.diff),
-            movementType: "IN",
-            sourceType: "DIRECT",
-            sourceId: existingOrder.id,
-            createdById: req.user.id,
-          },
-        });
       }
-    }
-  }, LONG_TRANSACTION_OPTIONS);
+    }, LONG_TRANSACTION_OPTIONS);
 
-  const updatedOrder = await hydrateOrdersWithCurrencyCodes(
-    await getOrderWithRelations(req.user.tenantId, existingOrder.id),
-  );
-  const afterSnapshot = buildOrderAuditSnapshot(updatedOrder);
-  const changes = buildAuditChanges(beforeSnapshot, afterSnapshot);
+    const updatedOrder = await hydrateOrdersWithCurrencyCodes(
+      await getOrderWithRelations(req.user.tenantId, existingOrder.id),
+    );
+    const afterSnapshot = buildOrderAuditSnapshot(updatedOrder);
+    const changes = buildAuditChanges(beforeSnapshot, afterSnapshot);
 
-  await recordOrderAudit(prisma, {
-    tenantId: req.user.tenantId,
-    orderId: existingOrder.id,
-    action: "UPDATED",
-    actorUserId: req.user.id,
-    reason: reason || "Modification manuelle de la vente.",
-    details: {
-      before: beforeSnapshot,
-      after: afterSnapshot,
-      changes,
-    },
-  });
+    await recordOrderAudit(prisma, {
+      tenantId: req.user.tenantId,
+      orderId: existingOrder.id,
+      action: "UPDATED",
+      actorUserId: req.user.id,
+      reason: reason || "Modification manuelle de la vente.",
+      details: {
+        before: beforeSnapshot,
+        after: afterSnapshot,
+        changes,
+      },
+    });
 
-  emitToTenant(req.user.tenantId, "sale:updated", {
-    id: updatedOrder.id,
-    storeId: updatedOrder.storeId,
-    total: updatedOrder.total,
-    status: updatedOrder.status,
-  });
-  if (updatedOrder.storeId) {
-    emitToStore(updatedOrder.storeId, "sale:updated", {
+    emitToTenant(req.user.tenantId, "sale:updated", {
       id: updatedOrder.id,
       storeId: updatedOrder.storeId,
       total: updatedOrder.total,
       status: updatedOrder.status,
     });
-  }
-
-  await emitLotExpiryNotifications(req.user.tenantId);
-
-  return res.json(updatedOrder);
-};
-
-const deleteOrder = async (req, res) => {
-  await ensureInventoryLotTables();
-  const { id } = req.params;
-  const { reason } = req.body || {};
-
-  const existingOrder = await getOrderWithRelations(req.user.tenantId, id);
-  if (!existingOrder) {
-    return res.status(404).json({ message: "Order not found." });
-  }
-  if (existingOrder.status === "CANCELED") {
-    return res.status(409).json({ message: "Cette vente est deja supprimee." });
-  }
-
-  const payment = existingOrder.payments?.[0];
-  if (!payment) {
-    return res.status(409).json({ message: "Cette vente ne contient aucun paiement." });
-  }
-
-  const cashSession = await getCashSessionByPaymentId({
-    tenantId: req.user.tenantId,
-    paymentId: payment.id,
-  });
-
-  if (!cashSession?.storageZoneId) {
-    return res.status(409).json({
-      message: "Impossible de determiner la zone de stock de cette vente.",
-    });
-  }
-
-  try {
-    const saleSnapshot = await buildSaleFromItems({
-      tenantId: req.user.tenantId,
-      items: (existingOrder.items || []).map((item) => ({
-        productId: item.productId,
-        quantity: Number(item.quantity || 0),
-      })),
-      currencySettings: await loadTenantCurrencySettings(prisma, req.user.tenantId),
-      allowInactiveArticles: true,
-      allowInactiveComponents: true,
-    });
-
-    const beforeSnapshot = buildOrderAuditSnapshot(
-      await hydrateOrdersWithCurrencyCodes(existingOrder),
-    );
-
-    const runDeleteTransaction = async ({ aggregateOnly = false } = {}) => {
-      await prisma.$transaction(async (tx) => {
-        let movementRows = [];
-
-        if (aggregateOnly) {
-          movementRows = await restoreAggregateInventoryForRequirements(tx, {
-            tenantId: req.user.tenantId,
-            storeId: existingOrder.storeId,
-            storageZoneId: cashSession.storageZoneId,
-            inventoryRequirements: saleSnapshot.inventoryRequirements,
-            sourceId: existingOrder.id,
-            createdById: req.user.id,
-          });
-        } else {
-          const restoredProductIds = new Set();
-          movementRows = [];
-
-          for (const [productId, quantity] of saleSnapshot.inventoryRequirements.entries()) {
-            await incrementInventoryLot(tx, {
-              tenantId: req.user.tenantId,
-              storeId: existingOrder.storeId,
-              storageZoneId: cashSession.storageZoneId,
-              productId,
-              quantity,
-              syncAggregate: false,
-            });
-
-            restoredProductIds.add(productId);
-            movementRows.push({
-              tenantId: req.user.tenantId,
-              productId,
-              storageZoneId: cashSession.storageZoneId,
-              quantity,
-              movementType: "IN",
-              sourceType: "DIRECT",
-              sourceId: existingOrder.id,
-              createdById: req.user.id,
-            });
-          }
-
-          for (const productId of restoredProductIds) {
-            await synchronizeInventoryAggregate(tx, {
-              tenantId: req.user.tenantId,
-              storeId: existingOrder.storeId,
-              storageZoneId: cashSession.storageZoneId,
-              productId,
-            });
-          }
-        }
-
-        if (movementRows.length) {
-          await tx.inventoryMovement.createMany({
-            data: movementRows,
-          });
-        }
-
-        await tx.order.update({
-          where: { id: existingOrder.id },
-          data: { status: "CANCELED" },
-        });
-
-        await tx.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: "FAILED",
-            reference: payment.reference,
-          },
-        });
-
-        await adjustLinkedPaymentCashTotals(tx, {
-          tenantId: req.user.tenantId,
-          paymentId: payment.id,
-          previousAmount: Number(existingOrder.total || 0),
-          previousMethod: payment.method,
-          nextAmount: 0,
-          nextMethod: payment.method,
-        });
-      }, LONG_TRANSACTION_OPTIONS);
-    };
-
-    let aggregateRestockOnly = await hasLegacyOrderWithoutLots({
-      tenantId: req.user.tenantId,
-      storageZoneId: cashSession.storageZoneId,
-      productIds: [...saleSnapshot.inventoryRequirements.keys()],
-    });
-
-    try {
-      await runDeleteTransaction({ aggregateOnly: aggregateRestockOnly });
-    } catch (transactionError) {
-      const isTransactionTimeout =
-        transactionError?.code === "P2028" ||
-        String(transactionError?.message || "").includes("Transaction already closed");
-
-      if (!isTransactionTimeout || aggregateRestockOnly) {
-        throw transactionError;
-      }
-
-      aggregateRestockOnly = true;
-      await runDeleteTransaction({ aggregateOnly: true });
-    }
-
-    const deletedOrder = await hydrateOrdersWithCurrencyCodes(
-      await getOrderWithRelations(req.user.tenantId, existingOrder.id),
-    );
-    const afterSnapshot = buildOrderAuditSnapshot(deletedOrder);
-    await recordOrderAudit(prisma, {
-      tenantId: req.user.tenantId,
-      orderId: existingOrder.id,
-      action: "DELETED",
-      actorUserId: req.user.id,
-      reason: reason || "Suppression logique de la vente.",
-      details: {
-        before: beforeSnapshot,
-        after: afterSnapshot,
-        changes: buildAuditChanges(beforeSnapshot, afterSnapshot),
-        aggregateRestockOnly,
-      },
-    });
-
-    emitToTenant(req.user.tenantId, "sale:updated", {
-      id: deletedOrder.id,
-      storeId: deletedOrder.storeId,
-      total: deletedOrder.total,
-      status: deletedOrder.status,
-    });
-    if (deletedOrder.storeId) {
-      emitToStore(deletedOrder.storeId, "sale:updated", {
-        id: deletedOrder.id,
-        storeId: deletedOrder.storeId,
-        total: deletedOrder.total,
-        status: deletedOrder.status,
+    if (updatedOrder.storeId) {
+      emitToStore(updatedOrder.storeId, "sale:updated", {
+        id: updatedOrder.id,
+        storeId: updatedOrder.storeId,
+        total: updatedOrder.total,
+        status: updatedOrder.status,
       });
     }
 
     await emitLotExpiryNotifications(req.user.tenantId);
 
+    return res.json(updatedOrder);
+  } catch (error) {
+    const normalized = normalizeError(error);
+    console.error("updateOrder failed:", {
+      status: normalized.status,
+      message: normalized.message,
+      code: error?.code || null,
+      rawMessage: error?.message || null,
+    });
+    return res.status(normalized.status).json({ message: normalized.message });
+  }
+};
+
+const deleteOrder = async (req, res) => {
+  try {
+    const deletedOrder = await cancelOrderSale({
+      tenantId: req.user.tenantId,
+      orderId: req.params.id,
+      actorUserId: req.user.id,
+      reason: req.body?.reason,
+      auditAction: "DELETED",
+      auditReasonFallback: "Suppression logique de la vente.",
+    });
     return res.json(deletedOrder);
   } catch (error) {
-    console.error("deleteOrder failed:", error);
-    return res.status(error.status || 500).json({
-      message: "Impossible de supprimer cette vente.",
+    const normalized = normalizeError(error);
+    console.error("deleteOrder failed:", {
+      status: normalized.status,
+      message: normalized.message,
+      code: error?.code || null,
+      rawMessage: error?.message || null,
+    });
+    return res.status(normalized.status).json({
+      message:
+        normalized.status === 500 && normalized.message === "Une erreur interne est survenue."
+          ? "Impossible de supprimer cette vente."
+          : normalized.message,
     });
   }
 };
@@ -1232,7 +1284,10 @@ const createOrder = async (req, res) => {
       return { productId, quantity };
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ message: error.message || "Invalid sale." });
+    const normalized = normalizeError(error);
+    return res.status(normalized.status).json({
+      message: normalized.message || "Invalid sale.",
+    });
   }
 
   const articleIds = [...new Set(normalizedItems.map((item) => item.productId))];
@@ -1299,21 +1354,21 @@ const createOrder = async (req, res) => {
         throw Object.assign(new Error("Invalid article selected."), { status: 400 });
       }
 
-      const unitPrice = roundMoney(
+      const convertedUnitPrice = Number(
         convertAmount(
           article.unitPrice,
           articleCurrencyMap.get(article.id),
           currencySettings.primaryCurrencyCode,
           currencySettings,
-        ),
+        ) || 0,
       );
-      const lineTotal = unitPrice * item.quantity;
-      subtotal += lineTotal;
+      const lineTotal = roundMoney(convertedUnitPrice * item.quantity);
+      subtotal += convertedUnitPrice * item.quantity;
       orderItems.push({
         productId: article.id,
         quantity: item.quantity,
-        unitPrice,
-        total: roundMoney(lineTotal),
+        unitPrice: roundMoney(convertedUnitPrice),
+        total: lineTotal,
       });
 
       if (!Array.isArray(article.components) || article.components.length === 0) {
@@ -1368,7 +1423,10 @@ const createOrder = async (req, res) => {
       });
     });
   } catch (error) {
-    return res.status(error.status || 500).json({ message: error.message || "Invalid sale." });
+    const normalized = normalizeError(error);
+    return res.status(normalized.status).json({
+      message: normalized.message || "Invalid sale.",
+    });
   }
 
   const total = roundMoney(subtotal);
@@ -1657,4 +1715,5 @@ module.exports = {
   createOrder,
   updateOrder,
   deleteOrder,
+  cancelOrderSale,
 };

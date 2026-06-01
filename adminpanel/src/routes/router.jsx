@@ -50,6 +50,7 @@ import ReceiptSettingsPage from "../pages/ReceiptSettingsPage";
 import Login from "../pages/Login";
 import ProtectedRoute from "./ProtectedRoute";
 import { formatMoney } from "../utils/currencyDisplay";
+import { hasScopedDocumentPermission } from "../utils/documentPermissions";
 
 const leaf = ({
   id,
@@ -586,7 +587,7 @@ export const sidebarSections = [
             path: "/configurations/articles/collections",
             link: "articles-collections",
             icon: FolderTree,
-            summary: "Collections principales des categories produits.",
+            summary: "Collections principales auxquelles sont rattachees les familles.",
             sectionLabel: "Configurations",
             parentLabel: "Articles",
             parentPath: "/configurations/articles",
@@ -630,7 +631,7 @@ export const sidebarSections = [
             path: "/configurations/articles/categorie",
             link: "articles-categorie",
             icon: Tags,
-            summary: "Categories operationnelles et analytiques des produits.",
+            summary: "Categories libres pour classer les articles et produits.",
             sectionLabel: "Configurations",
             parentLabel: "Articles",
             parentPath: "/configurations/articles",
@@ -819,54 +820,55 @@ const routePermissionConfig = {
     read: ["purchase_requests.read"],
     create: ["purchase_requests.create"],
     edit: ["purchase_requests.update", "purchase_requests.update_own_draft"],
-    delete: ["purchase_requests.delete"],
+    delete: ["purchase_requests.delete", "purchase_requests.delete_own_draft"],
     detail: ["purchase_requests.read"],
   },
   "/commande/commande": {
     read: ["purchase_orders.read"],
     create: ["purchase_orders.create"],
-    edit: ["purchase_orders.update"],
-    delete: ["purchase_orders.delete"],
+    edit: ["purchase_orders.update", "purchase_orders.update_own_draft"],
+    delete: ["purchase_orders.delete", "purchase_orders.delete_own_draft"],
     detail: ["purchase_orders.read"],
   },
   "/commande/liste-commande": {
     read: ["purchase_orders.read"],
     create: ["purchase_orders.create"],
-    edit: ["purchase_orders.update"],
-    delete: ["purchase_orders.delete"],
+    edit: ["purchase_orders.update", "purchase_orders.update_own_draft"],
+    delete: ["purchase_orders.delete", "purchase_orders.delete_own_draft"],
     detail: ["purchase_orders.read"],
   },
   "/mouvement/entree-stock": {
     read: ["movements.read"],
     create: ["movements.create"],
-    edit: ["movements.update"],
-    delete: ["movements.delete"],
+    edit: ["movements.update", "movements.update_own_draft"],
+    delete: ["movements.delete", "movements.delete_own_draft"],
     detail: ["movements.read"],
   },
   "/mouvement/sortie-stock": {
     read: ["movements.read"],
     create: ["movements.create"],
-    edit: ["movements.update"],
-    delete: ["movements.delete"],
+    edit: ["movements.update", "movements.update_own_draft"],
+    delete: ["movements.delete", "movements.delete_own_draft"],
+    detail: ["movements.read"],
   },
   "/mouvement/retour-stock": {
     read: ["movements.read"],
     create: ["movements.create"],
-    edit: ["movements.update"],
-    delete: ["movements.delete"],
+    edit: ["movements.update", "movements.update_own_draft"],
+    delete: ["movements.delete", "movements.delete_own_draft"],
   },
   "/mouvement/transfert": {
     read: ["transfers.read"],
     create: ["transfers.create"],
-    edit: ["transfers.update"],
-    delete: ["transfers.delete"],
+    edit: ["transfers.update", "transfers.update_own_draft"],
+    delete: ["transfers.delete", "transfers.delete_own_draft"],
     detail: ["transfers.read"],
   },
   "/mouvement/retour-fournisseur": {
     read: ["movements.read"],
     create: ["movements.create"],
-    edit: ["movements.update"],
-    delete: ["movements.delete"],
+    edit: ["movements.update", "movements.update_own_draft"],
+    delete: ["movements.delete", "movements.delete_own_draft"],
     detail: ["movements.read"],
   },
   "/mouvement/historique-mouvements": {
@@ -882,15 +884,15 @@ const routePermissionConfig = {
   "/inventaire/inventaire": {
     read: ["inventory.read"],
     create: ["inventory.create"],
-    edit: ["inventory.update"],
-    delete: ["inventory.delete"],
+    edit: ["inventory.update", "inventory.update_own_draft"],
+    delete: ["inventory.delete", "inventory.delete_own_draft"],
     detail: ["inventory.read"],
   },
   "/inventaire/etat-inventaire": {
     read: ["inventory.read"],
     create: ["inventory.create"],
-    edit: ["inventory.update"],
-    delete: ["inventory.delete"],
+    edit: ["inventory.update", "inventory.update_own_draft"],
+    delete: ["inventory.delete", "inventory.delete_own_draft"],
     detail: ["inventory.read"],
   },
   "/configurations/articles/produits": {
@@ -1165,8 +1167,10 @@ const productColumns = [
   column("Produit", "name"),
   column("SKU", (row) => row.sku || "--", { sortBy: "sku" }),
   column("Code scan", (row) => row.scanCode || "--", { sortBy: "scanCode" }),
-  column("Categorie", "category.name"),
+  column("Collection", (row) => row.family?.collection?.name || "--"),
   column("Famille", "family.name"),
+  column("Sous-famille", "subFamily.name"),
+  column("Categorie", "category.name"),
   column("TVA", (row) => row.tva?.code || row.tva?.name || "--"),
   column("Prix", (row) => formatMoney(row.unitPrice, row.currencyCode), { sortBy: "unitPrice" }),
   column("Seuil min", (row) => row.minLevel ?? "--", { sortBy: "minLevel" }),
@@ -1231,8 +1235,10 @@ const articleColumns = [
   column("Reference", (row) => row.sku || row.id),
   column("Libelle", "name"),
   column("Description", (row) => row.description || "--"),
-  column("Categorie", "category.name"),
+  column("Collection", (row) => row.family?.collection?.name || "--"),
   column("Famille", "family.name"),
+  column("Sous-famille", "subFamily.name"),
+  column("Categorie", "category.name"),
   column("TVA", (row) => row.tva?.code || row.tva?.name || "--"),
   column("Prix vente", (row) => formatMoney(row.unitPrice, row.currencyCode), { sortBy: "unitPrice" }),
   column("Seuil min", (row) => row.minLevel ?? "--", { sortBy: "minLevel" }),
@@ -1315,7 +1321,7 @@ const customerBonusProgramColumns = [
 
 const familyColumns = [
   column("Nom", "name"),
-  column("Categorie", (row) => row.category?.name || "--"),
+  column("Collection", (row) => row.collection?.name || "--"),
   column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
 ];
 
@@ -1409,6 +1415,54 @@ const approvalActions = (resourcePath) => [
   },
 ];
 
+const canManageRequestedDocument = (
+  row,
+  user,
+  fullPermission,
+  ownPermission,
+  allowedStatuses = ["DRAFT", "SUBMITTED", "REJECTED"],
+) =>
+  hasScopedDocumentPermission({
+    user,
+    fullPermission,
+    ownPermission,
+    ownerId: row?.requestedById || row?.requestedBy?.id,
+    status: row?.status,
+    allowedStatuses,
+  });
+
+const canManageOrderedDocument = (
+  row,
+  user,
+  fullPermission,
+  ownPermission,
+  allowedStatuses = ["DRAFT"],
+) =>
+  hasScopedDocumentPermission({
+    user,
+    fullPermission,
+    ownPermission,
+    ownerId: row?.orderedById || row?.orderedBy?.id,
+    status: row?.rawStatus || row?.status,
+    allowedStatuses,
+  });
+
+const canManageCreatedMovement = (
+  row,
+  user,
+  fullPermission,
+  ownPermission,
+  allowedStatuses = ["PENDING"],
+) =>
+  hasScopedDocumentPermission({
+    user,
+    fullPermission,
+    ownPermission,
+    ownerId: row?.createdById || row?.createdBy?.id,
+    status: row?.rawStatus || row?.status,
+    allowedStatuses,
+  });
+
 const stockEntryRowActions = [
   {
     id: "stock-entry-approve",
@@ -1475,6 +1529,8 @@ const productRowActions = [
     body: () => ({ isActive: true }),
     visible: (row) => row?.isActive === false,
     tone: "success",
+    prioritize: true,
+    requiredPermissions: ["settings.update"],
   },
 ];
 
@@ -1487,6 +1543,7 @@ const userRowActions = [
     body: () => ({ isActive: true }),
     visible: (row) => row?.isActive === false,
     tone: "success",
+    prioritize: true,
     requiredPermissions: ["users.update"],
   },
 ];
@@ -1529,6 +1586,7 @@ export const resourceCatalog = {
   }),
   "/mouvement/entree-stock": createResource({
     endpoint: "/api/stock-entries",
+    defaultQuery: { operationType: "IN" },
     columns: stockEntryColumns,
     rowActions: [],
     tableTitle: "Entrees de stock",
@@ -1548,12 +1606,14 @@ export const resourceCatalog = {
     },
   }),
   "/mouvement/sortie-stock": createResource({
-    endpoint: "/api/inventory-movements",
-    defaultQuery: { movementType: "OUT" },
-    columns: inventoryMovementColumns,
+    endpoint: "/api/stock-entries",
+    defaultQuery: { operationType: "OUT", sourceType: "DIRECT" },
+    columns: stockEntryColumns,
+    rowActions: [],
     tableTitle: "Sorties de stock",
-    tableDescription: "Mouvements de sortie identifies dans l'inventaire.",
-    emptyMessage: "Aucune sortie de stock tracee.",
+    tableDescription:
+      "Sorties directes en attente, rejetees ou deja postees depuis une zone de stockage.",
+    emptyMessage: "Aucune sortie directe de stock trouvee.",
   }),
   "/mouvement/retour-stock": createResource({
     endpoint: "/api/inventory-movements",
@@ -1746,7 +1806,7 @@ export const resourceCatalog = {
     endpoint: "/api/product-collections",
     columns: collectionColumns,
     tableTitle: "Collections",
-    tableDescription: "Collections principales auxquelles sont rattachees les categories.",
+    tableDescription: "Collections principales auxquelles sont rattachees les familles.",
     emptyMessage: "Aucune collection disponible.",
     importConfig: {
       templatePath: "/api/product-collections/template",
@@ -1830,11 +1890,10 @@ export const resourceCatalog = {
     endpoint: "/api/product-categories",
     columns: [
       column("Nom", "name"),
-      column("Collection", (row) => row.collection?.name || "--"),
       column("Cree le", (row) => formatDate(row.createdAt), { sortBy: "createdAt" }),
     ],
     tableTitle: "Categories",
-    tableDescription: "Categories produits definies dans le tenant.",
+    tableDescription: "Categories libres et independantes definies dans le tenant.",
     emptyMessage: "Aucune categorie disponible.",
     importConfig: {
       templatePath: "/api/product-categories/template",
@@ -2654,6 +2713,7 @@ const stockOutputForm = {
       label: "Type d'operation",
       type: "select",
       required: true,
+      disableOnEdit: true,
       options: [
         { value: "REQUISITION", label: "Approvisionner une boutique" },
         { value: "DIRECT", label: "Retirer du stock" },
@@ -3566,23 +3626,11 @@ const categoryForm = (
       required: true,
       placeholder: "Nom",
     },
-    {
-      name: "collectionId",
-      label: "Collection",
-      type: "search-select",
-      optionsEndpoint: "/api/product-collections",
-      optionValue: "id",
-      optionLabel: "name",
-      placeholder: "Rechercher une collection...",
-    },
   ],
   buildRequest: (values) => ({
     endpoint,
     method: "POST",
-    body: {
-      name: values.name,
-      collectionId: compactValue(values.collectionId),
-    },
+    body: { name: values.name },
   }),
 });
 
@@ -3607,13 +3655,13 @@ const familyForm = (
       placeholder: "Nom",
     },
     {
-      name: "categoryId",
-      label: "Categorie",
+      name: "collectionId",
+      label: "Collection",
       type: "search-select",
-      optionsEndpoint: "/api/product-categories",
+      optionsEndpoint: "/api/product-collections",
       optionValue: "id",
       optionLabel: "name",
-      placeholder: "Rechercher une categorie...",
+      placeholder: "Rechercher une collection...",
     },
   ],
   buildRequest: (values) => ({
@@ -3621,7 +3669,7 @@ const familyForm = (
     method: "POST",
     body: {
       name: values.name,
-      categoryId: compactValue(values.categoryId),
+      collectionId: compactValue(values.collectionId),
     },
   }),
 });
@@ -4239,7 +4287,7 @@ export const createCatalog = {
     createPath: "/configurations/articles/collections/nouveau",
     ...simpleNameForm(
       "Nouvelle collection",
-      "Ajoute une collection de categories.",
+      "Ajoute une collection de familles.",
       "/api/product-collections",
       "Creer la collection",
       "Collection creee.",
@@ -4249,7 +4297,7 @@ export const createCatalog = {
     createPath: "/configurations/articles/familles/nouveau",
     ...familyForm(
       "Nouvelle famille",
-      "Ajoute une famille d'articles.",
+      "Ajoute une famille rattachee a une collection.",
       "/api/product-families",
       "Creer la famille",
       "Famille creee.",
@@ -4273,7 +4321,7 @@ export const createCatalog = {
     createPath: "/configurations/articles/categorie/nouveau",
     ...categoryForm(
       "Nouvelle categorie",
-      "Ajoute une categorie de produits.",
+      "Ajoute une categorie independante.",
       "/api/product-categories",
       "Creer la categorie",
       "Categorie creee.",
@@ -4352,6 +4400,8 @@ const isPendingStatus = (row) => row?.status === "PENDING";
 const isNonValidatedPendingMovement = (row) =>
   row?.rawStatus === "PENDING" &&
   ["PENDING", "SUBMITTED", "REJECTED"].includes(row?.status);
+const isEditableInventorySession = (row) =>
+  ["DRAFT", "REJECTED"].includes(row?.status);
 const alwaysMutable = () => true;
 const productDeactivateConfig = {
   deleteLabel: "Desactiver",
@@ -4406,8 +4456,22 @@ export const editCatalog = {
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-requests/${id}`, method: "DELETE" }),
     pdfUrl: (row) => `/api/purchase-requests/${row.id}/pdf`,
-    canEdit: isNotValidatedApprovalRequest,
-    canDelete: isDraftStatus,
+    canEdit: (row, user) =>
+      isNotValidatedApprovalRequest(row) &&
+      canManageRequestedDocument(
+        row,
+        user,
+        "purchase_requests.update",
+        "purchase_requests.update_own_draft",
+      ),
+    canDelete: (row, user) =>
+      isNotValidatedApprovalRequest(row) &&
+      canManageRequestedDocument(
+        row,
+        user,
+        "purchase_requests.delete",
+        "purchase_requests.delete_own_draft",
+      ),
     detailKind: "approval-request",
   },
   "/commande/requisitions": {
@@ -4458,8 +4522,22 @@ export const editCatalog = {
       (id) => `/api/purchase-orders/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-orders/${id}`, method: "DELETE" }),
-    canEdit: isNonValidatedDraftWorkflow,
-    canDelete: isDraftOrRejectedWithRawDraft,
+    canEdit: (row, user) =>
+      isNonValidatedDraftWorkflow(row) &&
+      canManageOrderedDocument(
+        row,
+        user,
+        "purchase_orders.update",
+        "purchase_orders.update_own_draft",
+      ),
+    canDelete: (row, user) =>
+      isNonValidatedDraftWorkflow(row) &&
+      canManageOrderedDocument(
+        row,
+        user,
+        "purchase_orders.delete",
+        "purchase_orders.delete_own_draft",
+      ),
     pdfUrl: (row) => `/api/purchase-orders/${row.id}/pdf`,
     detailKind: "purchase-order",
   },
@@ -4486,8 +4564,22 @@ export const editCatalog = {
       (id) => `/api/purchase-orders/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/purchase-orders/${id}`, method: "DELETE" }),
-    canEdit: isNonValidatedDraftWorkflow,
-    canDelete: isDraftOrRejectedWithRawDraft,
+    canEdit: (row, user) =>
+      isNonValidatedDraftWorkflow(row) &&
+      canManageOrderedDocument(
+        row,
+        user,
+        "purchase_orders.update",
+        "purchase_orders.update_own_draft",
+      ),
+    canDelete: (row, user) =>
+      isNonValidatedDraftWorkflow(row) &&
+      canManageOrderedDocument(
+        row,
+        user,
+        "purchase_orders.delete",
+        "purchase_orders.delete_own_draft",
+      ),
     pdfUrl: (row) => `/api/purchase-orders/${row.id}/pdf`,
     detailKind: "purchase-order",
   },
@@ -4529,13 +4621,76 @@ export const editCatalog = {
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/stock-entries/${id}`, method: "DELETE" }),
-    canEdit: (row) =>
+    canEdit: (row, user) =>
       row?.sourceType === "DIRECT" &&
-      isNonValidatedPendingMovement(row),
-    canDelete: (row) =>
+      isNonValidatedPendingMovement(row) &&
+      canManageCreatedMovement(
+        row,
+        user,
+        "movements.update",
+        "movements.update_own_draft",
+      ),
+    canDelete: (row, user) =>
       row?.sourceType === "DIRECT" &&
-      row?.rawStatus === "PENDING" &&
-      ["PENDING", "REJECTED"].includes(row?.status),
+      isNonValidatedPendingMovement(row) &&
+      canManageCreatedMovement(
+        row,
+        user,
+        "movements.delete",
+        "movements.delete_own_draft",
+      ),
+    pdfUrl: (row) => `/api/stock-entries/${row.id}/pdf`,
+    detailKind: "stock-entry",
+  },
+  "/mouvement/sortie-stock": {
+    ...stockOutputForm,
+    editPath: "/mouvement/sortie-stock/modifier",
+    detailPath: "/mouvement/sortie-stock/detail",
+    detailEndpoint: (id) => `/api/stock-entries/${id}`,
+    buildFormValues: (row) => ({
+      mode: "DIRECT",
+      supplyRequestId: "",
+      fromZoneId: "",
+      toZoneId: "",
+      storageZoneId: row.storageZoneId || row.storageZone?.id || "",
+      note: row.note || "",
+      items: (row.items || []).map((item) => ({
+        productId: item.productId || item.product?.id || "",
+        quantity: String(Math.abs(Number(item.quantity || 0)) || ""),
+        note: "",
+      })),
+    }),
+    buildUpdateRequest: (values, id) => ({
+      endpoint: `/api/stock-entries/${id}`,
+      method: "PATCH",
+      body: {
+        sourceId: null,
+        storeId: null,
+        storageZoneId: values.storageZoneId,
+        note: compactValue(values.note),
+        operationType: "OUT",
+        items: buildDocumentItems(values.items, () => ({})),
+      },
+    }),
+    deleteRequest: (id) => ({ endpoint: `/api/stock-entries/${id}`, method: "DELETE" }),
+    canEdit: (row, user) =>
+      row?.sourceType === "DIRECT" &&
+      isNonValidatedPendingMovement(row) &&
+      canManageCreatedMovement(
+        row,
+        user,
+        "movements.update",
+        "movements.update_own_draft",
+      ),
+    canDelete: (row, user) =>
+      row?.sourceType === "DIRECT" &&
+      isNonValidatedPendingMovement(row) &&
+      canManageCreatedMovement(
+        row,
+        user,
+        "movements.delete",
+        "movements.delete_own_draft",
+      ),
     pdfUrl: (row) => `/api/stock-entries/${row.id}/pdf`,
     detailKind: "stock-entry",
   },
@@ -4559,8 +4714,28 @@ export const editCatalog = {
     ),
     pdfUrl: (row) => `/api/transfers/${row.id}/pdf`,
     deleteRequest: (id) => ({ endpoint: `/api/transfers/${id}`, method: "DELETE" }),
-    canEdit: isNonValidatedDraftWorkflow,
-    canDelete: isDraftOrRejectedWithRawDraft,
+    canEdit: (row, user) =>
+      (row?.rawStatus === "DRAFT" || row?.rawStatus === "IN_TRANSIT") &&
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "transfers.update",
+        ownPermission: "transfers.update_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.rawStatus || row?.status,
+        allowedStatuses: ["DRAFT", "IN_TRANSIT"],
+      }),
+    canDelete: (row, user) =>
+      (row?.rawStatus === "DRAFT" || row?.rawStatus === "IN_TRANSIT") &&
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "transfers.delete",
+        ownPermission: "transfers.delete_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.rawStatus || row?.status,
+        allowedStatuses: ["DRAFT", "IN_TRANSIT"],
+      }),
     detailKind: "transfer",
   },
   "/mouvement/retour-fournisseur": {
@@ -4582,8 +4757,26 @@ export const editCatalog = {
       (id) => `/api/supplier-returns/${id}`,
     ),
     deleteRequest: (id) => ({ endpoint: `/api/supplier-returns/${id}`, method: "DELETE" }),
-    canEdit: (row) => ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status),
-    canDelete: (row) => ["DRAFT", "REJECTED"].includes(row?.status),
+    canEdit: (row, user) =>
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "movements.update",
+        ownPermission: "movements.update_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.status,
+        allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+      }),
+    canDelete: (row, user) =>
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "movements.delete",
+        ownPermission: "movements.delete_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.status,
+        allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+      }),
     detailKind: "supplier-return",
   },
   "/mouvement/historique-caisse": {
@@ -4599,8 +4792,27 @@ export const editCatalog = {
     editPath: "/inventaire/inventaire/modifier",
     detailPath: "/inventaire/inventaire/detail",
     detailEndpoint: (id) => `/api/inventory/sessions/${id}`,
-    canEdit: () => false,
-    canDelete: () => false,
+    canEdit: (row, user) =>
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "inventory.update",
+        ownPermission: "inventory.update_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.status,
+        allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+      }),
+    deleteRequest: (id) => ({ endpoint: `/api/inventory/sessions/${id}`, method: "DELETE" }),
+    canDelete: (row, user) =>
+      ["DRAFT", "SUBMITTED", "REJECTED"].includes(row?.status) &&
+      hasScopedDocumentPermission({
+        user,
+        fullPermission: "inventory.delete",
+        ownPermission: "inventory.delete_own_draft",
+        ownerId: row?.requestedById || row?.requestedBy?.id,
+        status: row?.status,
+        allowedStatuses: ["DRAFT", "SUBMITTED", "REJECTED"],
+      }),
     detailKind: "inventory-session",
   },
   "/inventaire/etat-inventaire": {
@@ -4623,7 +4835,7 @@ export const editCatalog = {
     ),
     deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
-    canDelete: alwaysMutable,
+    canDelete: (row) => row?.isActive !== false,
     ...productDeactivateConfig,
     hardDeleteRequest: (id) => ({ endpoint: `/api/products/${id}/hard`, method: "DELETE" }),
     canHardDelete: alwaysMutable,
@@ -4640,7 +4852,7 @@ export const editCatalog = {
     ),
     deleteRequest: (id) => ({ endpoint: `/api/products/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
-    canDelete: alwaysMutable,
+    canDelete: (row) => row?.isActive !== false,
     ...productDeactivateConfig,
     hardDeleteRequest: (id) => ({ endpoint: `/api/products/${id}/hard`, method: "DELETE" }),
     canHardDelete: alwaysMutable,
@@ -4710,14 +4922,14 @@ export const editCatalog = {
     editPath: "/configurations/articles/familles/modifier",
     buildFormValues: (row) => ({
       name: row.name || "",
-      categoryId: row.categoryId || row.category?.id || "",
+      collectionId: row.collectionId || row.collection?.id || "",
     }),
     buildUpdateRequest: (values, id) => ({
       endpoint: `/api/product-families/${id}`,
       method: "PATCH",
       body: {
         name: values.name,
-        categoryId: compactValue(values.categoryId),
+        collectionId: compactValue(values.collectionId),
       },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/product-families/${id}`, method: "DELETE" }),
@@ -4761,17 +4973,11 @@ export const editCatalog = {
       "Categorie modifiee.",
     ),
     editPath: "/configurations/articles/categorie/modifier",
-    buildFormValues: (row) => ({
-      name: row.name || "",
-      collectionId: row.collectionId || row.collection?.id || "",
-    }),
+    buildFormValues: (row) => ({ name: row.name || "" }),
     buildUpdateRequest: (values, id) => ({
       endpoint: `/api/product-categories/${id}`,
       method: "PATCH",
-      body: {
-        name: values.name,
-        collectionId: compactValue(values.collectionId),
-      },
+      body: { name: values.name },
     }),
     deleteRequest: (id) => ({ endpoint: `/api/product-categories/${id}`, method: "DELETE" }),
     canEdit: alwaysMutable,
@@ -5282,7 +5488,12 @@ const createRoutes = Object.values(createPageCatalog).map((item) => ({
 
 const editRoutes = Object.values(editPageCatalog).map((item) => ({
   path: item.editPath.slice(1),
-  element: <AdminCreatePage />,
+  element:
+    normalizePath(item.editPath) === "/inventaire/inventaire/modifier" ? (
+      <AdminInventoryCountPage />
+    ) : (
+      <AdminCreatePage />
+    ),
 }));
 
 const detailRoutes = Object.values(detailPageCatalog).map((item) => ({

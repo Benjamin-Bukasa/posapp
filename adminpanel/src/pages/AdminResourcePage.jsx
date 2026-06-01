@@ -269,6 +269,20 @@ const resolveDeleteLabel = (row) =>
   row?.id ||
   "cet element";
 
+const CRUD_DROPDOWN_PATHS = new Set([
+  "/mouvement/entree-stock",
+  "/mouvement/sortie-stock",
+  "/mouvement/transfert",
+  "/inventaire/inventaire",
+]);
+
+const BULK_HARD_DELETE_PATHS = new Set([
+  "/configurations/articles/produits",
+  "/configurations/articles/articles",
+  "/configurations/utilisateur/liste-utilisateurs",
+  "/configurations/utilisateur/creer",
+]);
+
 const AdminResourcePage = () => {
   const location = useLocation();
   const navigate = useNavigate();
@@ -286,7 +300,7 @@ const AdminResourcePage = () => {
   const [rows, setRows] = useState(resource?.staticRows || []);
   const [meta, setMeta] = useState(null);
   const [loading, setLoading] = useState(Boolean(resource?.endpoint));
-  const [error, setError] = useState("");
+  const [, setError] = useState("");
   const [search, setSearch] = useSyncedQuerySearch("q");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(resource?.pageSize || 10);
@@ -295,6 +309,7 @@ const AdminResourcePage = () => {
   const [filters, setFilters] = useState({});
   const [sort, setSort] = useState({ sortBy: "", sortDir: "desc" });
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [bulkDeleteTarget, setBulkDeleteTarget] = useState(null);
   const [hardDeleteTarget, setHardDeleteTarget] = useState(null);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [activeImportConfig, setActiveImportConfig] = useState(null);
@@ -326,6 +341,21 @@ const AdminResourcePage = () => {
           getRouteActionPermissions(currentRoute.path, "create"),
       ),
   );
+  const canDeleteRows = hasAnyPermission(
+    user,
+    tableActionConfig.deletePermissions ||
+      getRouteActionPermissions(currentRoute.path, "delete"),
+  );
+  const shouldUseHardDeleteForBulk =
+    BULK_HARD_DELETE_PATHS.has(currentRoute.path) &&
+    Boolean(tableActionConfig.hardDeleteRequest);
+  const canBulkDeleteRows = shouldUseHardDeleteForBulk
+    ? hasAnyPermission(
+        user,
+        tableActionConfig.hardDeletePermissions ||
+          getRouteActionPermissions(currentRoute.path, "delete"),
+      )
+    : canDeleteRows;
 
   useEffect(() => {
     setPage(1);
@@ -347,6 +377,7 @@ const AdminResourcePage = () => {
     setError("");
     setPageSize(resource?.pageSize || 10);
     setDeleteTarget(null);
+    setBulkDeleteTarget(null);
     setHardDeleteTarget(null);
     setIsImportOpen(false);
     setActiveImportConfig(null);
@@ -686,7 +717,7 @@ const AdminResourcePage = () => {
             row.id,
         }));
         setImportSelectionOptions(options);
-      } catch (_error) {
+      } catch {
         if (ignore) return;
         setImportSelectionOptions([]);
       }
@@ -749,6 +780,7 @@ const AdminResourcePage = () => {
 
   const openDeleteConfirm = useCallback((row) => {
     if (!tableActionConfig.deleteRequest) return;
+    setBulkDeleteTarget(null);
     setHardDeleteTarget(null);
     setDeleteTarget(row);
     setError("");
@@ -757,6 +789,48 @@ const AdminResourcePage = () => {
   const closeDeleteConfirm = useCallback(() => {
     if (pendingActionKey.startsWith("delete:")) return;
     setDeleteTarget(null);
+  }, [pendingActionKey]);
+
+  const openBulkDeleteConfirm = useCallback(
+    (selection = []) => {
+      if (
+        (!shouldUseHardDeleteForBulk && !tableActionConfig.deleteRequest) ||
+        (shouldUseHardDeleteForBulk && !tableActionConfig.hardDeleteRequest) ||
+        !canBulkDeleteRows
+      ) {
+        return;
+      }
+
+      const deletableRows = selection.filter((row) =>
+        shouldUseHardDeleteForBulk
+          ? tableActionConfig.canHardDelete?.(row, user)
+          : tableActionConfig.canDelete?.(row, user),
+      );
+      if (!deletableRows.length) {
+        showToast({
+          title: "Suppression indisponible",
+          message:
+            "Aucune des lignes selectionnees ne peut etre supprimee dans son etat actuel.",
+          variant: "warning",
+        });
+        return;
+      }
+
+      setDeleteTarget(null);
+      setHardDeleteTarget(null);
+      setBulkDeleteTarget({
+        rows: deletableRows,
+        skippedCount: Math.max(0, selection.length - deletableRows.length),
+        mode: shouldUseHardDeleteForBulk ? "hard" : "soft",
+      });
+      setError("");
+    },
+    [canBulkDeleteRows, shouldUseHardDeleteForBulk, showToast, tableActionConfig, user],
+  );
+
+  const closeBulkDeleteConfirm = useCallback(() => {
+    if (pendingActionKey === "bulk-delete") return;
+    setBulkDeleteTarget(null);
   }, [pendingActionKey]);
 
   const openHardDeleteConfirm = useCallback((row) => {
@@ -813,6 +887,89 @@ const AdminResourcePage = () => {
       }
     },
     [accessToken, loadCurrencySettings, logout, navigate, showToast, tableActionConfig],
+  );
+
+  const handleBulkDelete = useCallback(
+    async (target) => {
+      const useHardDelete = target?.mode === "hard";
+      if (
+        (!useHardDelete && !tableActionConfig.deleteRequest) ||
+        (useHardDelete && !tableActionConfig.hardDeleteRequest) ||
+        !accessToken
+      ) {
+        return;
+      }
+
+      const rowsToDelete = Array.isArray(target?.rows) ? target.rows : [];
+      if (!rowsToDelete.length) return;
+
+      setPendingActionKey("bulk-delete");
+      setError("");
+
+      try {
+        for (const row of rowsToDelete) {
+          const request = useHardDelete
+            ? tableActionConfig.hardDeleteRequest(row.id, row)
+            : tableActionConfig.deleteRequest(row.id, row);
+          await requestJson(request.endpoint, {
+            token: accessToken,
+            method: request.method || "DELETE",
+            body: request.body,
+          });
+
+          if (String(request.endpoint).startsWith("/api/currency-settings")) {
+            await loadCurrencySettings({ token: accessToken, force: true });
+          }
+        }
+
+        const deletedCount = rowsToDelete.length;
+        const skippedCount = Number(target?.skippedCount || 0);
+        showToast({
+          title: useHardDelete
+            ? tableActionConfig.hardDeleteLabel || "Suppression definitive reussie"
+            : tableActionConfig.deleteLabel || "Suppression reussie",
+          message:
+            skippedCount > 0
+              ? `${deletedCount} ligne(s) supprimee(s), ${skippedCount} ignoree(s).`
+              : `${deletedCount} ligne(s) supprimee(s) avec succes.`,
+          variant: "success",
+        });
+        setBulkDeleteTarget(null);
+        setRefreshTick((current) => current + 1);
+      } catch (requestError) {
+        if (requestError instanceof ApiError && requestError.status === 401) {
+          await logout();
+          navigate("/login", { replace: true });
+          return;
+        }
+
+        setError(
+          requestError.message ||
+            (useHardDelete
+              ? "Impossible de supprimer definitivement la selection."
+              : "Impossible de supprimer la selection."),
+        );
+        showToast({
+          title: "Erreur",
+          message:
+            requestError.message ||
+            (useHardDelete
+              ? "Impossible de supprimer definitivement la selection."
+              : "Impossible de supprimer la selection."),
+          variant: "danger",
+        });
+      } finally {
+        setPendingActionKey("");
+      }
+    },
+    [
+      accessToken,
+      loadCurrencySettings,
+      logout,
+      navigate,
+      showToast,
+      tableActionConfig,
+    ],
   );
 
   const handleHardDelete = useCallback(
@@ -1115,27 +1272,28 @@ const AdminResourcePage = () => {
 
   const renderActions = useCallback(
     (row) => {
+      const prioritizeCrudActions = CRUD_DROPDOWN_PATHS.has(currentRoute.path);
       const customActions = (resource?.rowActions || []).filter(
         (action) =>
           (!action.visible || action.visible(row)) &&
           hasAnyPermission(user, action.requiredPermissions || []),
       );
       const canEdit =
-        tableActionConfig.canEdit?.(row) &&
+        tableActionConfig.canEdit?.(row, user) &&
         hasAnyPermission(
           user,
           tableActionConfig.editPermissions ||
             getRouteActionPermissions(currentRoute.path, "edit"),
         );
       const canDelete =
-        tableActionConfig.canDelete?.(row) &&
+        tableActionConfig.canDelete?.(row, user) &&
         hasAnyPermission(
           user,
           tableActionConfig.deletePermissions ||
             getRouteActionPermissions(currentRoute.path, "delete"),
         );
       const canHardDelete =
-        tableActionConfig.canHardDelete?.(row) &&
+        tableActionConfig.canHardDelete?.(row, user) &&
         hasAnyPermission(
           user,
           tableActionConfig.hardDeletePermissions ||
@@ -1149,9 +1307,48 @@ const AdminResourcePage = () => {
       );
       const pdfPath = canViewDetail ? tableActionConfig.pdfUrl?.(row) : null;
       const items = [];
+      const secondaryItems = [];
+
+      const pushActionItem = (item, { prioritize = false } = {}) => {
+        if (prioritize) {
+          items.push(item);
+          return;
+        }
+        secondaryItems.push(item);
+      };
+
+      if (canEdit && tableActionConfig.editPath) {
+        pushActionItem(
+          {
+            id: `edit:${row.id}`,
+            label: "Modifier",
+            icon: Pencil,
+            disabled: Boolean(pendingActionKey),
+            onClick: () =>
+              navigate(`${tableActionConfig.editPath}?id=${row.id}`, {
+                state: { row },
+              }),
+          },
+          { prioritize: prioritizeCrudActions },
+        );
+      }
+
+      if (canDelete && tableActionConfig.deleteRequest) {
+        pushActionItem(
+          {
+            id: `delete:${row.id}`,
+            label: tableActionConfig.deleteLabel || "Supprimer",
+            icon: Trash2,
+            variant: "danger",
+            disabled: Boolean(pendingActionKey),
+            onClick: () => openDeleteConfirm(row),
+          },
+          { prioritize: prioritizeCrudActions },
+        );
+      }
 
       if (pdfPath) {
-        items.push({
+        pushActionItem({
           id: `pdf:${row.id}`,
           label: "Ouvrir le PDF",
           icon: FileText,
@@ -1160,32 +1357,8 @@ const AdminResourcePage = () => {
         });
       }
 
-      if (canEdit && tableActionConfig.editPath) {
-        items.push({
-          id: `edit:${row.id}`,
-          label: "Modifier",
-          icon: Pencil,
-          disabled: Boolean(pendingActionKey),
-          onClick: () =>
-            navigate(`${tableActionConfig.editPath}?id=${row.id}`, {
-              state: { row },
-            }),
-        });
-      }
-
-      if (canDelete && tableActionConfig.deleteRequest) {
-        items.push({
-          id: `delete:${row.id}`,
-          label: tableActionConfig.deleteLabel || "Supprimer",
-          icon: Trash2,
-          variant: "danger",
-          disabled: Boolean(pendingActionKey),
-          onClick: () => openDeleteConfirm(row),
-        });
-      }
-
       if (canHardDelete && tableActionConfig.hardDeleteRequest) {
-        items.push({
+        pushActionItem({
           id: `hard-delete:${row.id}`,
           label: tableActionConfig.hardDeleteLabel || "Supprimer definitivement",
           icon: Trash2,
@@ -1196,7 +1369,7 @@ const AdminResourcePage = () => {
       }
 
       if (detailPath && canViewDetail) {
-        items.push({
+        pushActionItem({
           id: `detail:${row.id}`,
           label: "Detail",
           icon: Eye,
@@ -1210,15 +1383,20 @@ const AdminResourcePage = () => {
 
       customActions.forEach((action) => {
         const isPending = pendingActionKey === `${action.id}:${row.id}`;
-        items.push({
-          id: `${action.id}:${row.id}`,
-          label: isPending ? `${action.label}...` : action.label,
-          icon: action.tone === "danger" ? XCircle : CheckCircle2,
-          variant: action.tone === "danger" ? "danger" : undefined,
-          disabled: Boolean(pendingActionKey),
-          onClick: () => handleRowAction(action, row),
-        });
+        pushActionItem(
+          {
+            id: `${action.id}:${row.id}`,
+            label: isPending ? `${action.label}...` : action.label,
+            icon: action.tone === "danger" ? XCircle : CheckCircle2,
+            variant: action.tone === "danger" ? "danger" : undefined,
+            disabled: Boolean(pendingActionKey),
+            onClick: () => handleRowAction(action, row),
+          },
+          { prioritize: Boolean(action.prioritize) },
+        );
       });
+
+      items.push(...secondaryItems);
 
       if (!items.length) {
         items.push({
@@ -1384,6 +1562,13 @@ const AdminResourcePage = () => {
         pagination={pagination}
         actionSlot={actionSlot}
         enableSelection
+        onDeleteSelected={
+          ((shouldUseHardDeleteForBulk && tableActionConfig.hardDeleteRequest) ||
+            (!shouldUseHardDeleteForBulk && tableActionConfig.deleteRequest)) &&
+          canBulkDeleteRows
+            ? (nextSelectedRows) => openBulkDeleteConfirm(nextSelectedRows)
+            : undefined
+        }
         renderActions={renderActions}
         actionsHeader="Actions"
       />
@@ -1455,6 +1640,42 @@ const AdminResourcePage = () => {
         onConfirm={() => {
           if (!deleteTarget) return;
           handleDelete(deleteTarget);
+        }}
+      />
+
+      <ConfirmModal
+        isOpen={Boolean(bulkDeleteTarget)}
+        title={`${
+          bulkDeleteTarget?.mode === "hard"
+            ? "Supprimer definitivement"
+            : "Supprimer"
+        } ${bulkDeleteTarget?.rows?.length || 0} ligne(s)`}
+        description={
+          bulkDeleteTarget
+            ? bulkDeleteTarget.skippedCount > 0
+              ? `${bulkDeleteTarget.rows.length} ligne(s) seront ${
+                  bulkDeleteTarget.mode === "hard"
+                    ? "supprimees definitivement"
+                    : "supprimees"
+                }. ${bulkDeleteTarget.skippedCount} ligne(s) non supprimables seront ignorees.`
+              : `Voulez-vous vraiment ${
+                  bulkDeleteTarget.mode === "hard"
+                    ? "supprimer definitivement"
+                    : "supprimer"
+                } ${bulkDeleteTarget.rows.length} ligne(s) selectionnee(s) ?`
+            : ""
+        }
+        confirmLabel={
+          bulkDeleteTarget?.mode === "hard"
+            ? tableActionConfig.hardDeleteLabel || "Supprimer definitivement"
+            : tableActionConfig.deleteLabel || "Supprimer"
+        }
+        cancelLabel="Annuler"
+        loading={pendingActionKey === "bulk-delete"}
+        onCancel={closeBulkDeleteConfirm}
+        onConfirm={() => {
+          if (!bulkDeleteTarget) return;
+          handleBulkDelete(bulkDeleteTarget);
         }}
       />
 

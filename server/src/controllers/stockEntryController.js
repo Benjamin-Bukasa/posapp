@@ -31,6 +31,7 @@ const {
   getDocumentApprovals,
   getDocumentApprovalMap,
   prepareDocumentApprovals,
+  resetDocumentApprovals,
   decideDocumentApproval,
   ensureDocumentApprovalTable,
 } = require("../utils/documentApprovalStore");
@@ -38,6 +39,8 @@ const {
   expandArticleItems,
   ensureComponentItems,
 } = require("../utils/expandArticleItems");
+const { sendErrorResponse } = require("../utils/httpErrors");
+const { hasScopedPermission } = require("../utils/documentPermissionScopes");
 
 const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
@@ -117,17 +120,11 @@ const canModifyStockEntry = async (tenantId, entry) => {
 };
 
 const resetStockEntryApprovals = async (tenantId, entryId) => {
-  await ensureDocumentApprovalTable();
-  await prisma.$executeRawUnsafe(`
-    UPDATE "documentApprovals"
-    SET
-      "status" = 'PENDING',
-      "decidedAt" = NULL,
-      "note" = NULL
-    WHERE "tenantId" = ${JSON.stringify(tenantId)}
-      AND "documentType" = ${JSON.stringify(STOCK_ENTRY_DOCUMENT_TYPE)}
-      AND "documentId" = ${JSON.stringify(entryId)}
-  `);
+  await resetDocumentApprovals({
+    tenantId,
+    documentType: STOCK_ENTRY_DOCUMENT_TYPE,
+    documentId: entryId,
+  });
 };
 
 const hydrateStockEntriesWithCurrencyCodes = async (records) => {
@@ -400,9 +397,7 @@ const createStockEntry = async (req, res) => {
         items: sourceItems,
       });
     } catch (error) {
-      return res.status(error.status || 500).json({
-        message: error.message || "Invalid stock output.",
-      });
+      return sendErrorResponse(res, error, "Invalid stock output.");
     }
   }
 
@@ -415,9 +410,7 @@ const createStockEntry = async (req, res) => {
           "Les entrees en stock doivent etre saisies sur des produits composants.",
       });
     } catch (error) {
-      return res.status(error.status || 500).json({
-        message: error.message || "Invalid stock entry.",
-      });
+      return sendErrorResponse(res, error, "Invalid stock entry.");
     }
   }
 
@@ -1002,6 +995,7 @@ const listStockEntries = async (req, res) => {
   const {
     status,
     sourceType,
+    operationType,
     storeId,
     storageZoneId,
     createdById,
@@ -1030,6 +1024,11 @@ const listStockEntries = async (req, res) => {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
     ...(sourceType ? { sourceType } : {}),
+    ...(operationType === "OUT"
+      ? { items: { some: { quantity: { lt: 0 } } } }
+      : operationType === "IN"
+        ? { items: { some: { quantity: { gt: 0 } } } }
+        : {}),
     ...(isSeller(req.user)
       ? {
           createdById: req.user.id,
@@ -1233,6 +1232,21 @@ const updateStockEntry = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
+  const canUpdate = hasScopedPermission({
+    user: req.user,
+    fullPermission: "movements.update",
+    ownPermission: "movements.update_own_draft",
+    ownerId: entry.createdById,
+    status: entry.status,
+    allowedStatuses: ["PENDING"],
+  });
+
+  if (!canUpdate) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de modifier ce mouvement.",
+    });
+  }
+
   if (isSeller(req.user) && entry.createdById !== req.user.id) {
     return res.status(403).json({
       message: "Le vendeur ne peut modifier que ses propres mouvements.",
@@ -1285,9 +1299,7 @@ const updateStockEntry = async (req, res) => {
         items,
       });
     } catch (error) {
-      return res.status(error.status || 500).json({
-        message: error.message || "Invalid stock entry.",
-      });
+      return sendErrorResponse(res, error, "Invalid stock entry.");
     }
   }
 
@@ -1300,9 +1312,7 @@ const updateStockEntry = async (req, res) => {
           "Les entrees en stock doivent etre saisies sur des produits composants.",
       });
     } catch (error) {
-      return res.status(error.status || 500).json({
-        message: error.message || "Invalid stock entry.",
-      });
+      return sendErrorResponse(res, error, "Invalid stock entry.");
     }
   }
 
@@ -1375,6 +1385,21 @@ const deleteStockEntry = async (req, res) => {
     return res.status(404).json({ message: "Stock entry not found." });
   }
 
+  const canDelete = hasScopedPermission({
+    user: req.user,
+    fullPermission: "movements.delete",
+    ownPermission: "movements.delete_own_draft",
+    ownerId: entry.createdById,
+    status: entry.status,
+    allowedStatuses: ["PENDING"],
+  });
+
+  if (!canDelete) {
+    return res.status(403).json({
+      message: "Vous n'avez pas la permission de supprimer ce mouvement.",
+    });
+  }
+
   if (isSeller(req.user) && entry.createdById !== req.user.id) {
     return res.status(403).json({
       message: "Le vendeur ne peut supprimer que ses propres mouvements.",
@@ -1389,6 +1414,70 @@ const deleteStockEntry = async (req, res) => {
 
   await prisma.stockEntry.delete({ where: { id } });
   return res.json({ message: "Stock entry deleted." });
+};
+
+const devalidateStockEntry = async (req, res) => {
+  const { id } = req.params;
+
+  const entry = await prisma.stockEntry.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    include: {
+      store: true,
+      storageZone: true,
+      createdBy: true,
+      approvedBy: true,
+      items: { include: { product: true, unit: true } },
+    },
+  });
+
+  if (!entry) {
+    return res.status(404).json({ message: "Stock entry not found." });
+  }
+
+  if (entry.status === "POSTED") {
+    return res.status(409).json({
+      message: "A posted stock entry cannot be devalidated.",
+    });
+  }
+
+  if (!["PENDING", "APPROVED"].includes(entry.status)) {
+    return res.status(409).json({
+      message: "This stock entry cannot be devalidated in its current state.",
+    });
+  }
+
+  await resetStockEntryApprovals(req.user.tenantId, id);
+
+  const updated = await prisma.stockEntry.update({
+    where: { id },
+    data: {
+      status: "PENDING",
+      approvedById: null,
+      postedAt: null,
+    },
+    include: {
+      store: true,
+      storageZone: true,
+      createdBy: true,
+      approvedBy: true,
+      items: { include: { product: true, unit: true } },
+    },
+  });
+
+  const currencySettings = await loadTenantCurrencySettings(
+    prisma,
+    req.user.tenantId,
+  );
+
+  return res.json(
+    await decorateStockEntriesWithApprovals({
+      ...updated,
+      items: (updated.items || []).map((item) => ({
+        ...item,
+        currencyCode: currencySettings.primaryCurrencyCode,
+      })),
+    }),
+  );
 };
 
 const approveStockEntry = async (req, res) => {
@@ -1411,9 +1500,11 @@ const approveStockEntry = async (req, res) => {
     });
     return res.json(result.entry);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de valider cette entree de stock.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible de valider cette entree de stock.",
+    );
   }
 };
 
@@ -1437,9 +1528,11 @@ const rejectStockEntry = async (req, res) => {
     });
     return res.json(result.entry);
   } catch (error) {
-    return res.status(error.status || 500).json({
-      message: error.message || "Impossible de rejeter cette entree de stock.",
-    });
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible de rejeter cette entree de stock.",
+    );
   }
 };
 
@@ -1566,6 +1659,7 @@ module.exports = {
   deleteStockEntry,
   approveStockEntry,
   rejectStockEntry,
+  devalidateStockEntry,
   postStockEntry,
   processStockEntryApprovalDecision,
 };
