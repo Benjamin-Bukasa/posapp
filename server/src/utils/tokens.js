@@ -7,9 +7,11 @@ const signAccessToken = (payload, expiresIn = accessExpires) => {
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn });
 };
 
-const signRefreshToken = (payload, days) => {
+const signRefreshToken = (payload, ttl) => {
+  const expiresIn =
+    typeof ttl === "number" ? `${ttl}d` : String(ttl || "7d").trim() || "7d";
   return jwt.sign(payload, process.env.JWT_REFRESH_SECRET, {
-    expiresIn: `${days}d`,
+    expiresIn,
   });
 };
 

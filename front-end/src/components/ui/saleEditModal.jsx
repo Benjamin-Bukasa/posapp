@@ -31,6 +31,10 @@ const formatEditableAmount = (value) => {
 const createEmptyItem = () => ({
   productId: "",
   quantity: 1,
+  isGift: false,
+  giftReasonType: null,
+  giftReasonNote: "",
+  giftThresholdAmount: null,
 });
 
 const SaleEditModal = ({
@@ -76,9 +80,13 @@ const SaleEditModal = ({
     setReason("");
     setSaleItems(
       Array.isArray(sale.items) && sale.items.length
-        ? sale.items.map((item) => ({
+          ? sale.items.map((item) => ({
             productId: item.productId,
             quantity: Number(item.quantity || 1),
+            isGift: Boolean(item.isGift),
+            giftReasonType: item.giftReasonType || null,
+            giftReasonNote: item.giftReasonNote || "",
+            giftThresholdAmount: item.giftThresholdAmount ?? null,
           }))
         : [createEmptyItem()],
     );
@@ -172,6 +180,10 @@ const SaleEditModal = ({
         .map((item) => ({
           productId: item.productId,
           quantity: Number(item.quantity || 0),
+          isGift: Boolean(item.isGift),
+          giftReasonType: item.giftReasonType || null,
+          giftReasonNote: item.giftReasonNote || "",
+          giftThresholdAmount: item.giftThresholdAmount ?? null,
         }))
         .filter((item) => item.productId && item.quantity > 0),
     [saleItems],

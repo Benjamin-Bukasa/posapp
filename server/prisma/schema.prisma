@@ -28,6 +28,7 @@ enum BillingCycle {
 enum UserRole {
   SUPERADMIN
   ADMIN
+  TECHNICIAN
   DRIVER
   SELLER
   USER

@@ -644,6 +644,11 @@ const getUser = async (req, res) => {
   const user = await prisma.user.findFirst({
     where: { id, tenantId: req.user.tenantId },
     include: {
+      tenant: {
+        select: {
+          name: true,
+        },
+      },
       store: true,
       permissions: {
         include: {
@@ -666,7 +671,7 @@ const getUser = async (req, res) => {
 
   return res.json({
     ...user,
-    tenantName: req.user.tenantName || null,
+    tenantName: user.tenant?.name || req.user.tenantName || null,
     permissions: getGrantedPermissions(user),
     permissionProfile,
     permissionProfileId: permissionProfile?.id || null,

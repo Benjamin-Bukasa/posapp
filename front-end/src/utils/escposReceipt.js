@@ -164,9 +164,20 @@ export const buildEscPosReceipt = ({
       const quantity = Number(item.quantity || 0);
       const unitPrice = Number(item.unitPrice || 0);
       const lineTotal = Number(item.total || quantity * unitPrice);
-      const amountText = formatAmount(lineTotal, currencyCode);
+      const amountText = item.isGift ? "Offert" : formatAmount(lineTotal, currencyCode);
       const labelWidth = width > 32 ? 28 : 20;
       const valueWidth = width - labelWidth;
+      const giftLabel = item.isGift
+        ? item.giftReasonNote?.trim()
+          ? `Offert - ${item.giftReasonNote.trim()}`
+          : item.giftReasonType === "BONUS_POINTS"
+            ? "Offert - points bonus"
+            : item.giftReasonType === "THRESHOLD_PURCHASE"
+              ? item.giftThresholdAmount
+                ? `Offert - seuil ${formatAmount(item.giftThresholdAmount, currencyCode)}`
+                : "Offert - seuil d'achat"
+              : "Offert"
+        : "";
 
       wrapText(item.product?.name || item.name || "Article", labelWidth).forEach((line, index) => {
         const right = index === 0 ? amountText : "";
@@ -176,6 +187,9 @@ export const buildEscPosReceipt = ({
         bytes,
         `${padRight(`${quantity} x ${formatAmount(unitPrice, currencyCode)}`, width)}\n`,
       );
+      if (giftLabel) {
+        wrapText(giftLabel, width).forEach((line) => pushText(bytes, `${line}\n`));
+      }
     });
 
     pushText(bytes, `${"-".repeat(width)}\n`);

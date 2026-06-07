@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Minus, Plus, Trash2, X } from "lucide-react";
+import { Gift, Minus, Plus, Trash2, X } from "lucide-react";
 import Badge from "../components/ui/badge";
 import Button from "../components/ui/button";
 import Input from "../components/ui/input";
@@ -44,8 +44,14 @@ const CounterList = () => {
   const updateCartQty = useCounterStore((state) => state.updateCartQty);
   const removeCartItem = useCounterStore((state) => state.removeCartItem);
   const clearCart = useCounterStore((state) => state.clearCart);
+  const setCartItemGift = useCounterStore((state) => state.setCartItemGift);
+  const clearCartItemGift = useCounterStore((state) => state.clearCartItemGift);
   const showToast = useToastStore((state) => state.showToast);
   const [isPaymentOpen, setIsPaymentOpen] = useState(false);
+  const [giftEditorItemId, setGiftEditorItemId] = useState(null);
+  const [giftReasonType, setGiftReasonType] = useState("MANUAL");
+  const [giftReasonNote, setGiftReasonNote] = useState("");
+  const [giftThresholdAmount, setGiftThresholdAmount] = useState("");
   const [cashSession, setCashSession] = useState(null);
   const [cashSessionLoading, setCashSessionLoading] = useState(false);
   const search = useCounterStore((state) => state.search);
@@ -330,15 +336,108 @@ const CounterList = () => {
   const totalItems = cartItems.reduce((sum, item) => sum + item.cartQty, 0);
   const totalAmount = cartItems.reduce(
     (sum, item) =>
-      sum +
-      convertToPrimaryAmount(
-        item.price ?? 0,
-        item.currencyCode,
-        currencySettings,
-      ) *
-        item.cartQty,
+      item.isGift
+        ? sum
+        : sum +
+          convertToPrimaryAmount(
+            item.price ?? 0,
+            item.currencyCode,
+            currencySettings,
+          ) *
+            item.cartQty,
     0,
   );
+  const giftedAmount = cartItems.reduce(
+    (sum, item) =>
+      !item.isGift
+        ? sum
+        : sum +
+          convertToPrimaryAmount(
+            item.price ?? 0,
+            item.currencyCode,
+            currencySettings,
+          ) *
+            item.cartQty,
+    0,
+  );
+  const activeGiftEditorItem = cartItems.find((item) => item.id === giftEditorItemId) || null;
+
+  const openGiftEditor = (item) => {
+    setGiftEditorItemId(item.id);
+    setGiftReasonType(item.giftReasonType || "MANUAL");
+    setGiftReasonNote(item.giftReasonNote || "");
+    setGiftThresholdAmount(
+      item.giftThresholdAmount === null || item.giftThresholdAmount === undefined
+        ? ""
+        : String(item.giftThresholdAmount),
+    );
+  };
+
+  const closeGiftEditor = () => {
+    setGiftEditorItemId(null);
+    setGiftReasonType("MANUAL");
+    setGiftReasonNote("");
+    setGiftThresholdAmount("");
+  };
+
+  const saveGiftEditor = () => {
+    if (!activeGiftEditorItem) {
+      return;
+    }
+
+    const trimmedNote = giftReasonNote.trim();
+    if (!giftReasonType) {
+      showToast({
+        title: "Article offert",
+        message: "Choisissez un motif pour l'article offert.",
+        variant: "warning",
+      });
+      return;
+    }
+
+    if (giftReasonType === "THRESHOLD_PURCHASE" && giftThresholdAmount) {
+      const numericThreshold = Number(giftThresholdAmount);
+      if (!Number.isFinite(numericThreshold) || numericThreshold < 0) {
+        showToast({
+          title: "Article offert",
+          message: "Le montant seuil est invalide.",
+          variant: "warning",
+        });
+        return;
+      }
+    }
+
+    setCartItemGift(activeGiftEditorItem.id, {
+      isGift: true,
+      giftReasonType,
+      giftReasonNote: trimmedNote,
+      giftThresholdAmount: giftReasonType === "THRESHOLD_PURCHASE" ? giftThresholdAmount : null,
+    });
+    closeGiftEditor();
+  };
+
+  const getGiftReasonLabel = (item) => {
+    if (!item?.isGift) return "";
+    if (item.giftReasonType === "BONUS_POINTS") return "Offert via points bonus";
+    if (item.giftReasonType === "THRESHOLD_PURCHASE") {
+      return item.giftThresholdAmount
+        ? `Offert des ${formatPrimaryAmount(Number(item.giftThresholdAmount || 0), currencySettings)} d'achat`
+        : "Offert sur seuil d'achat";
+    }
+    return item.giftReasonNote?.trim() || "Offert manuellement";
+  };
+
+  const buildGiftReasonPayload = (item) => ({
+    isGift: Boolean(item.isGift),
+    giftReasonType: item.isGift ? item.giftReasonType : null,
+    giftReasonNote: item.isGift ? item.giftReasonNote : "",
+    giftThresholdAmount: item.isGift ? item.giftThresholdAmount : null,
+  });
+
+  const totalGrossAmount = totalAmount + giftedAmount;
+  const totalBonusGiftCount = cartItems.filter(
+    (item) => item.isGift && item.giftReasonType === "BONUS_POINTS",
+  ).length;
 
   const getPaginationItems = (current, total) => {
     if (total <= 5) {
@@ -398,6 +497,7 @@ const CounterList = () => {
         items: cartItems.map((item) => ({
           productId: item.id,
           quantity: item.cartQty,
+          ...buildGiftReasonPayload(item),
         })),
       });
 
@@ -732,14 +832,19 @@ const CounterList = () => {
                 <h2 className="text-lg font-semibold text-text-primary">Panier</h2>
                 <p className="text-xs text-text-secondary">{cartItems.length} article(s)</p>
               </div>
-              <div className="rounded-lg border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
-                <div className="flex flex-col items-end">
-                  <span>
-                    Total:{" "}
-                    <span className="font-semibold text-text-primary">
-                      {formatPrimaryAmount(totalAmount, currencySettings)}
+                <div className="rounded-lg border border-border bg-surface px-3 py-1 text-xs text-text-secondary">
+                  <div className="flex flex-col items-end">
+                    <span>
+                    A payer:{" "}
+                      <span className="font-semibold text-text-primary">
+                        {formatPrimaryAmount(totalAmount, currencySettings)}
+                      </span>
                     </span>
-                  </span>
+                    {giftedAmount > 0 ? (
+                      <span className="text-[10px] text-text-secondary">
+                        Offerts: {formatPrimaryAmount(giftedAmount, currencySettings)}
+                      </span>
+                    ) : null}
                   {secondaryEnabled && userPreferences.showSecondaryAmounts ? (
                     <span className="text-[10px] text-text-secondary">
                       {formatSecondaryAmount(totalAmount, currencySettings)}
@@ -792,9 +897,37 @@ const CounterList = () => {
                             / unite
                           </p>
                         ) : null}
+                        {item.isGift ? (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="rounded-full bg-success/10 px-2 py-1 text-[10px] font-semibold text-success">
+                              Offert
+                            </span>
+                            <span className="text-[10px] text-text-secondary">
+                              {getGiftReasonLabel(item)}
+                            </span>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="flex items-center justify-end gap-2">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          item.isGift ? clearCartItemGift(item.id) : openGiftEditor(item)
+                        }
+                        className={[
+                          "rounded-md border px-2 py-1 text-xs font-medium",
+                          item.isGift
+                            ? "border-success/30 bg-success/10 text-success hover:bg-success/15"
+                            : "border-border bg-surface text-text-primary hover:bg-surface/70",
+                        ].join(" ")}
+                        aria-label={item.isGift ? "Retirer l'offre" : "Marquer comme offert"}
+                      >
+                        <span className="inline-flex items-center gap-1">
+                          <Gift size={14} strokeWidth={1.5} />
+                          {item.isGift ? "Offert" : "Offrir"}
+                        </span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => removeCartItem(item.id)}
@@ -849,6 +982,11 @@ const CounterList = () => {
                   Ouvrez la caisse depuis `Parametres` avant d'encaisser une vente.
                 </p>
               ) : null}
+              {totalBonusGiftCount > 0 ? (
+                <p className="text-xs text-text-secondary">
+                  Les articles offerts via points bonus demanderont un client selectionne au paiement.
+                </p>
+              ) : null}
               <Button
                 label="Vider le panier"
                 variant="default"
@@ -874,6 +1012,111 @@ const CounterList = () => {
         cashSession={cashSession}
         onConfirm={handleConfirmSale}
       />
+
+      {activeGiftEditorItem ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4">
+          <button
+            type="button"
+            className="absolute inset-0 bg-black/40 backdrop-blur-sm"
+            aria-label="Fermer le motif d'offre"
+            onClick={closeGiftEditor}
+          />
+          <div className="relative w-full max-w-lg rounded-2xl border border-border bg-surface p-5 shadow-2xl">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs uppercase tracking-[0.14em] text-text-secondary">
+                  Article offert
+                </p>
+                <h3 className="mt-1 text-lg font-semibold text-text-primary">
+                  {activeGiftEditorItem.product}
+                </h3>
+                <p className="mt-1 text-sm text-text-secondary">
+                  Valeur offerte:{" "}
+                  {formatPrimaryAmount(
+                    convertToPrimaryAmount(
+                      activeGiftEditorItem.price ?? 0,
+                      activeGiftEditorItem.currencyCode,
+                      currencySettings,
+                    ) * Number(activeGiftEditorItem.cartQty || 0),
+                    currencySettings,
+                  )}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeGiftEditor}
+                className="rounded-lg p-2 text-text-secondary hover:bg-surface/70"
+              >
+                <X size={16} strokeWidth={1.5} />
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="flex flex-col gap-2 text-sm text-text-primary">
+                <span>Motif</span>
+                <select
+                  value={giftReasonType}
+                  onChange={(event) => setGiftReasonType(event.target.value)}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-accent"
+                >
+                  <option value="MANUAL">Offert manuel</option>
+                  <option value="BONUS_POINTS">Paiement avec points bonus</option>
+                  <option value="THRESHOLD_PURCHASE">Offert sur seuil d'achat</option>
+                </select>
+              </label>
+
+              {giftReasonType === "THRESHOLD_PURCHASE" ? (
+                <label className="flex flex-col gap-2 text-sm text-text-primary">
+                  <span>Montant d'achat declencheur</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={giftThresholdAmount}
+                    onChange={(event) => setGiftThresholdAmount(event.target.value)}
+                    className="rounded-lg border border-border bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-accent"
+                    placeholder="Ex. 50"
+                  />
+                </label>
+              ) : null}
+
+              <label className="flex flex-col gap-2 text-sm text-text-primary">
+                <span>Precision / raison</span>
+                <textarea
+                  value={giftReasonNote}
+                  onChange={(event) => setGiftReasonNote(event.target.value)}
+                  rows={3}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 outline-none focus:ring-2 focus:ring-accent"
+                  placeholder={
+                    giftReasonType === "BONUS_POINTS"
+                      ? "Ex. conversion des points fidelite du client"
+                      : giftReasonType === "THRESHOLD_PURCHASE"
+                        ? "Ex. offert a partir de 100 USD d'achat"
+                        : "Ex. geste commercial, promotion..."
+                  }
+                />
+              </label>
+
+              <div className="flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={closeGiftEditor}
+                  className="rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-primary hover:bg-surface/70"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={saveGiftEditor}
+                  className="rounded-lg bg-secondary px-4 py-2 text-sm font-semibold text-white hover:bg-secondary/90"
+                >
+                  Marquer offert
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 };

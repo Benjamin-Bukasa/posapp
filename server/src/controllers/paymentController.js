@@ -16,6 +16,7 @@ const {
 const { sendExport } = require("../utils/exporter");
 const { sendErrorResponse } = require("../utils/httpErrors");
 const { cancelOrderSale } = require("./orderController");
+const isSeller = (user) => user?.role === "SELLER";
 
 const hydratePaymentsWithCurrencyCodes = async (records) => {
   const list = Array.isArray(records)
@@ -70,6 +71,7 @@ const listPayments = async (req, res) => {
 
   const where = {
     tenantId: req.user.tenantId,
+    ...(isSeller(req.user) ? { order: { createdById: req.user.id } } : {}),
     ...(status ? { status } : {}),
     ...(method ? { method } : {}),
     ...(orderId ? { orderId } : {}),
@@ -138,7 +140,11 @@ const getPayment = async (req, res) => {
   const { id } = req.params;
 
   const payment = await prisma.payment.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user) ? { order: { createdById: req.user.id } } : {}),
+    },
     include: { order: { include: { customer: true } } },
   });
 
@@ -156,7 +162,11 @@ const refundPayment = async (req, res) => {
     : "Remboursement client.";
 
   const payment = await prisma.payment.findFirst({
-    where: { id, tenantId: req.user.tenantId },
+    where: {
+      id,
+      tenantId: req.user.tenantId,
+      ...(isSeller(req.user) ? { order: { createdById: req.user.id } } : {}),
+    },
     include: {
       order: {
         include: {
@@ -181,6 +191,7 @@ const refundPayment = async (req, res) => {
       tenantId: req.user.tenantId,
       orderId: payment.orderId,
       actorUserId: req.user.id,
+      actorRole: req.user.role,
       reason,
       auditAction: "REFUNDED",
       auditReasonFallback: "Remboursement client.",

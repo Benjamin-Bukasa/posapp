@@ -176,7 +176,7 @@ const Navbar = () => {
           <button
             type="button"
             onClick={openMobileSidebar}
-            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-text-primary transition hover:bg-surface lg:hidden"
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-text-primary transition hover:bg-surface xl:hidden"
             aria-label="Ouvrir le menu"
           >
             <Menu size={20} strokeWidth={1.8} />

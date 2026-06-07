@@ -10,7 +10,7 @@ const Sidebar = () => {
 
   useEffect(() => {
     const syncViewport = () => {
-      if (window.innerWidth >= 1024) {
+      if (window.innerWidth >= 1280) {
         closeMobileSidebar();
       }
     };
@@ -27,17 +27,17 @@ const Sidebar = () => {
         aria-label="Fermer le menu"
         onClick={closeMobileSidebar}
         className={[
-          "fixed inset-0 z-[89] bg-slate-950/45 backdrop-blur-[1px] transition-opacity lg:hidden",
+          "fixed inset-0 z-[89] bg-slate-950/45 backdrop-blur-[1px] transition-opacity xl:hidden",
           isMobileSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       />
 
       <aside
         className={[
-          "sidebar fixed inset-y-0 left-0 z-[90] h-screen max-w-[88vw] overflow-hidden shadow-2xl transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none",
+          "sidebar fixed inset-y-0 left-0 z-[90] h-screen max-w-[88vw] overflow-hidden shadow-2xl transition-transform duration-200 xl:static xl:z-auto xl:h-full xl:max-w-none xl:translate-x-0 xl:shadow-none",
           isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           "w-80",
-          isSidebarOpen ? "lg:w-80" : "lg:w-[88px]",
+          isSidebarOpen ? "xl:w-80" : "xl:w-[88px]",
         ].join(" ")}
       >
         <div className="flex h-full min-h-0 w-full flex-col">

@@ -61,6 +61,10 @@ const useCounterStore = create(
                 price: product.price,
                 currencyCode: product.currencyCode,
                 cartQty: 1,
+                isGift: false,
+                giftReasonType: null,
+                giftReasonNote: "",
+                giftThresholdAmount: null,
               },
             ],
           };
@@ -83,6 +87,46 @@ const useCounterStore = create(
       removeCartItem: (id) => {
         set((state) => ({
           cartItems: state.cartItems.filter((item) => item.id !== id),
+        }));
+      },
+      setCartItemGift: (id, giftPayload) => {
+        set((state) => ({
+          cartItems: state.cartItems.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  isGift: Boolean(giftPayload?.isGift),
+                  giftReasonType: giftPayload?.isGift
+                    ? giftPayload?.giftReasonType || "MANUAL"
+                    : null,
+                  giftReasonNote: giftPayload?.isGift
+                    ? giftPayload?.giftReasonNote || ""
+                    : "",
+                  giftThresholdAmount:
+                    giftPayload?.isGift &&
+                    giftPayload?.giftThresholdAmount !== undefined &&
+                    giftPayload?.giftThresholdAmount !== null &&
+                    giftPayload?.giftThresholdAmount !== ""
+                      ? Number(giftPayload.giftThresholdAmount)
+                      : null,
+                }
+              : item,
+          ),
+        }));
+      },
+      clearCartItemGift: (id) => {
+        set((state) => ({
+          cartItems: state.cartItems.map((item) =>
+            item.id === id
+              ? {
+                  ...item,
+                  isGift: false,
+                  giftReasonType: null,
+                  giftReasonNote: "",
+                  giftThresholdAmount: null,
+                }
+              : item,
+          ),
         }));
       },
       clearCart: () => set({ cartItems: [] }),

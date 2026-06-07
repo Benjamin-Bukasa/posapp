@@ -84,6 +84,7 @@ const buildWeeklyCustomerSeries = (orders, weeksCount) => {
 
 const getScopedStoreId = (user, requestedStoreId = null) =>
   user?.role === "SELLER" ? user.storeId || null : requestedStoreId || null;
+const isSeller = (user) => user?.role === "SELLER";
 
 const getSalesSummary = async (req, res) => {
   const scopedStoreId = getScopedStoreId(req.user, req.query?.storeId);
@@ -121,6 +122,7 @@ const getSalesSummary = async (req, res) => {
     prisma.order.findMany({
       where: {
         tenantId: req.user.tenantId,
+        ...(isSeller(req.user) ? { createdById: req.user.id } : {}),
         ...(scopedStoreId ? { storeId: scopedStoreId } : {}),
         createdAt: { gte: eightWeeksAgo },
       },

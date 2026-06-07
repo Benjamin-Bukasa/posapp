@@ -34,6 +34,8 @@ const matchesSupplyRequestSearch = (item, search) => {
   ].some((value) => includesSearch(value, search));
 };
 
+const isSeller = (user) => user?.role === "SELLER";
+
 const loadSupplyRequestFlow = (tenantId) =>
   prisma.approvalFlow.findUnique({
     where: {
@@ -395,7 +397,11 @@ const listSupplyRequests = async (req, res) => {
   const where = {
     tenantId: req.user.tenantId,
     ...(status ? { status } : {}),
-    ...(storeId ? { storeId } : {}),
+    ...(isSeller(req.user)
+      ? { requestedById: req.user.id }
+      : storeId
+        ? { storeId }
+        : {}),
     ...createdAtFilter,
   };
 
@@ -499,6 +505,10 @@ const getSupplyRequest = async (req, res) => {
     return res.status(404).json({ message: "Supply request not found." });
   }
 
+  if (isSeller(req.user) && request.requestedById !== req.user.id) {
+    return res.status(404).json({ message: "Supply request not found." });
+  }
+
   return res.json(sanitizeRequest(await attachDocumentCodes("supplyRequests", request)));
 };
 
@@ -516,6 +526,10 @@ const getSupplyRequestPdf = async (req, res) => {
   });
 
   if (!request) {
+    return res.status(404).json({ message: "PDF not found." });
+  }
+
+  if (isSeller(req.user) && request.requestedById !== req.user.id) {
     return res.status(404).json({ message: "PDF not found." });
   }
 
@@ -554,6 +568,10 @@ const submitSupplyRequest = async (req, res) => {
   });
 
   if (!request || request.tenantId !== req.user.tenantId) {
+    return res.status(404).json({ message: "Supply request not found." });
+  }
+
+  if (isSeller(req.user) && request.requestedById !== req.user.id) {
     return res.status(404).json({ message: "Supply request not found." });
   }
 

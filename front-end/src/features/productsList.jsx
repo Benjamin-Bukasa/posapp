@@ -51,7 +51,7 @@ const CATEGORY_AVATAR_MAP = {
 };
 
 const DEFAULT_AVATAR =
-  "https://images.pexels.com/photos/4210607/pexels-photo-4210607.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop";
+  "https://icons.veryicon.com/png/o/application/applet-1/product-17.png";
 
 export const resolveCategoryAvatar = (category, seed = 0) => {
   const key = category?.toLowerCase?.().trim?.() ?? "";
@@ -390,7 +390,11 @@ const ProductsList = ({
     <>
       <DataTable
         title="Liste des produits"
-        description="Tous les produits dans le système"
+        description={
+          storeId
+            ? "Stock global partage de la boutique."
+            : "Tous les produits et leurs quantites globales."
+        }
         columns={productsColumns}
         data={pagedProducts}
         emptyMessage={loading ? "Chargement..." : "Aucune donnee"}

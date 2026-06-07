@@ -12,12 +12,15 @@ const CashSessionModal = ({
   isOpen,
   session = null,
   currencySettings,
+  stockItems = [],
+  stockLoading = false,
   submitting = false,
   onClose,
   onSubmit,
 }) => {
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
+  const [stockCounts, setStockCounts] = useState({});
 
   useEffect(() => {
     if (!isOpen) return;
@@ -26,12 +29,21 @@ const CashSessionModal = ({
         session?.expectedCash != null ? Number(session.expectedCash).toFixed(2) : "",
       );
       setNote("");
+      setStockCounts(
+        Object.fromEntries(
+          (stockItems || []).map((item) => [
+            item.productId || item.id,
+            String(Number(item.theoreticalQuantity ?? item.quantity ?? 0)),
+          ]),
+        ),
+      );
       return;
     }
 
     setAmount("0.00");
     setNote("");
-  }, [isOpen, mode, session]);
+    setStockCounts({});
+  }, [isOpen, mode, session, stockItems]);
 
   const numericAmount = useMemo(() => {
     const parsed = Number(String(amount || "").replace(",", "."));
@@ -41,6 +53,31 @@ const CashSessionModal = ({
   const secondaryEnabled = hasSecondaryCurrency(currencySettings);
   const exchangeRateLabel = buildSecondaryRateLabel(currencySettings);
   const isCloseMode = mode === "close";
+  const normalizedStockItems = (stockItems || []).map((item) => {
+    const productId = item.productId || item.id;
+    const theoreticalQuantity = Number(
+      item.theoreticalQuantity ?? item.quantity ?? 0,
+    );
+    const countedRaw = stockCounts[productId];
+    const countedQuantity =
+      countedRaw === undefined || countedRaw === null || countedRaw === ""
+        ? theoreticalQuantity
+        : Number(String(countedRaw).replace(",", "."));
+
+    return {
+      productId,
+      productName: item.productName || item.product || "Article",
+      sku: item.sku || "",
+      theoreticalQuantity,
+      countedQuantity: Number.isFinite(countedQuantity) ? countedQuantity : theoreticalQuantity,
+      varianceQuantity:
+        (Number.isFinite(countedQuantity) ? countedQuantity : theoreticalQuantity) -
+        theoreticalQuantity,
+    };
+  });
+  const stockVarianceCount = normalizedStockItems.filter(
+    (item) => Math.abs(Number(item.varianceQuantity || 0)) > 0.0001,
+  ).length;
 
   const title = isCloseMode ? "Cloturer la caisse" : "Ouvrir la caisse";
   const description = isCloseMode
@@ -49,9 +86,11 @@ const CashSessionModal = ({
 
   const handleConfirm = () => {
     if (submitting) return;
+    if (isCloseMode && stockLoading) return;
     onSubmit?.({
       amount: numericAmount,
       note,
+      stockItems: isCloseMode ? normalizedStockItems : [],
     });
   };
 
@@ -72,6 +111,7 @@ const CashSessionModal = ({
       cancelLabel="Annuler"
       onConfirm={handleConfirm}
       onCancel={onClose}
+      dialogClassName={isCloseMode ? "max-w-5xl" : ""}
     >
       <div className="space-y-4">
         {exchangeRateLabel ? (
@@ -162,6 +202,91 @@ const CashSessionModal = ({
             }
           />
         </div>
+
+        {isCloseMode ? (
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-medium text-text-primary">
+                  Controle du stock vendeur
+                </p>
+                <p className="text-xs text-text-secondary">
+                  Saisissez le stock reel constate a la fermeture pour voir les ecarts.
+                </p>
+              </div>
+              <span className="rounded-full bg-background px-3 py-1 text-xs font-medium text-text-secondary">
+                {stockVarianceCount} ecart(s)
+              </span>
+            </div>
+
+            {stockLoading ? (
+              <div className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-text-secondary">
+                Chargement du stock courant...
+              </div>
+            ) : normalizedStockItems.length ? (
+              <div className="overflow-hidden rounded-xl border border-border bg-background">
+                <div className="grid grid-cols-[minmax(0,1.8fr)_120px_120px_120px] gap-3 border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+                  <span>Article</span>
+                  <span className="text-right">Theorique</span>
+                  <span className="text-right">Compte</span>
+                  <span className="text-right">Ecart</span>
+                </div>
+                <div className="max-h-80 overflow-y-auto">
+                  {normalizedStockItems.map((item) => (
+                    <div
+                      key={item.productId}
+                      className="grid grid-cols-[minmax(0,1.8fr)_120px_120px_120px] gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-text-primary">
+                          {item.productName}
+                        </p>
+                        {item.sku ? (
+                          <p className="text-xs text-text-secondary">{item.sku}</p>
+                        ) : null}
+                      </div>
+                      <div className="text-right text-text-primary">
+                        {item.theoreticalQuantity}
+                      </div>
+                      <div>
+                        <input
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={stockCounts[item.productId] ?? String(item.theoreticalQuantity)}
+                          onChange={(event) =>
+                            setStockCounts((current) => ({
+                              ...current,
+                              [item.productId]: event.target.value,
+                            }))
+                          }
+                          className="w-full rounded-lg border border-border bg-surface px-2 py-1 text-right text-sm text-text-primary outline-none focus:ring-2 focus:ring-accent"
+                        />
+                      </div>
+                      <div
+                        className={[
+                          "text-right font-medium",
+                          item.varianceQuantity > 0
+                            ? "text-success"
+                            : item.varianceQuantity < 0
+                              ? "text-danger"
+                              : "text-text-secondary",
+                        ].join(" ")}
+                      >
+                        {item.varianceQuantity > 0 ? "+" : ""}
+                        {item.varianceQuantity}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border border-border bg-surface/70 px-4 py-3 text-sm text-text-secondary">
+                Aucun article de caisse n'a ete trouve pour cette zone de stock.
+              </div>
+            )}
+          </div>
+        ) : null}
       </div>
     </Modal>
   );

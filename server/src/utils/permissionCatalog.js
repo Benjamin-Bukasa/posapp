@@ -163,6 +163,17 @@ const PERMISSION_MODULES = [
       { code: "payments.refund", label: "Rembourser" },
     ],
   },
+  {
+    key: "customers",
+    label: "Client",
+    description: "Fichier client, creation, modification et suppression des clients.",
+    actions: [
+      { code: "customers.read", label: "Voir" },
+      { code: "customers.create", label: "Creer" },
+      { code: "customers.update", label: "Modifier" },
+      { code: "customers.delete", label: "Supprimer" },
+    ],
+  },
 ];
 
 const PERMISSION_CODE_SET = new Set(

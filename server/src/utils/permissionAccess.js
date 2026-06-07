@@ -2,6 +2,8 @@ const SELLER_DEFAULT_PERMISSION_CODES = Object.freeze([
   "sales.read",
   "sales.create",
   "payments.read",
+  "customers.read",
+  "customers.create",
   "stock_state.read",
   "movements.read",
   "movements.create",

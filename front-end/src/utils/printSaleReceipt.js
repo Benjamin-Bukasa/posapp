@@ -48,14 +48,26 @@ const buildReceiptLineItems = ({ order, currencyCode, settings }) =>
           const quantity = Number(item.quantity || 0);
           const unitPrice = Number(item.unitPrice || 0);
           const lineTotal = Number(item.total || quantity * unitPrice);
+          const giftLabel = item.isGift
+            ? item.giftReasonNote?.trim()
+              ? `Offert - ${item.giftReasonNote.trim()}`
+              : item.giftReasonType === "BONUS_POINTS"
+                ? "Offert - points bonus"
+                : item.giftReasonType === "THRESHOLD_PURCHASE"
+                  ? item.giftThresholdAmount
+                    ? `Offert - seuil ${formatAmount(item.giftThresholdAmount, currencyCode)}`
+                    : "Offert - seuil d'achat"
+                  : "Offert"
+            : null;
 
           return `
             <tr>
               <td class="item-name">
                 <div class="item-title">${escapeHtml(item.product?.name || item.name || "Article")}</div>
                 <div class="item-meta">${quantity} x ${escapeHtml(formatAmount(unitPrice, currencyCode))}</div>
+                ${giftLabel ? `<div class="item-meta">${escapeHtml(giftLabel)}</div>` : ""}
               </td>
-              <td class="item-total">${escapeHtml(formatAmount(lineTotal, currencyCode))}</td>
+              <td class="item-total">${escapeHtml(item.isGift ? "Offert" : formatAmount(lineTotal, currencyCode))}</td>
             </tr>
           `;
         })

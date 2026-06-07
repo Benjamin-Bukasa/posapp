@@ -59,7 +59,7 @@ const Logo = () => {
         <p
           className={[
             "max-w-[180px] truncate text-2xl font-semibold text-white",
-            isSidebarOpen ? "block" : "block lg:hidden",
+            isSidebarOpen ? "block" : "block xl:hidden",
           ].join(" ")}
           title={tenantName}
         >
@@ -69,12 +69,12 @@ const Logo = () => {
       <button
         type="button"
         onClick={closeMobileSidebar}
-        className="rounded-lg p-1 text-accent lg:hidden"
+        className="rounded-lg p-1 text-accent xl:hidden"
         aria-label="Fermer le menu"
       >
         <X size={22} strokeWidth={1.8} />
       </button>
-      <div className="group relative hidden lg:block">
+      <div className="group relative hidden xl:block">
         <button
           ref={buttonRef}
           type="button"
