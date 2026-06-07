@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { MonitorCog, Moon, Palette, Sun, UserCog } from "lucide-react";
+import { requestJson } from "../api/client";
 import useAuthStore from "../stores/authStore";
 import useThemeStore from "../stores/themeStore";
 import useToastStore from "../stores/toastStore";
 import useUserPreferenceStore from "../stores/userPreferenceStore";
 import { COLOR_OPTIONS, COLOR_PRESETS } from "../utils/appearance";
 import { formatName } from "../utils/formatters";
+import { hasAnyPermission } from "../utils/permissions";
 
 const cardClassName = "rounded-xl border border-border bg-surface p-5 shadow-sm";
 
@@ -30,15 +32,22 @@ const SettingsPage = () => {
   const preferences = useUserPreferenceStore((state) => state.preferences);
   const loadPreferences = useUserPreferenceStore((state) => state.loadPreferences);
   const savePreferences = useUserPreferenceStore((state) => state.savePreferences);
+  const refreshCurrentUser = useAuthStore((state) => state.refreshCurrentUser);
   const loading = useUserPreferenceStore((state) => state.loading);
   const saving = useUserPreferenceStore((state) => state.saving);
   const showToast = useToastStore((state) => state.showToast);
+  const canReadTenant = hasAnyPermission(user, ["settings.read"]);
+  const canUpdateTenant = hasAnyPermission(user, ["settings.update"]);
 
   const [appearanceForm, setAppearanceForm] = useState({
     primaryColor: "green",
     secondaryColor: "green",
     accentColor: "green",
   });
+  const [tenantForm, setTenantForm] = useState({
+    tenantName: "",
+  });
+  const [tenantSaving, setTenantSaving] = useState(false);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -59,6 +68,12 @@ const SettingsPage = () => {
     secondaryColor,
     accentColor,
   ]);
+
+  useEffect(() => {
+    setTenantForm({
+      tenantName: user?.tenantName || "",
+    });
+  }, [user?.tenantName]);
 
   const sessionItems = useMemo(
     () => [
@@ -117,6 +132,39 @@ const SettingsPage = () => {
         message: error.message || "Impossible de sauvegarder les couleurs.",
         variant: "danger",
       });
+    }
+  };
+
+  const handleSaveTenant = async () => {
+    if (!accessToken || !canUpdateTenant) return;
+
+    setTenantSaving(true);
+    try {
+      const payload = await requestJson("/api/tenants/current", {
+        method: "PATCH",
+        token: accessToken,
+        body: {
+          tenantName: tenantForm.tenantName,
+        },
+      });
+      await refreshCurrentUser();
+      setTenantForm({
+        tenantName: payload?.tenant?.name || payload?.tenantName || tenantForm.tenantName,
+      });
+      showToast({
+        title: "Tenant mis a jour",
+        message: "Les informations du tenant ont ete sauvegardees.",
+        variant: "success",
+      });
+    } catch (error) {
+      showToast({
+        title: "Erreur",
+        message:
+          error.message || "Impossible de mettre a jour les informations du tenant.",
+        variant: "danger",
+      });
+    } finally {
+      setTenantSaving(false);
     }
   };
 
@@ -256,6 +304,54 @@ const SettingsPage = () => {
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        {canReadTenant ? (
+          <div className={cardClassName}>
+            <div className="flex items-start gap-3">
+              <div className="rounded-xl bg-primary/10 p-3 text-primary">
+                <UserCog size={18} />
+              </div>
+              <div className="flex-1">
+                <h2 className="text-base font-semibold text-text-primary">
+                  Informations du tenant
+                </h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  Modifiez le nom principal utilise dans votre espace SaaS.
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-2 text-sm">
+                <span className="font-medium text-text-primary">Nom du tenant</span>
+                <input
+                  type="text"
+                  value={tenantForm.tenantName}
+                  onChange={(event) =>
+                    setTenantForm((current) => ({
+                      ...current,
+                      tenantName: event.target.value,
+                    }))
+                  }
+                  disabled={!canUpdateTenant || tenantSaving}
+                  className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-secondary disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder="Ex: Pharmacie Gombe"
+                />
+              </label>
+            </div>
+
+            <div className="mt-4 flex justify-end">
+              <button
+                type="button"
+                onClick={handleSaveTenant}
+                disabled={!canUpdateTenant || tenantSaving || !tenantForm.tenantName.trim()}
+                className="inline-flex items-center gap-2 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {tenantSaving ? "Sauvegarde..." : "Sauvegarder le tenant"}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         <div className={cardClassName}>
           <div className="flex items-start gap-3">
             <div className="rounded-xl bg-accent/20 p-3 text-primary">

@@ -2120,6 +2120,7 @@ const importProducts = async (req, res) => {
 
   const productsBySku = {};
   const created = [];
+  const updated = [];
   const currencySettings = await loadTenantCurrencySettings(
     prisma,
     req.user.tenantId,
@@ -2189,7 +2190,8 @@ const importProducts = async (req, res) => {
       normalizeKind(
         pickRowValue(row, ["kind", "Kind", "type", "Type"]),
         "ARTICLE",
-      );
+      ) ||
+      "ARTICLE";
 
     const collectionName = pickRowValue(row, ["Collection", "collection"]);
     const categoryName = pickRowValue(row, ["Categorie", "categorie", "Category", "category"]);
@@ -2244,17 +2246,39 @@ const importProducts = async (req, res) => {
       ...(sku ? [{ sku }] : []),
       ...(scanCode ? [{ scanCode }] : []),
     ];
+    const identityLookupFilters = [...productLookupFilters];
 
     if (!productLookupFilters.length) {
-      productLookupFilters.push({
-        name,
-        kind: rowKind || "ARTICLE",
+      productLookupFilters.push({ name });
+    }
+
+    if (identityLookupFilters.length) {
+      const conflictingProduct = await prisma.product.findFirst({
+        where: {
+          tenantId: req.user.tenantId,
+          kind: { not: rowKind },
+          OR: identityLookupFilters,
+        },
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          scanCode: true,
+          kind: true,
+        },
       });
+
+      if (conflictingProduct) {
+        return res.status(409).json({
+          message: `Le code ${sku || scanCode || name} appartient deja a un ${conflictingProduct.kind}. Utilisez un identifiant distinct pour eviter de changer le type d'un element existant.`,
+        });
+      }
     }
 
     let product = await prisma.product.findFirst({
       where: {
         tenantId: req.user.tenantId,
+        kind: rowKind,
         OR: productLookupFilters,
       },
     });
@@ -2267,11 +2291,11 @@ const importProducts = async (req, res) => {
 
     if (!product) {
       product = await createProductWithAutoSku({
-        kind: rowKind || "ARTICLE",
+        kind: rowKind,
         explicitSku: sku,
         data: {
           tenantId: req.user.tenantId,
-          kind: rowKind || "ARTICLE",
+          kind: rowKind,
           name,
           sku,
           ...(scanCode !== undefined ? { scanCode } : {}),
@@ -2296,7 +2320,7 @@ const importProducts = async (req, res) => {
       created.push(product);
     } else {
       const nextProductData = {
-        kind: rowKind || product.kind,
+        kind: rowKind,
         name,
         description,
         unitPrice,
@@ -2327,6 +2351,7 @@ const importProducts = async (req, res) => {
           where: { id: product.id },
           data: nextProductData,
         });
+        updated.push(product);
       }
     }
 
@@ -2396,19 +2421,13 @@ const importProducts = async (req, res) => {
         (await prisma.product.findFirst({
           where: {
             tenantId: req.user.tenantId,
+            kind: "ARTICLE",
             OR: [{ sku: productKey }, { name: productKey }],
           },
         }));
 
       if (!product) {
         continue;
-      }
-
-      if (product.kind !== "ARTICLE") {
-        product = await prisma.product.update({
-          where: { id: product.id },
-          data: { kind: "ARTICLE" },
-        });
       }
 
       const componentSku = row.componentSku || row.ComponentSku || null;
@@ -2419,20 +2438,21 @@ const importProducts = async (req, res) => {
 
       let componentProduct = componentSku
         ? await prisma.product.findFirst({
-            where: { tenantId: req.user.tenantId, sku: componentSku },
+            where: {
+              tenantId: req.user.tenantId,
+              kind: "COMPONENT",
+              sku: componentSku,
+            },
           })
         : null;
-
-      if (componentProduct && componentProduct.kind !== "COMPONENT") {
-        componentProduct = await prisma.product.update({
-          where: { id: componentProduct.id },
-          data: { kind: "COMPONENT" },
-        });
-      }
 
       const dosageUnit = await findOrCreateUnit(dosageUnitName, "DOSAGE");
 
       if (quantity > 0) {
+        if (componentSku && !componentProduct) {
+          continue;
+        }
+
         await prisma.productComponent.create({
           data: {
             tenantId: req.user.tenantId,
@@ -2450,6 +2470,7 @@ const importProducts = async (req, res) => {
   return res.json({
     message: "Import completed.",
     created: created.length,
+    updated: updated.length,
   });
 };
 

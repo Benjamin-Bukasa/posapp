@@ -2,6 +2,7 @@ import { hasAnyPermission } from "./permissions";
 
 const PATH_PERMISSION_RULES = [
   { prefix: "/counter", permissions: ["sales.create"] },
+  { prefix: "/customers", permissions: ["customers.read"] },
   { prefix: "/orders", permissions: ["sales.read"] },
   { prefix: "/sales", permissions: ["sales.read"] },
   { prefix: "/payments", permissions: ["payments.read"] },
@@ -9,6 +10,7 @@ const PATH_PERMISSION_RULES = [
 
 const LINK_PERMISSION_MAP = {
   counter: ["sales.create"],
+  customers: ["customers.read"],
   orders: ["sales.read"],
   sales: ["sales.read"],
   payments: ["payments.read"],

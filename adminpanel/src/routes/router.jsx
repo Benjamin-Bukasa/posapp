@@ -1596,13 +1596,13 @@ export const resourceCatalog = {
     importConfig: {
       templatePath: "/api/stock-entries/template",
       importPath: "/api/stock-entries/import",
-      templateFileName: "template-entrees-stock.xlsx",
-      modalTitle: "Importer des entrees en stock",
+      templateFileName: "template-entrees-directes-stock.xlsx",
+      modalTitle: "Importer des entrees directes en stock",
       modalDescription:
-        "Telechargez le template, renseignez boutique, zone, produit et quantites, puis importez le fichier XLSX.",
-      templateButtonLabel: "Template entrees stock",
-      importButtonLabel: "Importer les entrees",
-      importSuccessMessage: "Les entrees en stock ont ete importees avec succes.",
+        "Telechargez le template des entrees directes, renseignez boutique, zone, produit et quantites, puis importez le fichier XLSX.",
+      templateButtonLabel: "Template entrees directes",
+      importButtonLabel: "Importer les entrees directes",
+      importSuccessMessage: "Les entrees directes en stock ont ete importees avec succes.",
     },
   }),
   "/mouvement/sortie-stock": createResource({

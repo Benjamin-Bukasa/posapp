@@ -211,7 +211,7 @@ function Dashboard() {
       {
         title: "Produits en stock",
         value: stats.totalQuantity.toString(),
-        subtitle: storeId ? "Total boutique" : "Total Vendeur",
+        subtitle: storeId ? "Stock global boutique" : "Stock global reseau",
         icon: Boxes,
         change: 0,
         amountLabel: "Valeur estimée",

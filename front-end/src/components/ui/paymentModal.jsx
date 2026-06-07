@@ -105,18 +105,37 @@ const PaymentModal = ({
   const resolvedTotalAmount = useMemo(() => {
     const computed = cartItems.reduce(
       (sum, item) =>
-        sum +
-        convertToPrimaryAmount(
-          item.price ?? 0,
-          item.currencyCode,
-          currencySettings,
-        ) *
-          Number(item.cartQty || 0),
+        item.isGift
+          ? sum
+          : sum +
+            convertToPrimaryAmount(
+              item.price ?? 0,
+              item.currencyCode,
+              currencySettings,
+            ) *
+              Number(item.cartQty || 0),
       0,
     );
 
     return computed > 0 ? computed : Number(totalAmount || 0);
   }, [cartItems, currencySettings, totalAmount]);
+  const giftedAmount = useMemo(
+    () =>
+      cartItems.reduce(
+        (sum, item) =>
+          !item.isGift
+            ? sum
+            : sum +
+              convertToPrimaryAmount(
+                item.price ?? 0,
+                item.currencyCode,
+                currencySettings,
+              ) *
+                Number(item.cartQty || 0),
+        0,
+      ),
+    [cartItems, currencySettings],
+  );
 
   useEffect(() => {
     if (!isOpen) return;
@@ -219,7 +238,9 @@ const PaymentModal = ({
   );
 
   const canSubmitPayment =
-    Boolean(cashSession) && resolvedTotalAmount > 0 && !submitting;
+    Boolean(cashSession) &&
+    (resolvedTotalAmount > 0 || giftedAmount > 0) &&
+    !submitting;
 
   const pointsEarned = useMemo(() => {
     if (!selectedCustomer || resolvedTotalAmount <= 0) return 0;
@@ -238,6 +259,26 @@ const PaymentModal = ({
     }
     return Math.max(1, Math.floor(resolvedTotalAmount / 10));
   }, [bonusProgram, selectedCustomer, resolvedTotalAmount]);
+  const bonusGiftPointsPreview = useMemo(() => {
+    if (!selectedCustomer) return 0;
+    const pointValueAmount = Number(bonusProgram?.pointValueAmount || 0);
+    if (!Number.isFinite(pointValueAmount) || pointValueAmount <= 0) return 0;
+
+    return cartItems.reduce((sum, item) => {
+      if (!item.isGift || item.giftReasonType !== "BONUS_POINTS") {
+        return sum;
+      }
+
+      const lineTotal =
+        convertToPrimaryAmount(
+          item.price ?? 0,
+          item.currencyCode,
+          currencySettings,
+        ) * Number(item.cartQty || 0);
+
+      return sum + Math.max(1, Math.ceil(lineTotal / pointValueAmount));
+    }, 0);
+  }, [bonusProgram?.pointValueAmount, cartItems, currencySettings, selectedCustomer]);
 
   const keypad = ["1", "2", "3", "4", "5", "6", "7", "8", "9", ".", "0", "<-"];
 
@@ -318,6 +359,17 @@ const PaymentModal = ({
       showToast({
         title: "Caisse fermee",
         message: "Ouvrez une caisse avant de valider une vente.",
+        variant: "warning",
+      });
+      return;
+    }
+    if (
+      cartItems.some((item) => item.isGift && item.giftReasonType === "BONUS_POINTS") &&
+      !selectedCustomer
+    ) {
+      showToast({
+        title: "Client requis",
+        message: "Selectionnez un client pour utiliser les points bonus sur un article offert.",
         variant: "warning",
       });
       return;
@@ -498,17 +550,35 @@ const PaymentModal = ({
                             )}
                           </p>
                         ) : null}
+                        {item.isGift ? (
+                          <p className="text-[10px] text-success">
+                            Offert
+                            {item.giftReasonType === "BONUS_POINTS"
+                              ? " • points bonus"
+                              : item.giftReasonType === "THRESHOLD_PURCHASE"
+                                ? item.giftThresholdAmount
+                                  ? ` • seuil ${formatPrimaryAmount(
+                                      Number(item.giftThresholdAmount || 0),
+                                      currencySettings,
+                                    )}`
+                                  : " • seuil d'achat"
+                                : ""}
+                            {item.giftReasonNote ? ` • ${item.giftReasonNote}` : ""}
+                          </p>
+                        ) : null}
                       </div>
                       <p className="font-semibold text-text-primary">
-                        {formatPrimaryAmount(
-                          item.cartQty *
-                            convertToPrimaryAmount(
-                              item.price ?? 0,
-                              item.currencyCode,
+                        {item.isGift
+                          ? "Offert"
+                          : formatPrimaryAmount(
+                              item.cartQty *
+                                convertToPrimaryAmount(
+                                  item.price ?? 0,
+                                  item.currencyCode,
+                                  currencySettings,
+                                ),
                               currencySettings,
-                            ),
-                          currencySettings,
-                        )}
+                            )}
                       </p>
                     </div>
                   ))
@@ -520,6 +590,24 @@ const PaymentModal = ({
               {!cashSession ? (
                 <div className="mb-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
                   Aucune caisse ouverte. Ouvrez d'abord la caisse avant d'encaisser.
+                </div>
+              ) : null}
+              <div className="mt-2 flex items-center justify-between text-sm">
+                <span className="text-text-secondary">Valeur panier ({primaryCurrencyCode})</span>
+                <div className="flex flex-col items-end">
+                  <span className="font-semibold text-text-primary">
+                    {formatPrimaryAmount(resolvedTotalAmount + giftedAmount, currencySettings)}
+                  </span>
+                </div>
+              </div>
+              {giftedAmount > 0 ? (
+                <div className="mt-2 flex items-center justify-between text-sm">
+                  <span className="text-text-secondary">Valeur offerte ({primaryCurrencyCode})</span>
+                  <div className="flex flex-col items-end">
+                    <span className="font-semibold text-success">
+                      {formatPrimaryAmount(giftedAmount, currencySettings)}
+                    </span>
+                  </div>
                 </div>
               ) : null}
               <div className="mt-2 flex items-center justify-between text-sm">
@@ -568,6 +656,11 @@ const PaymentModal = ({
                   ) : null}
                 </div>
               </div>
+              {bonusGiftPointsPreview > 0 ? (
+                <div className="mt-3 rounded-lg border border-warning/30 bg-warning/10 px-3 py-2 text-xs text-warning">
+                  Cette vente utilisera {bonusGiftPointsPreview} point(s) bonus pour les articles offerts.
+                </div>
+              ) : null}
             </div>
           </div>
 

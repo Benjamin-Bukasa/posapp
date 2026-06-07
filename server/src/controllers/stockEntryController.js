@@ -46,6 +46,7 @@ const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
 const isSeller = (user) => user?.role === "SELLER";
 const STOCK_ENTRY_TEMPLATE_SHEET = "StockEntries";
+const STOCK_ENTRY_TEMPLATE_INFO_SHEET = "Instructions";
 
 const pickFirstValue = (row, keys = []) => {
   for (const key of keys) {
@@ -645,11 +646,77 @@ const createStockEntry = async (req, res) => {
 };
 
 const downloadStockEntryTemplate = async (_req, res) =>
-  sendWorkbook(res, "template-entrees-stock", [
+  sendWorkbook(res, "template-entrees-directes-stock", [
+    {
+      name: STOCK_ENTRY_TEMPLATE_INFO_SHEET,
+      rows: [
+        {
+          champ: "type entree",
+          obligatoire: "Oui",
+          exemple: "DIRECT",
+          description: "Toujours DIRECT. Les imports depuis ce template ne creent que des entrees directes.",
+        },
+        {
+          champ: "reference",
+          obligatoire: "Oui",
+          exemple: "ENT-2026-001",
+          description: "Les lignes ayant la meme reference, boutique et zone seront regroupees dans une meme entree.",
+        },
+        {
+          champ: "boutique",
+          obligatoire: "Oui",
+          exemple: "Boutique Gombe",
+          description: "Nom exact de la boutique.",
+        },
+        {
+          champ: "zone",
+          obligatoire: "Oui",
+          exemple: "Depot principal",
+          description: "Nom exact de la zone de stockage rattachee a la boutique.",
+        },
+        {
+          champ: "produit / code produit",
+          obligatoire: "Oui",
+          exemple: "Pain sandwich / PROD00001",
+          description: "Renseignez au moins le nom ou le code produit du composant.",
+        },
+        {
+          champ: "unite",
+          obligatoire: "Non",
+          exemple: "Piece",
+          description: "Si vide, l'unite par defaut du produit sera utilisee.",
+        },
+        {
+          champ: "qte",
+          obligatoire: "Oui",
+          exemple: "120",
+          description: "Quantite positive uniquement.",
+        },
+        {
+          champ: "cout unitaire",
+          obligatoire: "Non",
+          exemple: "0.35",
+          description: "Cout unitaire de la ligne.",
+        },
+        {
+          champ: "lot / date fabrication / date expiration",
+          obligatoire: "Non",
+          exemple: "LOT-PAIN-001 / 2026-05-26 / 2026-05-29",
+          description: "Informations de lot si vous souhaitez tracer cette entree.",
+        },
+        {
+          champ: "note",
+          obligatoire: "Non",
+          exemple: "Reception matinale",
+          description: "Note commune aux lignes regroupees sous la meme reference.",
+        },
+      ],
+    },
     {
       name: STOCK_ENTRY_TEMPLATE_SHEET,
       rows: [
         {
+          "type entree": "DIRECT",
           reference: "ENT-2026-001",
           boutique: "Boutique Gombe",
           zone: "Depot principal",
@@ -664,6 +731,7 @@ const downloadStockEntryTemplate = async (_req, res) =>
           note: "Reception matinale",
         },
         {
+          "type entree": "DIRECT",
           reference: "ENT-2026-001",
           boutique: "Boutique Gombe",
           zone: "Depot principal",
@@ -704,6 +772,14 @@ const importStockEntries = async (req, res) => {
 
     for (const [index, row] of rows.entries()) {
       const line = index + 2;
+      const entryType = pickFirstValue(row, [
+        "type entree",
+        "Type entree",
+        "type",
+        "Type",
+        "sourceType",
+        "SourceType",
+      ]);
       const reference =
         pickFirstValue(row, ["reference", "Reference", "document", "Document"]) ||
         `IMPORT-${line}`;
@@ -725,6 +801,16 @@ const importStockEntries = async (req, res) => {
       const quantity = parseRequiredPositiveNumber(
         pickFirstValue(row, ["qte", "Qte", "quantite", "Quantite", "quantity", "Quantity"]),
       );
+
+      if (entryType && String(entryType).trim().toUpperCase() !== "DIRECT") {
+        errors.push({
+          line,
+          identifier: reference,
+          message:
+            "Seules les entrees directes sont autorisees dans ce template. Utilisez DIRECT.",
+        });
+        continue;
+      }
 
       if (!storeName || !zoneName || (!productCode && !productName) || quantity === null) {
         if (Object.values(row || {}).some((value) => String(value || "").trim() !== "")) {

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Pill } from "lucide-react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import GoogleSignInButton from "../components/ui/googleSignInButton";
+import IosInstallHint from "../components/ui/IosInstallHint";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
 
@@ -73,8 +74,10 @@ const Login = () => {
   };
 
   return (
-    <section className="flex min-h-screen items-center justify-center bg-background px-4 font-poppins">
-      <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-border bg-surface shadow-xl lg:grid-cols-[1.05fr_0.95fr]">
+    <>
+      <IosInstallHint />
+      <section className="flex min-h-screen items-center justify-center bg-background px-4 font-poppins">
+        <div className="grid w-full max-w-5xl overflow-hidden rounded-3xl border border-border bg-surface shadow-xl lg:grid-cols-[1.05fr_0.95fr]">
         <div className="hidden bg-secondary p-10 text-white lg:flex lg:flex-col lg:justify-between">
           <div className="flex items-center gap-3">
             <Pill size={28} strokeWidth={2} className="text-accent" />
@@ -183,8 +186,9 @@ const Login = () => {
             </div>
           </div>
         </div>
-      </div>
-    </section>
+        </div>
+      </section>
+    </>
   );
 };
 

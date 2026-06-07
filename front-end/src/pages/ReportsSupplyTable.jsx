@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import DataTable from "../components/ui/datatable";
 import Badge from "../components/ui/badge";
-import { getCurrentUser } from "../utils/currentUser";
 import { apiGet } from "../services/apiClient";
 import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
 import useToastStore from "../stores/toastStore";
-import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
+import useAuthStore from "../stores/authStore";
 
 const resolveSupplyVariant = (status) => {
   const normalized = status?.toLowerCase?.() ?? "";
@@ -30,10 +29,8 @@ const mapSupplierLabel = (sourceType) => {
 };
 
 function ReportsSupplyTable() {
-  const currentUser = useMemo(() => getCurrentUser(), []);
-  const displayCurrencyCode = useCurrencyStore(
-    (state) => state.settings.primaryCurrencyCode,
-  );
+  const user = useAuthStore((state) => state.user);
+  const isSeller = user?.role === "SELLER";
   const refreshTick = useRealtimeRefetch([
     "stock:entry:created",
     "stock:entry:posted",
@@ -67,7 +64,7 @@ function ReportsSupplyTable() {
         const [stockData, requestData, orderData] = await Promise.all([
           apiGet("/api/stock-entries"),
           apiGet("/api/supply-requests"),
-          apiGet("/api/purchase-orders"),
+          isSeller ? Promise.resolve([]) : apiGet("/api/purchase-orders"),
         ]);
         if (!isMounted) return;
         setEntries(Array.isArray(stockData?.data) ? stockData.data : stockData);
@@ -91,7 +88,7 @@ function ReportsSupplyTable() {
     return () => {
       isMounted = false;
     };
-  }, [refreshTick, showToast]);
+  }, [isSeller, refreshTick, showToast]);
 
   const purchaseOrderById = useMemo(() => {
     const map = new Map();
@@ -154,20 +151,10 @@ function ReportsSupplyTable() {
     });
 
     return [...stockRows, ...requestRows];
-  }, [entries, requests, purchaseOrderById, displayCurrencyCode]);
+  }, [entries, requests, purchaseOrderById]);
 
   const filteredSupplies = useMemo(() => {
     let results = [...supplyRows];
-    const normalizedUser = currentUser.name.toLowerCase();
-    const normalizedStore = currentUser.store.toLowerCase();
-
-    results = results.filter((row) => {
-      const matchesStore =
-        row.receivedBy?.toLowerCase?.() === normalizedStore;
-      const matchesRequester =
-        row.requestedBy?.toLowerCase?.() === normalizedUser;
-      return matchesStore || matchesRequester;
-    });
 
     const keyword = search.trim().toLowerCase();
     if (keyword) {
@@ -230,8 +217,6 @@ function ReportsSupplyTable() {
     search,
     filterValues,
     sortValues,
-    currentUser.name,
-    currentUser.store,
   ]);
 
   const totalPages = Math.max(1, Math.ceil(filteredSupplies.length / pageSize));
@@ -269,8 +254,12 @@ function ReportsSupplyTable() {
 
   return (
     <DataTable
-      title="Rapport d'approvisionnement"
-      description="Approvisionnement de la boutique et requisitions"
+      title={isSeller ? "Mes documents d'approvisionnement" : "Rapport d'approvisionnement"}
+      description={
+        isSeller
+          ? "Vos entrees et requisitions. Les quantites de stock restent partagees au niveau de votre boutique."
+          : "Documents d'approvisionnement par boutique. Les quantites de stock restent partagees au niveau de chaque boutique."
+      }
       columns={columns}
       data={pagedSupplies}
       emptyMessage={loading ? "Chargement..." : "Aucune donnee"}

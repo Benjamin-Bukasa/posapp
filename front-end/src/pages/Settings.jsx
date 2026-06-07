@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import {
   CircleHelp,
+  Gift,
   LogOut,
   MonitorCog,
   Moon,
@@ -17,7 +18,7 @@ import Button from "../components/ui/button";
 import CashMovementModal from "../components/ui/cashMovementModal";
 import CashSessionModal from "../components/ui/cashSessionModal";
 import Input from "../components/ui/input";
-import { apiGet, apiPost } from "../services/apiClient";
+import { apiGet, apiPost, buildQuery } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useReceiptSettingsStore from "../stores/receiptSettingsStore";
@@ -92,6 +93,13 @@ function Settings() {
   const [isCloseCashModalOpen, setIsCloseCashModalOpen] = useState(false);
   const [cashMovementType, setCashMovementType] = useState("IN");
   const [isCashMovementModalOpen, setIsCashMovementModalOpen] = useState(false);
+  const [stockAudit, setStockAudit] = useState(null);
+  const [stockAuditLoading, setStockAuditLoading] = useState(false);
+  const [giftHistory, setGiftHistory] = useState([]);
+  const [giftHistoryLoading, setGiftHistoryLoading] = useState(false);
+  const [closingStockItems, setClosingStockItems] = useState([]);
+  const [closingStockLoading, setClosingStockLoading] = useState(false);
+  const [lastClosedSessionReport, setLastClosedSessionReport] = useState(null);
 
   useEffect(() => {
     loadCurrencySettings();
@@ -127,6 +135,68 @@ function Settings() {
   useEffect(() => {
     loadCashSession();
   }, []);
+
+  const loadCashierArticleSnapshot = async (storageZoneId) => {
+    const query = buildQuery({ storageZoneId });
+    const response = await apiGet(
+      `/api/products/cashier/articles${query ? `?${query}` : ""}`,
+    );
+    const rows = Array.isArray(response) ? response : [];
+    return rows.map((item) => ({
+      productId: item.id,
+      productName: item.product,
+      sku: item.sku || "",
+      theoreticalQuantity: Number(item.quantity || 0),
+      countedQuantity: Number(item.quantity || 0),
+    }));
+  };
+
+  const loadCashSessionInsights = async (sessionId, { silent = false } = {}) => {
+    if (!sessionId) {
+      setStockAudit(null);
+      setGiftHistory([]);
+      return;
+    }
+
+    if (!silent) {
+      setStockAuditLoading(true);
+      setGiftHistoryLoading(true);
+    }
+
+    try {
+      const [audit, gifts] = await Promise.all([
+        apiGet(`/api/cash-sessions/${sessionId}/stock-audit`),
+        apiGet(`/api/cash-sessions/${sessionId}/gift-history`),
+      ]);
+      setStockAudit(audit || null);
+      setGiftHistory(Array.isArray(gifts) ? gifts : []);
+    } catch (error) {
+      if (!silent) {
+        showToast({
+          title: "Session de caisse",
+          message:
+            error.message ||
+            "Impossible de charger l'historique des offerts et du stock.",
+          variant: "warning",
+        });
+      }
+    } finally {
+      if (!silent) {
+        setStockAuditLoading(false);
+        setGiftHistoryLoading(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!cashSession?.id) {
+      setStockAudit(null);
+      setGiftHistory([]);
+      return;
+    }
+
+    loadCashSessionInsights(cashSession.id);
+  }, [cashSession?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -416,6 +486,26 @@ function Settings() {
       });
       setCashSession(session);
       setIsOpenCashModalOpen(false);
+      setLastClosedSessionReport(null);
+
+      try {
+        const openingStockItems = await loadCashierArticleSnapshot(
+          session?.storageZoneId,
+        );
+        await apiPost(`/api/cash-sessions/${session.id}/opening-stock`, {
+          stockItems: openingStockItems,
+        });
+        await loadCashSessionInsights(session.id, { silent: true });
+      } catch (snapshotError) {
+        showToast({
+          title: "Stock d'ouverture",
+          message:
+            snapshotError.message ||
+            "La caisse a ete ouverte, mais le stock d'ouverture n'a pas pu etre capture.",
+          variant: "warning",
+        });
+      }
+
       showToast({
         title: "Caisse ouverte",
         message: `Fonds initial: ${formatPrimaryAmount(amount, currencySettings)}`,
@@ -432,7 +522,7 @@ function Settings() {
     }
   };
 
-  const handleCloseCashSession = async ({ amount, note }) => {
+  const handleCloseCashSession = async ({ amount, note, stockItems = [] }) => {
     if (!cashSession?.id) return;
 
     setCashSessionSubmitting(true);
@@ -440,15 +530,30 @@ function Settings() {
       const closedSession = await apiPost(`/api/cash-sessions/${cashSession.id}/close`, {
         countedCash: amount,
         note,
+        stockItems,
+      });
+      setLastClosedSessionReport({
+        session: closedSession,
+        stockAudit: closedSession?.stockAudit || null,
+        giftHistory: Array.isArray(closedSession?.giftHistory)
+          ? closedSession.giftHistory
+          : [],
       });
       setCashSession(null);
+      setStockAudit(null);
+      setGiftHistory([]);
+      setClosingStockItems([]);
       setIsCloseCashModalOpen(false);
       showToast({
         title: "Caisse cloturee",
-        message:
+        message: [
           closedSession?.variance != null
-            ? `Ecart: ${formatPrimaryAmount(closedSession.variance, currencySettings)}`
-            : "La session de caisse a ete cloturee.",
+            ? `Ecart cash: ${formatPrimaryAmount(closedSession.variance, currencySettings)}`
+            : "Caisse cloturee.",
+          closedSession?.stockAudit?.closing?.summary?.nonZeroVarianceCount
+            ? `Ecart stock: ${closedSession.stockAudit.closing.summary.nonZeroVarianceCount} article(s).`
+            : "Aucun ecart stock detecte.",
+        ].join(" "),
         variant: "success",
       });
     } catch (error) {
@@ -461,6 +566,37 @@ function Settings() {
       setCashSessionSubmitting(false);
     }
   };
+
+  const openCloseCashModal = async () => {
+    if (!cashSession?.id) return;
+
+    setClosingStockLoading(true);
+    setClosingStockItems([]);
+    setIsCloseCashModalOpen(true);
+    try {
+      const items = await loadCashierArticleSnapshot(cashSession.storageZoneId);
+      setClosingStockItems(items);
+    } catch (error) {
+      showToast({
+        title: "Controle stock",
+        message:
+          error.message ||
+          "Impossible de charger le stock courant pour la cloture.",
+        variant: "warning",
+      });
+    } finally {
+      setClosingStockLoading(false);
+    }
+  };
+
+  const activeStockAudit = cashSession?.id
+    ? stockAudit
+    : lastClosedSessionReport?.stockAudit || null;
+  const activeGiftHistory = cashSession?.id
+    ? giftHistory
+    : lastClosedSessionReport?.giftHistory || [];
+  const openingStockItems = activeStockAudit?.opening?.items || [];
+  const closingStockItemsSummary = activeStockAudit?.closing?.items || [];
 
   const handleCashMovement = async ({ type, amount, reason, note }) => {
     if (!cashSession?.id) return;
@@ -822,12 +958,12 @@ function Settings() {
                     setIsCashMovementModalOpen(true);
                   }}
                 />
-                <Button
+              <Button
                   type="button"
                   label="Cloturer la caisse"
                   variant="primary"
                   size="small"
-                  onClick={() => setIsCloseCashModalOpen(true)}
+                  onClick={openCloseCashModal}
                 />
               </>
             ) : (
@@ -973,6 +1109,225 @@ function Settings() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className={settingsCardClassName}>
           <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-primary/10 p-3 text-primary">
+              <Warehouse size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-text-primary">
+                Controle stock vendeur
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Stock photographie a l'ouverture, puis controle a la fermeture pour mesurer l'ecart.
+              </p>
+            </div>
+          </div>
+
+          {stockAuditLoading ? (
+            <div className="mt-4 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
+              Chargement du controle de stock...
+            </div>
+          ) : activeStockAudit ? (
+            <>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-xl border border-border bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-text-secondary">
+                    Ouverture
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-text-primary">
+                    {activeStockAudit.opening?.summary?.itemCount || 0} article(s)
+                  </p>
+                  <p className="text-xs text-text-secondary">
+                    Quantite totale: {activeStockAudit.opening?.summary?.theoreticalTotalQuantity || 0}
+                  </p>
+                </div>
+                <div className="rounded-xl border border-border bg-background px-4 py-3">
+                  <p className="text-xs uppercase tracking-wide text-text-secondary">
+                    Fermeture
+                  </p>
+                  <p className="mt-2 text-sm font-semibold text-text-primary">
+                    {activeStockAudit.closing?.summary?.nonZeroVarianceCount || 0} ecart(s)
+                  </p>
+                  <p className="text-xs text-text-secondary">
+                    Variance totale: {activeStockAudit.closing?.summary?.varianceTotalQuantity || 0}
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                <div className="overflow-hidden rounded-xl border border-border bg-background">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <p className="text-sm font-medium text-text-primary">Stock d'ouverture</p>
+                    <span className="text-xs text-text-secondary">
+                      {openingStockItems.length} ligne(s)
+                    </span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {openingStockItems.length ? (
+                      openingStockItems.map((item) => (
+                        <div
+                          key={item.productId}
+                          className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate font-medium text-text-primary">
+                              {item.productName}
+                            </p>
+                            {item.sku ? (
+                              <p className="text-xs text-text-secondary">{item.sku}</p>
+                            ) : null}
+                          </div>
+                          <span className="font-semibold text-text-primary">
+                            {item.theoreticalQuantity}
+                          </span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-text-secondary">
+                        Aucun snapshot d'ouverture enregistre.
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="overflow-hidden rounded-xl border border-border bg-background">
+                  <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                    <p className="text-sm font-medium text-text-primary">Ecart de fermeture</p>
+                    <span className="text-xs text-text-secondary">
+                      {closingStockItemsSummary.filter(
+                        (item) => Math.abs(Number(item.varianceQuantity || 0)) > 0.0001,
+                      ).length} ligne(s)
+                    </span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto">
+                    {closingStockItemsSummary.some(
+                      (item) => Math.abs(Number(item.varianceQuantity || 0)) > 0.0001,
+                    ) ? (
+                      closingStockItemsSummary
+                        .filter((item) => Math.abs(Number(item.varianceQuantity || 0)) > 0.0001)
+                        .map((item) => (
+                          <div
+                            key={item.productId}
+                            className="flex items-center justify-between gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                          >
+                            <div className="min-w-0">
+                              <p className="truncate font-medium text-text-primary">
+                                {item.productName}
+                              </p>
+                              <p className="text-xs text-text-secondary">
+                                Theorique: {item.theoreticalQuantity} - Compte: {item.countedQuantity}
+                              </p>
+                            </div>
+                            <span
+                              className={[
+                                "font-semibold",
+                                item.varianceQuantity > 0
+                                  ? "text-success"
+                                  : "text-danger",
+                              ].join(" ")}
+                            >
+                              {item.varianceQuantity > 0 ? "+" : ""}
+                              {item.varianceQuantity}
+                            </span>
+                          </div>
+                        ))
+                    ) : (
+                      <div className="px-4 py-3 text-sm text-text-secondary">
+                        {activeStockAudit?.closing?.items?.length
+                          ? "Aucun ecart stock detecte."
+                          : "Le controle de fermeture sera disponible a la cloture de la caisse."}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="mt-4 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
+              Ouvrez puis cloturez une caisse pour enregistrer l'historique de stock vendeur.
+            </div>
+          )}
+        </div>
+
+        <div className={settingsCardClassName}>
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-success/10 p-3 text-success">
+              <Gift size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-text-primary">
+                Historique des offerts
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Chaque article offert reste trace avec son motif, sa valeur et le client concerne.
+              </p>
+            </div>
+          </div>
+
+          {giftHistoryLoading ? (
+            <div className="mt-4 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
+              Chargement des offerts...
+            </div>
+          ) : activeGiftHistory.length ? (
+            <div className="mt-4 overflow-hidden rounded-xl border border-border bg-background">
+              <div className="flex items-center justify-between border-b border-border px-4 py-3">
+                <p className="text-sm font-medium text-text-primary">
+                  {cashSession?.id ? "Offerts de la session en cours" : "Derniere session cloturee"}
+                </p>
+                <span className="text-xs text-text-secondary">
+                  {activeGiftHistory.length} ligne(s)
+                </span>
+              </div>
+              <div className="max-h-96 overflow-y-auto">
+                {activeGiftHistory.map((item) => (
+                  <div
+                    key={item.orderItemId}
+                    className="border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-text-primary">
+                          {item.productName}
+                        </p>
+                        <p className="text-xs text-text-secondary">
+                          {item.quantity} x {formatPrimaryAmount(item.unitPrice || 0, currencySettings)}
+                        </p>
+                        <p className="mt-1 text-xs text-text-secondary">
+                          {item.reasonType === "BONUS_POINTS"
+                            ? `Points bonus${item.bonusPointsUsed ? ` (${item.bonusPointsUsed} pt)` : ""}`
+                            : item.reasonType === "THRESHOLD_PURCHASE"
+                              ? `Seuil d'achat${item.thresholdAmount ? ` (${formatPrimaryAmount(item.thresholdAmount, currencySettings)})` : ""}`
+                              : "Offert manuel"}
+                          {item.reasonNote ? ` - ${item.reasonNote}` : ""}
+                        </p>
+                        <p className="mt-1 text-[11px] text-text-secondary">
+                          {item.customerName ? `Client: ${item.customerName}` : "Sans client"}{" "}
+                          {item.cashierName ? `- Vendeur: ${item.cashierName}` : ""}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-semibold text-success">
+                          {formatPrimaryAmount(item.grossLineTotal || 0, currencySettings)}
+                        </p>
+                        <p className="text-[11px] text-text-secondary">
+                          {new Date(item.createdAt).toLocaleString("fr-FR")}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
+              Aucun article offert enregistre pour cette session.
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <div className={settingsCardClassName}>
+          <div className="flex items-start gap-3">
             <div className="rounded-xl bg-accent/20 p-3 text-primary">
               <Store size={18} />
             </div>
@@ -1070,6 +1425,8 @@ function Settings() {
         isOpen={isCloseCashModalOpen}
         session={cashSession}
         currencySettings={currencySettings}
+        stockItems={closingStockItems}
+        stockLoading={closingStockLoading}
         submitting={cashSessionSubmitting}
         onClose={() => {
           if (cashSessionSubmitting) return;

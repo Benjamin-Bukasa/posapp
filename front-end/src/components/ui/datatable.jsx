@@ -228,7 +228,7 @@ const DataTable = ({
 
        <div
         className={[
-          "table-scroll mt-4 max-h-[60vh] overflow-y-auto rounded-xl border border-border bg-surface",
+          "table-scroll mt-4 max-h-[54vh] overflow-y-auto rounded-xl border border-border bg-surface",
           tableContainerClassName,
         ].join(" ")}
       >

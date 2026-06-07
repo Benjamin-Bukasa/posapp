@@ -1,23 +1,29 @@
 const express = require("express");
 const auth = require("../middlewares/auth");
-const requireRole = require("../middlewares/requireRole");
+const requirePermission = require("../middlewares/requirePermission");
 const customerController = require("../controllers/customerController");
 
 const router = express.Router();
 
-router.get("/", auth, customerController.listCustomers);
-router.get("/:id", auth, customerController.getCustomer);
+router.get("/", auth, requirePermission("customers.read"), customerController.listCustomers);
+router.get("/:id", auth, requirePermission("customers.read"), customerController.getCustomer);
 router.post(
   "/",
   auth,
-  requireRole("SUPERADMIN", "ADMIN", "USER"),
+  requirePermission("customers.create"),
   customerController.createCustomer
 );
 router.patch(
   "/:id",
   auth,
-  requireRole("SUPERADMIN", "ADMIN"),
+  requirePermission("customers.update"),
   customerController.updateCustomer
+);
+router.delete(
+  "/:id",
+  auth,
+  requirePermission("customers.delete"),
+  customerController.deleteCustomer
 );
 
 module.exports = router;

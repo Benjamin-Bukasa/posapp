@@ -197,9 +197,50 @@ const updateCustomer = async (req, res) => {
   return res.json(updated);
 };
 
+const deleteCustomer = async (req, res) => {
+  const { id } = req.params;
+
+  const existing = await prisma.customer.findFirst({
+    where: { id, tenantId: req.user.tenantId },
+    include: {
+      _count: {
+        select: {
+          orders: true,
+          wishlists: true,
+          bonusRecord: true,
+          sponsorships: true,
+        },
+      },
+    },
+  });
+
+  if (!existing) {
+    return res.status(404).json({ message: "Customer not found." });
+  }
+
+  const blockers = [];
+  if (existing._count?.orders > 0) blockers.push("vente(s)");
+  if (existing._count?.wishlists > 0) blockers.push("wishlist(s)");
+  if (existing._count?.bonusRecord > 0) blockers.push("historique bonus");
+  if (existing._count?.sponsorships > 0) blockers.push("parrainage(s)");
+
+  if (blockers.length) {
+    return res.status(409).json({
+      message: `Suppression impossible. Ce client est encore reference dans : ${blockers.join(", ")}.`,
+    });
+  }
+
+  await prisma.customer.delete({
+    where: { id },
+  });
+
+  return res.json({ message: "Client supprime." });
+};
+
 module.exports = {
   listCustomers,
   getCustomer,
   createCustomer,
   updateCustomer,
+  deleteCustomer,
 };

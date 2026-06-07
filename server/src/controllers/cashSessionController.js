@@ -11,7 +11,10 @@ const {
   listCashSessions,
   listCashSessionMovements,
   recordCashMovement,
+  replaceCashSessionStockSnapshot,
+  getCashSessionStockAudit,
 } = require("../utils/cashSessionStore");
+const { listGiftHistoryByCashSession } = require("../utils/orderItemOfferStore");
 const { emitToStore, emitToTenant, emitToUser } = require("../socket");
 const { sendErrorResponse } = require("../utils/httpErrors");
 
@@ -47,6 +50,45 @@ const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZone
     select: { id: true, name: true, zoneType: true },
   });
 };
+
+const normalizeStockAuditItemsInput = (items = []) =>
+  (Array.isArray(items) ? items : []).map((item, index) => {
+    const productId = String(item?.productId || "").trim();
+    const productName = String(item?.productName || "").trim();
+    const sku = item?.sku ? String(item.sku).trim() : "";
+    const theoreticalQuantity = Number(item?.theoreticalQuantity || 0);
+    const countedQuantity =
+      item?.countedQuantity === undefined || item?.countedQuantity === null || item?.countedQuantity === ""
+        ? null
+        : Number(item.countedQuantity);
+
+    if (!productId || !productName) {
+      throw Object.assign(
+        new Error(`Ligne de stock invalide a la position ${index + 1}.`),
+        { status: 400 },
+      );
+    }
+    if (!Number.isFinite(theoreticalQuantity) || theoreticalQuantity < 0) {
+      throw Object.assign(
+        new Error(`Stock theorique invalide a la position ${index + 1}.`),
+        { status: 400 },
+      );
+    }
+    if (countedQuantity !== null && (!Number.isFinite(countedQuantity) || countedQuantity < 0)) {
+      throw Object.assign(
+        new Error(`Stock compte invalide a la position ${index + 1}.`),
+        { status: 400 },
+      );
+    }
+
+    return {
+      productId,
+      productName,
+      sku,
+      theoreticalQuantity,
+      countedQuantity,
+    };
+  });
 
 const getCurrent = async (req, res) => {
   await ensureCashSessionTables();
@@ -127,10 +169,15 @@ const getById = async (req, res) => {
     tenantId: req.user.tenantId,
     sessionId: req.params.id,
   });
+  const stockAudit = await getCashSessionStockAudit({
+    tenantId: req.user.tenantId,
+    sessionId: req.params.id,
+  });
 
   return res.json({
     ...session,
     currencyCode: currencySettings.primaryCurrencyCode,
+    stockAudit,
     movements: movements.map((movement) => ({
       ...movement,
       currencyCode: currencySettings.primaryCurrencyCode,
@@ -198,9 +245,15 @@ const open = async (req, res) => {
 const close = async (req, res) => {
   const countedCash = toMoney(req.body?.countedCash);
   const closingNote = req.body?.note ? String(req.body.note).trim() : null;
+  let stockItems = [];
 
   if (!Number.isFinite(countedCash) || countedCash < 0) {
     return res.status(400).json({ message: "Le montant compte est invalide." });
+  }
+  try {
+    stockItems = normalizeStockAuditItemsInput(req.body?.stockItems || []);
+  } catch (error) {
+    return sendErrorResponse(res, error, "Controle de stock de cloture invalide.");
   }
 
   const session = await getCashSessionById({
@@ -225,11 +278,27 @@ const close = async (req, res) => {
 
   try {
     const currencySettings = await loadTenantCurrencySettings(prisma, req.user.tenantId);
+    if (stockItems.length) {
+      await replaceCashSessionStockSnapshot({
+        tenantId: req.user.tenantId,
+        sessionId: req.params.id,
+        stage: "CLOSING",
+        items: stockItems,
+      });
+    }
     const closedSession = await closeCashSession({
       tenantId: req.user.tenantId,
       sessionId: req.params.id,
       countedCash,
       closingNote,
+    });
+    const stockAudit = await getCashSessionStockAudit({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+    });
+    const giftHistory = await listGiftHistoryByCashSession({
+      tenantId: req.user.tenantId,
+      cashSessionId: req.params.id,
     });
 
     const payload = {
@@ -246,10 +315,110 @@ const close = async (req, res) => {
     return res.json({
       ...closedSession,
       currencyCode: currencySettings.primaryCurrencyCode,
+      stockAudit,
+      giftHistory,
     });
   } catch (error) {
     return sendErrorResponse(res, error, "Impossible de cloturer la caisse.");
   }
+};
+
+const saveOpeningStockSnapshot = async (req, res) => {
+  const session = await getCashSessionById({
+    tenantId: req.user.tenantId,
+    sessionId: req.params.id,
+  });
+
+  if (!session) {
+    return res.status(404).json({ message: "Session de caisse introuvable." });
+  }
+
+  const canEdit =
+    session.userId === req.user.id ||
+    req.user.role === "ADMIN" ||
+    req.user.role === "SUPERADMIN";
+
+  if (!canEdit) {
+    return res.status(403).json({
+      message: "Vous ne pouvez pas enregistrer le stock d'ouverture de cette caisse.",
+    });
+  }
+
+  try {
+    const stockItems = normalizeStockAuditItemsInput(req.body?.stockItems || []);
+    await replaceCashSessionStockSnapshot({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+      stage: "OPENING",
+      items: stockItems.map((item) => ({
+        ...item,
+        countedQuantity:
+          item.countedQuantity == null ? item.theoreticalQuantity : item.countedQuantity,
+      })),
+    });
+
+    return res.status(201).json(
+      await getCashSessionStockAudit({
+        tenantId: req.user.tenantId,
+        sessionId: req.params.id,
+      }),
+    );
+  } catch (error) {
+    return sendErrorResponse(
+      res,
+      error,
+      "Impossible d'enregistrer le stock d'ouverture.",
+    );
+  }
+};
+
+const getStockAudit = async (req, res) => {
+  const session = await getCashSessionById({
+    tenantId: req.user.tenantId,
+    sessionId: req.params.id,
+  });
+
+  if (!session) {
+    return res.status(404).json({ message: "Session de caisse introuvable." });
+  }
+
+  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
+  if (!canView) {
+    return res.status(403).json({
+      message: "Vous ne pouvez pas consulter ce controle de stock.",
+    });
+  }
+
+  return res.json(
+    await getCashSessionStockAudit({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+    }),
+  );
+};
+
+const getGiftHistory = async (req, res) => {
+  const session = await getCashSessionById({
+    tenantId: req.user.tenantId,
+    sessionId: req.params.id,
+  });
+
+  if (!session) {
+    return res.status(404).json({ message: "Session de caisse introuvable." });
+  }
+
+  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
+  if (!canView) {
+    return res.status(403).json({
+      message: "Vous ne pouvez pas consulter l'historique des offerts de cette caisse.",
+    });
+  }
+
+  const history = await listGiftHistoryByCashSession({
+    tenantId: req.user.tenantId,
+    cashSessionId: req.params.id,
+  });
+  return res.json(history);
 };
 
 const list = async (req, res) => {
@@ -403,4 +572,7 @@ module.exports = {
   close,
   list,
   addMovement,
+  saveOpeningStockSnapshot,
+  getStockAudit,
+  getGiftHistory,
 };

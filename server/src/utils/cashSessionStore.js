@@ -43,6 +43,23 @@ const normalizeCashSession = (row) => {
   };
 };
 
+const normalizeCashSessionStockRow = (row) => ({
+  id: row.id,
+  tenantId: row.tenantId,
+  cashSessionId: row.cashSessionId,
+  stage: row.stage,
+  productId: row.productId,
+  productName: row.productName || "",
+  sku: row.sku || "",
+  theoreticalQuantity: Number(row.theoreticalQuantity || 0),
+  countedQuantity:
+    row.countedQuantity == null ? null : Number(row.countedQuantity),
+  varianceQuantity:
+    row.varianceQuantity == null ? null : Number(row.varianceQuantity),
+  createdAt: row.createdAt,
+  updatedAt: row.updatedAt,
+});
+
 const ensureCashSessionTables = async () => {
   await prisma.$executeRawUnsafe(`
     CREATE TABLE IF NOT EXISTS "cashSessions" (
@@ -124,6 +141,36 @@ const ensureCashSessionTables = async () => {
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "cashSessionPayments_session_idx"
     ON "cashSessionPayments" ("cashSessionId")
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE TABLE IF NOT EXISTS "cashSessionStockItems" (
+      "id" TEXT PRIMARY KEY,
+      "tenantId" TEXT NOT NULL,
+      "cashSessionId" TEXT NOT NULL,
+      "stage" TEXT NOT NULL,
+      "productId" TEXT NOT NULL,
+      "productName" TEXT NOT NULL,
+      "sku" TEXT NULL,
+      "theoreticalQuantity" DECIMAL(18, 2) NOT NULL DEFAULT 0,
+      "countedQuantity" DECIMAL(18, 2) NULL,
+      "varianceQuantity" DECIMAL(18, 2) NULL,
+      "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT "cashSessionStockItems_stage_check" CHECK ("stage" IN ('OPENING', 'CLOSING')),
+      CONSTRAINT "cashSessionStockItems_tenant_fk" FOREIGN KEY ("tenantId") REFERENCES "tenants"("id") ON DELETE CASCADE,
+      CONSTRAINT "cashSessionStockItems_session_fk" FOREIGN KEY ("cashSessionId") REFERENCES "cashSessions"("id") ON DELETE CASCADE
+    )
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE UNIQUE INDEX IF NOT EXISTS "cashSessionStockItems_session_stage_product_unique"
+    ON "cashSessionStockItems" ("cashSessionId", "stage", "productId")
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    CREATE INDEX IF NOT EXISTS "cashSessionStockItems_session_stage_idx"
+    ON "cashSessionStockItems" ("cashSessionId", "stage", "productName")
   `);
 };
 
@@ -446,6 +493,154 @@ const closeCashSession = async ({
   return getCashSessionById({ tenantId, sessionId });
 };
 
+const replaceCashSessionStockSnapshot = async ({
+  tenantId,
+  sessionId,
+  stage,
+  items = [],
+}) => {
+  await ensureCashSessionTables();
+  const normalizedStage = String(stage || "").trim().toUpperCase();
+  if (!["OPENING", "CLOSING"].includes(normalizedStage)) {
+    throw Object.assign(new Error("Etape de stock invalide."), { status: 400 });
+  }
+
+  await prisma.$executeRawUnsafe(
+    `
+      DELETE FROM "cashSessionStockItems"
+      WHERE "tenantId" = $1 AND "cashSessionId" = $2 AND "stage" = $3
+    `,
+    tenantId,
+    sessionId,
+    normalizedStage,
+  );
+
+  for (const item of items) {
+    const theoreticalQuantity = Number(item?.theoreticalQuantity || 0);
+    const countedQuantity =
+      item?.countedQuantity === undefined || item?.countedQuantity === null
+        ? normalizedStage === "OPENING"
+          ? theoreticalQuantity
+          : null
+        : Number(item.countedQuantity);
+    const varianceQuantity =
+      countedQuantity == null ? null : countedQuantity - theoreticalQuantity;
+
+    await prisma.$executeRawUnsafe(
+      `
+        INSERT INTO "cashSessionStockItems" (
+          "id",
+          "tenantId",
+          "cashSessionId",
+          "stage",
+          "productId",
+          "productName",
+          "sku",
+          "theoreticalQuantity",
+          "countedQuantity",
+          "varianceQuantity",
+          "createdAt",
+          "updatedAt"
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW(), NOW())
+      `,
+      createId(),
+      tenantId,
+      sessionId,
+      normalizedStage,
+      String(item?.productId || ""),
+      String(item?.productName || "Article"),
+      item?.sku ? String(item.sku) : null,
+      theoreticalQuantity,
+      countedQuantity,
+      varianceQuantity,
+    );
+  }
+
+  return true;
+};
+
+const listCashSessionStockSnapshot = async ({
+  tenantId,
+  sessionId,
+  stage,
+}) => {
+  await ensureCashSessionTables();
+  const normalizedStage = String(stage || "").trim().toUpperCase();
+  const rows = await prisma.$queryRawUnsafe(
+    `
+      SELECT
+        "id",
+        "tenantId",
+        "cashSessionId",
+        "stage",
+        "productId",
+        "productName",
+        "sku",
+        "theoreticalQuantity",
+        "countedQuantity",
+        "varianceQuantity",
+        "createdAt",
+        "updatedAt"
+      FROM "cashSessionStockItems"
+      WHERE "tenantId" = $1
+        AND "cashSessionId" = $2
+        AND "stage" = $3
+      ORDER BY "productName" ASC, "createdAt" ASC
+    `,
+    tenantId,
+    sessionId,
+    normalizedStage,
+  );
+
+  return rows.map(normalizeCashSessionStockRow);
+};
+
+const getCashSessionStockAudit = async ({ tenantId, sessionId }) => {
+  const [openingItems, closingItems] = await Promise.all([
+    listCashSessionStockSnapshot({
+      tenantId,
+      sessionId,
+      stage: "OPENING",
+    }),
+    listCashSessionStockSnapshot({
+      tenantId,
+      sessionId,
+      stage: "CLOSING",
+    }),
+  ]);
+
+  const summarize = (items = []) => ({
+    itemCount: items.length,
+    theoreticalTotalQuantity: items.reduce(
+      (sum, item) => sum + Number(item.theoreticalQuantity || 0),
+      0,
+    ),
+    countedTotalQuantity: items.reduce(
+      (sum, item) => sum + Number(item.countedQuantity || 0),
+      0,
+    ),
+    varianceTotalQuantity: items.reduce(
+      (sum, item) => sum + Number(item.varianceQuantity || 0),
+      0,
+    ),
+    nonZeroVarianceCount: items.filter(
+      (item) => Math.abs(Number(item.varianceQuantity || 0)) > 0.0001,
+    ).length,
+  });
+
+  return {
+    opening: {
+      items: openingItems,
+      summary: summarize(openingItems),
+    },
+    closing: {
+      items: closingItems,
+      summary: summarize(closingItems),
+    },
+  };
+};
+
 const listCashSessionMovements = async ({ tenantId, sessionId }) => {
   await ensureCashSessionTables();
   const rows = await prisma.$queryRawUnsafe(`
@@ -557,4 +752,7 @@ module.exports = {
   recordCashMovement,
   linkPaymentToCashSession,
   adjustLinkedPaymentCashTotals,
+  replaceCashSessionStockSnapshot,
+  listCashSessionStockSnapshot,
+  getCashSessionStockAudit,
 };
