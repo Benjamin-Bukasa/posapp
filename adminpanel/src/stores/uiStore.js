@@ -3,12 +3,9 @@ import { create } from "zustand";
 const useUiStore = create((set) => ({
   isSidebarOpen: true,
   isMobileSidebarOpen: false,
-  isTabletSidebarMode: false,
   setSidebarOpen: (isOpen) => set({ isSidebarOpen: Boolean(isOpen) }),
   openSidebar: () => set({ isSidebarOpen: true }),
   closeSidebar: () => set({ isSidebarOpen: false }),
-  setTabletSidebarMode: (isTabletSidebarMode) =>
-    set({ isTabletSidebarMode: Boolean(isTabletSidebarMode) }),
   toggleSidebar: () =>
     set((state) => ({ isSidebarOpen: !state.isSidebarOpen })),
   openMobileSidebar: () => set({ isMobileSidebarOpen: true }),

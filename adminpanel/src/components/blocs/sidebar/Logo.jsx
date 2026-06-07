@@ -5,7 +5,6 @@ import useAuthStore from "../../../stores/authStore";
 
 const Logo = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
-  const isTabletSidebarMode = useUiStore((state) => state.isTabletSidebarMode);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
   const tenantName = useAuthStore((state) => state.user?.tenantName || "POSapp");
@@ -60,7 +59,7 @@ const Logo = () => {
         <p
           className={[
             "max-w-[180px] truncate text-2xl font-semibold text-white",
-            isTabletSidebarMode || isSidebarOpen ? "block" : "block lg:hidden",
+            isSidebarOpen ? "block" : "block lg:hidden",
           ].join(" ")}
           title={tenantName}
         >
@@ -70,12 +69,11 @@ const Logo = () => {
       <button
         type="button"
         onClick={closeMobileSidebar}
-        className={["rounded-lg p-1 text-accent", !isTabletSidebarMode ? "lg:hidden" : ""].join(" ")}
+        className="rounded-lg p-1 text-accent lg:hidden"
         aria-label="Fermer le menu"
       >
         <X size={22} strokeWidth={1.8} />
       </button>
-      {!isTabletSidebarMode ? (
       <div className="group relative hidden lg:block">
         <button
           ref={buttonRef}
@@ -102,7 +100,6 @@ const Logo = () => {
           </span>
         ) : null}
       </div>
-      ) : null}
     </div>
   );
 };

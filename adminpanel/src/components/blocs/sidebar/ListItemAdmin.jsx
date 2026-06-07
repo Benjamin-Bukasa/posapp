@@ -11,7 +11,6 @@ import { hasAnyPermission } from "../../../utils/permissions";
 
 const ListItemAdmin = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
-  const isTabletSidebarMode = useUiStore((state) => state.isTabletSidebarMode);
   const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
   const user = useAuthStore((state) => state.user);
   const location = useLocation();
@@ -46,9 +45,8 @@ const ListItemAdmin = () => {
         .filter((section) => section.items.length),
     [user],
   );
-  const expandedContentClass =
-    isTabletSidebarMode || isSidebarOpen ? "block" : "block lg:hidden";
-  const expandedFlexClass = isTabletSidebarMode || isSidebarOpen ? "" : "lg:hidden";
+  const expandedContentClass = isSidebarOpen ? "block" : "block lg:hidden";
+  const expandedFlexClass = isSidebarOpen ? "" : "lg:hidden";
 
   const isPathActive = (path) => {
     if (!path) return false;
@@ -105,9 +103,7 @@ const ListItemAdmin = () => {
                       }
                       className={[
                         "flex w-full items-center transition-colors",
-                        isTabletSidebarMode || isSidebarOpen
-                          ? "justify-between"
-                          : "justify-between lg:justify-center",
+                        isSidebarOpen ? "justify-between" : "justify-between lg:justify-center",
                         "rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
                         isActiveGroup ? "bg-accent text-primary" : "text-white",
                       ].join(" ")}
@@ -115,9 +111,7 @@ const ListItemAdmin = () => {
                       <span
                         className={[
                           "flex items-center",
-                          isTabletSidebarMode || isSidebarOpen
-                            ? "gap-3"
-                            : "gap-3 lg:gap-2",
+                          isSidebarOpen ? "gap-3" : "gap-3 lg:gap-2",
                         ].join(" ")}
                       >
                         <Icon size={20} strokeWidth={1.5} />
@@ -173,7 +167,7 @@ const ListItemAdmin = () => {
                   className={({ isActive }) =>
                     [
                       "flex items-center transition-colors",
-                      isTabletSidebarMode || isSidebarOpen
+                      isSidebarOpen
                         ? "justify-start gap-3"
                         : "justify-start gap-3 lg:justify-center lg:gap-2",
                       "rounded-lg px-4 py-2 hover:bg-accent hover:text-primary",
