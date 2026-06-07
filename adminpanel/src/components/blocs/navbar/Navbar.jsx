@@ -52,7 +52,6 @@ const Navbar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const openMobileSidebar = useUiStore((state) => state.openMobileSidebar);
-  const isTabletSidebarMode = useUiStore((state) => state.isTabletSidebarMode);
   const authUser = useAuthStore((state) => state.user);
   const logout = useAuthStore((state) => state.logout);
   const currentRoute = findRouteByPath(location.pathname);
@@ -177,10 +176,7 @@ const Navbar = () => {
           <button
             type="button"
             onClick={openMobileSidebar}
-            className={[
-              "inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-text-primary transition hover:bg-surface",
-              !isTabletSidebarMode ? "lg:hidden" : "",
-            ].join(" ")}
+            className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-border bg-background text-text-primary transition hover:bg-surface lg:hidden"
             aria-label="Ouvrir le menu"
           >
             <Menu size={20} strokeWidth={1.8} />

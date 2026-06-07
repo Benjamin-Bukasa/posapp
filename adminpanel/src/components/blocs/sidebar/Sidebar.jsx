@@ -6,12 +6,11 @@ import ListItemAdmin from "./ListItemAdmin";
 const Sidebar = () => {
   const isSidebarOpen = useUiStore((state) => state.isSidebarOpen);
   const isMobileSidebarOpen = useUiStore((state) => state.isMobileSidebarOpen);
-  const isTabletSidebarMode = useUiStore((state) => state.isTabletSidebarMode);
   const closeMobileSidebar = useUiStore((state) => state.closeMobileSidebar);
 
   useEffect(() => {
     const syncViewport = () => {
-      if (!isTabletSidebarMode && window.innerWidth >= 1024) {
+      if (window.innerWidth >= 1024) {
         closeMobileSidebar();
       }
     };
@@ -19,7 +18,7 @@ const Sidebar = () => {
     syncViewport();
     window.addEventListener("resize", syncViewport);
     return () => window.removeEventListener("resize", syncViewport);
-  }, [closeMobileSidebar, isTabletSidebarMode]);
+  }, [closeMobileSidebar]);
 
   return (
     <>
@@ -28,25 +27,17 @@ const Sidebar = () => {
         aria-label="Fermer le menu"
         onClick={closeMobileSidebar}
         className={[
-          "fixed inset-0 z-[89] bg-slate-950/45 backdrop-blur-[1px] transition-opacity",
-          !isTabletSidebarMode ? "lg:hidden" : "",
+          "fixed inset-0 z-[89] bg-slate-950/45 backdrop-blur-[1px] transition-opacity lg:hidden",
           isMobileSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0",
         ].join(" ")}
       />
 
       <aside
         className={[
-          "sidebar fixed inset-y-0 left-0 z-[90] h-screen max-w-[88vw] overflow-hidden shadow-2xl transition-transform duration-200",
-          !isTabletSidebarMode
-            ? "lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none"
-            : "",
+          "sidebar fixed inset-y-0 left-0 z-[90] h-screen max-w-[88vw] overflow-hidden shadow-2xl transition-transform duration-200 lg:static lg:z-auto lg:h-full lg:max-w-none lg:translate-x-0 lg:shadow-none",
           isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
           "w-80",
-          !isTabletSidebarMode
-            ? isSidebarOpen
-              ? "lg:w-80"
-              : "lg:w-[88px]"
-            : "",
+          isSidebarOpen ? "lg:w-80" : "lg:w-[88px]",
         ].join(" ")}
       >
         <div className="flex h-full min-h-0 w-full flex-col">
