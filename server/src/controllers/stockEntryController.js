@@ -59,10 +59,72 @@ const pickFirstValue = (row, keys = []) => {
   return "";
 };
 
+const isReasonableSpreadsheetYear = (date) => {
+  const year = date.getUTCFullYear();
+  return year >= 1900 && year <= 2100;
+};
+
+const buildIsoDate = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) return null;
+  if (!isReasonableSpreadsheetYear(date)) return null;
+  return date.toISOString();
+};
+
+const parseExcelSerialDate = (serialValue) => {
+  const serial = Number(serialValue);
+  if (!Number.isFinite(serial) || serial <= 0) return null;
+
+  // Excel stores dates as days since 1899-12-30 in the default 1900 date system.
+  const excelEpochUtc = Date.UTC(1899, 11, 30);
+  const wholeDays = Math.floor(serial);
+  const fractionalDay = serial - wholeDays;
+  const milliseconds =
+    wholeDays * 24 * 60 * 60 * 1000 +
+    Math.round(fractionalDay * 24 * 60 * 60 * 1000);
+
+  return new Date(excelEpochUtc + milliseconds);
+};
+
 const parseOptionalDate = (value) => {
   if (value === null || value === undefined || value === "") return null;
-  const date = new Date(value);
-  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+
+  if (value instanceof Date) {
+    return buildIsoDate(value);
+  }
+
+  if (typeof value === "number") {
+    return buildIsoDate(parseExcelSerialDate(value));
+  }
+
+  const normalized = String(value).trim();
+  if (!normalized) return null;
+
+  if (/^\d+(\.\d+)?$/.test(normalized)) {
+    const numericValue = Number(normalized);
+
+    if (numericValue >= 59 && numericValue <= 60000) {
+      return buildIsoDate(parseExcelSerialDate(numericValue));
+    }
+
+    if (/^\d{8}$/.test(normalized)) {
+      const year = Number(normalized.slice(0, 4));
+      const month = Number(normalized.slice(4, 6));
+      const day = Number(normalized.slice(6, 8));
+      return buildIsoDate(new Date(Date.UTC(year, month - 1, day)));
+    }
+
+    return null;
+  }
+
+  const frenchStyleMatch = normalized.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{4})$/);
+  if (frenchStyleMatch) {
+    const [, dayRaw, monthRaw, yearRaw] = frenchStyleMatch;
+    return buildIsoDate(
+      new Date(Date.UTC(Number(yearRaw), Number(monthRaw) - 1, Number(dayRaw))),
+    );
+  }
+
+  return buildIsoDate(new Date(normalized));
 };
 
 const parseRequiredPositiveNumber = (value) => {

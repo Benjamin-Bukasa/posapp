@@ -19,7 +19,6 @@ import {
   shortId,
   toDisplayAmount,
 } from "../utils/formatters";
-import { useProductsData } from "../hooks/useProductsData";
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
@@ -71,10 +70,10 @@ function Dashboard() {
     "supply:request:created",
     "supply:request:approved",
   ]);
-  const { products } = useProductsData({ storeId });
   const [orders, setOrders] = useState([]);
   const [stockEntries, setStockEntries] = useState([]);
   const [supplyRequests, setSupplyRequests] = useState([]);
+  const [inventoryRows, setInventoryRows] = useState([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -84,10 +83,11 @@ function Dashboard() {
       try {
         const query = buildQuery(storeId ? { storeId } : {});
         const suffix = query ? `?${query}` : "";
-        const [ordersData, stockData, requestsData] = await Promise.all([
+        const [ordersData, stockData, requestsData, inventoryData] = await Promise.all([
           apiGet(`/api/orders${suffix}`),
           apiGet(`/api/stock-entries${suffix}`),
           apiGet(`/api/supply-requests${suffix}`),
+          apiGet(`/api/inventory${suffix}`),
         ]);
         if (!isMounted) return;
         const ordersList = Array.isArray(ordersData?.data)
@@ -99,9 +99,13 @@ function Dashboard() {
         const requestList = Array.isArray(requestsData?.data)
           ? requestsData.data
           : requestsData;
+        const inventoryList = Array.isArray(inventoryData?.data)
+          ? inventoryData.data
+          : inventoryData;
         setOrders(Array.isArray(ordersList) ? ordersList : []);
         setStockEntries(Array.isArray(stockList) ? stockList : []);
         setSupplyRequests(Array.isArray(requestList) ? requestList : []);
+        setInventoryRows(Array.isArray(inventoryList) ? inventoryList : []);
       } catch (error) {
         showToast({
           title: "Erreur",
@@ -180,15 +184,21 @@ function Dashboard() {
       0
     );
 
-    const totalQuantity = products.reduce(
-      (sum, product) => sum + Number(product.quantity || 0),
+    const stockedProducts = inventoryRows.filter(
+      (row) => row?.product?.kind !== "ARTICLE",
+    );
+    const totalQuantity = stockedProducts.reduce(
+      (sum, row) => sum + Number(row.quantity || 0),
       0
     );
-    const totalValue = products.reduce(
-      (sum, product) =>
+    const totalValue = stockedProducts.reduce(
+      (sum, row) =>
         sum +
-        Number(product.quantity || 0) *
-          toDisplayAmount(product.price || 0, product.currencyCode),
+        Number(row.quantity || 0) *
+          toDisplayAmount(
+            row.product?.purchaseUnitPrice ?? row.product?.unitPrice ?? 0,
+            row.product?.currencyCode,
+          ),
       0
     );
 
@@ -204,7 +214,7 @@ function Dashboard() {
       userOrders: userOrders.length,
       userRevenue,
     };
-  }, [orders, products, user?.id, displayCurrencyCode]);
+  }, [displayCurrencyCode, inventoryRows, orders, user?.id]);
 
   const productCards = useMemo(
     () => [

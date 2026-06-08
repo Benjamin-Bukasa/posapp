@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
 import {
   Bell,
   ChevronDown,
@@ -14,7 +14,7 @@ import {
   User,
   LogOut
 } from "lucide-react";
-import { Link, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import DropdownAction from "../../ui/dropdownAction";
 import useThemeStore from "../../../stores/themeStore";
 import useRealtimeStore from "../../../stores/realtimeStore";
@@ -75,7 +75,6 @@ const Navbar = () => {
   const [searchSort, setSearchSort] = useState("Pertinence");
   const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const openMobileSidebar = useUiStore((state) => state.openMobileSidebar);
   const toggleMobileCart = useUiStore((state) => state.toggleMobileCart);
   const authUser = useAuthStore((state) => state.user);
@@ -173,10 +172,6 @@ const Navbar = () => {
           return { label, path };
         })),
   ];
-
-  useEffect(() => {
-    setSearchValue(searchParams.get("q") || "");
-  }, [searchParams]);
 
   const globalSearchResults = useMemo(() => {
     if (normalizeSearchText(searchScope) !== "tous") return [];
