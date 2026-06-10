@@ -279,6 +279,7 @@ const login = async (req, res) => {
       storeId: user.storeId,
       storeName: user.store?.name || null,
       defaultStorageZoneId: user.defaultStorageZoneId || null,
+      permissions: getGrantedPermissions(user),
     },
   });
 };

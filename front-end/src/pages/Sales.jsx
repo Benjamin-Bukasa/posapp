@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   BadgeCheck,
   CreditCard,
+  Eye,
   EllipsisVertical,
   History,
   Pencil,
@@ -105,6 +106,7 @@ function Sales() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
   const [selectedSale, setSelectedSale] = useState(null);
+  const [detailSale, setDetailSale] = useState(null);
   const [historySale, setHistorySale] = useState(null);
   const [deleteSale, setDeleteSale] = useState(null);
   const [deleteReason, setDeleteReason] = useState("");
@@ -177,6 +179,15 @@ function Sales() {
           dateValue: order.createdAt,
           dateLabel: new Date(order.createdAt).toLocaleString("fr-FR"),
           items,
+          itemsList:
+            order.items?.map((item) => ({
+              id: item.id,
+              name: item.product?.name || "Produit",
+              quantity: Number(item.quantity || 0),
+              unitPrice: Number(item.unitPrice || 0),
+              total: Number(item.total || 0),
+              isGift: Boolean(item.isGift),
+            })) || [],
           total: formatAmount(order.total, order.currencyCode),
           paymentMethod,
           status: mapSaleStatus(order.status),
@@ -397,7 +408,18 @@ function Sales() {
       { header: "Caissier", accessor: "cashier" },
       { header: "Client", accessor: "customer" },
       { header: "Date", accessor: "dateLabel" },
-      { header: "Produits", accessor: "items" },
+      {
+        header: "Produits",
+        accessor: "items",
+        render: (row) => (
+          <div
+            className="max-w-md overflow-hidden text-sm text-text-primary [display:-webkit-box] [-webkit-box-orient:vertical] [-webkit-line-clamp:2]"
+            title={row.items}
+          >
+            {row.items || "Aucun produit"}
+          </div>
+        ),
+      },
       { header: "Montant", accessor: "total" },
       {
         header: "Paiement",
@@ -517,6 +539,12 @@ function Sales() {
           <DropdownAction
             label={<EllipsisVertical size={18} strokeWidth={1.5} />}
             items={[
+              {
+                id: "detail",
+                label: "Detail",
+                icon: Eye,
+                onClick: () => setDetailSale(row),
+              },
               ...(canEditSales
                 ? [
                     {
@@ -616,6 +644,84 @@ function Sales() {
         onClose={() => setHistorySale(null)}
         saleId={historySale?.raw?.id || null}
       />
+
+      <Modal
+        isOpen={Boolean(detailSale)}
+        title={detailSale?.saleId || "Detail de la vente"}
+        description="Consultez tous les articles de cette vente."
+        confirmLabel="Fermer"
+        cancelButtonClassName="hidden"
+        onConfirm={() => setDetailSale(null)}
+        onCancel={() => setDetailSale(null)}
+      >
+        <div className="space-y-4">
+          <div className="grid gap-3 rounded-xl border border-border bg-surface/70 p-4 sm:grid-cols-2">
+            <div>
+              <p className="text-xs text-text-secondary">Caissier</p>
+              <p className="text-sm font-medium text-text-primary">
+                {detailSale?.cashier || "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">Client</p>
+              <p className="text-sm font-medium text-text-primary">
+                {detailSale?.customer || "Client comptoir"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">Date</p>
+              <p className="text-sm font-medium text-text-primary">
+                {detailSale?.dateLabel || "N/A"}
+              </p>
+            </div>
+            <div>
+              <p className="text-xs text-text-secondary">Montant</p>
+              <p className="text-sm font-medium text-text-primary">
+                {detailSale?.total || "0"}
+              </p>
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-xl border border-border bg-background">
+            <div className="grid grid-cols-[minmax(0,1.8fr)_100px_120px_120px] gap-3 border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+              <span>Produit</span>
+              <span className="text-right">Qte</span>
+              <span className="text-right">PU</span>
+              <span className="text-right">Total</span>
+            </div>
+            <div className="max-h-80 overflow-y-auto">
+              {(detailSale?.itemsList || []).length ? (
+                detailSale.itemsList.map((item) => (
+                  <div
+                    key={item.id}
+                    className="grid grid-cols-[minmax(0,1.8fr)_100px_120px_120px] gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-text-primary">
+                        {item.name}
+                      </p>
+                      {item.isGift ? (
+                        <p className="text-xs text-success">Offert</p>
+                      ) : null}
+                    </div>
+                    <span className="text-right text-text-primary">{item.quantity}</span>
+                    <span className="text-right text-text-primary">
+                      {formatAmount(item.unitPrice, detailSale?.raw?.currencyCode)}
+                    </span>
+                    <span className="text-right text-text-primary">
+                      {formatAmount(item.total, detailSale?.raw?.currencyCode)}
+                    </span>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-6 text-sm text-text-secondary">
+                  Aucun article sur cette vente.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </Modal>
 
       <Modal
         isOpen={Boolean(deleteSale)}

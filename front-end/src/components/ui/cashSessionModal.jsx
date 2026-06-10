@@ -40,7 +40,7 @@ const CashSessionModal = ({
       return;
     }
 
-    setAmount("0.00");
+    setAmount("");
     setNote("");
     setStockCounts({});
   }, [isOpen, mode, session, stockItems]);
@@ -172,9 +172,8 @@ const CashSessionModal = ({
             {isCloseMode ? "Montant compte" : "Fonds de caisse initial"}
           </label>
           <input
-            type="number"
-            min="0"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
             value={amount}
             onChange={(event) => setAmount(event.target.value)}
             className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent"

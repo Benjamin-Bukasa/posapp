@@ -25,6 +25,40 @@ const toMoney = (value) => {
 
 const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
 
+const loadSessionClosureInsights = async (tenantId, sessionId) => {
+  const [stockAuditResult, giftHistoryResult] = await Promise.allSettled([
+    getCashSessionStockAudit({
+      tenantId,
+      sessionId,
+    }),
+    listGiftHistoryByCashSession({
+      tenantId,
+      cashSessionId: sessionId,
+    }),
+  ]);
+
+  if (stockAuditResult.status === "rejected") {
+    console.error("[cash-session] stock audit unavailable after close", {
+      tenantId,
+      sessionId,
+      message: stockAuditResult.reason?.message || "Unknown error",
+    });
+  }
+
+  if (giftHistoryResult.status === "rejected") {
+    console.error("[cash-session] gift history unavailable after close", {
+      tenantId,
+      sessionId,
+      message: giftHistoryResult.reason?.message || "Unknown error",
+    });
+  }
+
+  return {
+    stockAudit: stockAuditResult.status === "fulfilled" ? stockAuditResult.value : null,
+    giftHistory: giftHistoryResult.status === "fulfilled" ? giftHistoryResult.value : [],
+  };
+};
+
 const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZoneId }) => {
   if (defaultStorageZoneId) {
     const zone = await prisma.storageZone.findFirst({
@@ -292,14 +326,10 @@ const close = async (req, res) => {
       countedCash,
       closingNote,
     });
-    const stockAudit = await getCashSessionStockAudit({
-      tenantId: req.user.tenantId,
-      sessionId: req.params.id,
-    });
-    const giftHistory = await listGiftHistoryByCashSession({
-      tenantId: req.user.tenantId,
-      cashSessionId: req.params.id,
-    });
+    const { stockAudit, giftHistory } = await loadSessionClosureInsights(
+      req.user.tenantId,
+      req.params.id,
+    );
 
     const payload = {
       id: closedSession.id,

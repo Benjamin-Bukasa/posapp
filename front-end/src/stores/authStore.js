@@ -64,7 +64,10 @@ const useAuthStore = create((set, get) => ({
       isAuthenticated: Boolean(accessToken),
     });
 
-    if (refreshToken && (!user || !user.tenantName)) {
+    if (
+      refreshToken &&
+      (!user || !user.tenantName || !Array.isArray(user.permissions))
+    ) {
       get()
         .refreshSession()
         .catch(() => {});
