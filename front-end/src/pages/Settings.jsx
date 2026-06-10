@@ -18,7 +18,7 @@ import Button from "../components/ui/button";
 import CashMovementModal from "../components/ui/cashMovementModal";
 import CashSessionModal from "../components/ui/cashSessionModal";
 import Input from "../components/ui/input";
-import { apiGet, apiPost, buildQuery } from "../services/apiClient";
+import { apiGet, apiPatch, apiPost, buildQuery } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useReceiptSettingsStore from "../stores/receiptSettingsStore";
@@ -26,13 +26,20 @@ import useThemeStore from "../stores/themeStore";
 import useToastStore from "../stores/toastStore";
 import useUserPreferenceStore from "../stores/userPreferenceStore";
 import { COLOR_OPTIONS, COLOR_PRESETS } from "../utils/appearance";
+import printClosureReceipt, {
+  buildClosureEscPosReceipt,
+} from "../utils/closureReceipt";
 import {
   buildSecondaryRateLabel,
   formatPrimaryAmount,
   formatSecondaryAmount,
   hasSecondaryCurrency,
 } from "../utils/currency";
-import printReceiptViaLocalService from "../utils/localPrintService";
+import {
+  printBytesViaLocalService,
+  printReceiptViaLocalService,
+} from "../utils/localPrintService";
+import { hasAnyPermission } from "../utils/permissions";
 import printSaleReceipt from "../utils/printSaleReceipt";
 
 const settingsCardClassName =
@@ -73,7 +80,24 @@ function Settings() {
     printerServiceUrl: "",
     printerName: "",
     autoPrintReceipt: true,
+    autoPrintClosureTicket: true,
+    autoPrintGeneralClosureTicket: true,
     showSecondaryAmounts: true,
+  });
+  const [closureTicketForm, setClosureTicketForm] = useState({
+    closurePaperFormat: "80mm",
+    closureHeaderText: "Rapport de cloture",
+    closureFooterText: "Fin de cloture",
+    showClosureHeaderText: true,
+    showClosureFooterText: true,
+    showClosureBusinessName: true,
+    showClosureStoreName: true,
+    showClosureCashier: true,
+    showClosureDateTime: true,
+    showClosureSummary: true,
+    showClosureSalesTable: true,
+    showClosureCanceledTable: true,
+    showClosureGrandTotal: true,
   });
   const [appearanceForm, setAppearanceForm] = useState({
     primaryColor: "green",
@@ -100,6 +124,7 @@ function Settings() {
   const [closingStockItems, setClosingStockItems] = useState([]);
   const [closingStockLoading, setClosingStockLoading] = useState(false);
   const [lastClosedSessionReport, setLastClosedSessionReport] = useState(null);
+  const [generalClosing, setGeneralClosing] = useState(false);
 
   useEffect(() => {
     loadCurrencySettings();
@@ -133,8 +158,13 @@ function Settings() {
   };
 
   useEffect(() => {
+    if (!canReadCashSession) {
+      setCashSession(null);
+      return;
+    }
+
     loadCashSession();
-  }, []);
+  }, [canReadCashSession]);
 
   const loadCashierArticleSnapshot = async (storageZoneId) => {
     const query = buildQuery({ storageZoneId });
@@ -189,6 +219,12 @@ function Settings() {
   };
 
   useEffect(() => {
+    if (!canReadCashSession) {
+      setStockAudit(null);
+      setGiftHistory([]);
+      return;
+    }
+
     if (!cashSession?.id) {
       setStockAudit(null);
       setGiftHistory([]);
@@ -196,7 +232,7 @@ function Settings() {
     }
 
     loadCashSessionInsights(cashSession.id);
-  }, [cashSession?.id]);
+  }, [canReadCashSession, cashSession?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -240,9 +276,31 @@ function Settings() {
       printerServiceUrl: preferences.printerServiceUrl || "",
       printerName: preferences.printerName || "",
       autoPrintReceipt: preferences.autoPrintReceipt !== false,
+      autoPrintClosureTicket: preferences.autoPrintClosureTicket !== false,
+      autoPrintGeneralClosureTicket:
+        preferences.autoPrintGeneralClosureTicket !== false,
       showSecondaryAmounts: preferences.showSecondaryAmounts !== false,
     });
   }, [preferences]);
+
+  useEffect(() => {
+    setClosureTicketForm({
+      closurePaperFormat: receiptSettings.closurePaperFormat || "80mm",
+      closureHeaderText: receiptSettings.closureHeaderText || "Rapport de cloture",
+      closureFooterText: receiptSettings.closureFooterText || "Fin de cloture",
+      showClosureHeaderText: receiptSettings.showClosureHeaderText !== false,
+      showClosureFooterText: receiptSettings.showClosureFooterText !== false,
+      showClosureBusinessName: receiptSettings.showClosureBusinessName !== false,
+      showClosureStoreName: receiptSettings.showClosureStoreName !== false,
+      showClosureCashier: receiptSettings.showClosureCashier !== false,
+      showClosureDateTime: receiptSettings.showClosureDateTime !== false,
+      showClosureSummary: receiptSettings.showClosureSummary !== false,
+      showClosureSalesTable: receiptSettings.showClosureSalesTable !== false,
+      showClosureCanceledTable:
+        receiptSettings.showClosureCanceledTable !== false,
+      showClosureGrandTotal: receiptSettings.showClosureGrandTotal !== false,
+    });
+  }, [receiptSettings]);
 
   useEffect(() => {
     setAppearanceForm({
@@ -315,6 +373,14 @@ function Settings() {
   }, [currencySettings]);
 
   const secondaryEnabled = hasSecondaryCurrency(currencySettings);
+  const canUpdateReceiptSettings = hasAnyPermission(user, ["settings.update"]);
+  const canReadCashSession = hasAnyPermission(user, ["cash_sessions.read"]);
+  const canOpenCashSession = hasAnyPermission(user, ["cash_sessions.open"]);
+  const canManageCashMovement = hasAnyPermission(user, ["cash_sessions.movement"]);
+  const canCloseCashSession = hasAnyPermission(user, ["cash_sessions.close"]);
+  const canRunGeneralClosure =
+    (user?.role === "ADMIN" || user?.role === "SUPERADMIN") &&
+    hasAnyPermission(user, ["cash_sessions.close_general"]);
 
   const handleLogout = async () => {
     await logout();
@@ -477,6 +543,57 @@ function Settings() {
     }
   };
 
+  const printClosureReportByMode = async ({ report, targetWindow = null }) => {
+    if (!report) return;
+
+    if (printerForm.printerMode === "local_service") {
+      await printBytesViaLocalService({
+        bytes: buildClosureEscPosReceipt({
+          report,
+          receiptSettings: {
+            ...receiptSettings,
+            ...closureTicketForm,
+          },
+        }),
+        printerServiceUrl: printerForm.printerServiceUrl || undefined,
+        printerName: printerForm.printerName || undefined,
+      });
+      return;
+    }
+
+    printClosureReceipt({
+      report,
+      receiptSettings: {
+        ...receiptSettings,
+        ...closureTicketForm,
+      },
+      targetWindow,
+    });
+  };
+
+  const handleSaveClosureSettings = async () => {
+    try {
+      await apiPatch("/api/receipt-settings/current", {
+        ...receiptSettings,
+        ...closureTicketForm,
+      });
+      await loadReceiptSettings({ force: true });
+      showToast({
+        title: "Ticket de cloture",
+        message: "La configuration du ticket de cloture a ete sauvegardee.",
+        variant: "success",
+      });
+    } catch (error) {
+      showToast({
+        title: "Configuration impossible",
+        message:
+          error.message ||
+          "Impossible de sauvegarder la configuration du ticket de cloture.",
+        variant: "danger",
+      });
+    }
+  };
+
   const handleOpenCashSession = async ({ amount, note }) => {
     setCashSessionSubmitting(true);
     try {
@@ -526,6 +643,12 @@ function Settings() {
     if (!cashSession?.id) return;
 
     setCashSessionSubmitting(true);
+    const shouldAutoPrintClosure = printerForm.autoPrintClosureTicket !== false;
+    const printWindow =
+      shouldAutoPrintClosure && printerForm.printerMode === "browser"
+        ? window.open("", "_blank")
+        : null;
+
     try {
       const closedSession = await apiPost(`/api/cash-sessions/${cashSession.id}/close`, {
         countedCash: amount,
@@ -556,7 +679,27 @@ function Settings() {
         ].join(" "),
         variant: "success",
       });
+
+      if (shouldAutoPrintClosure && closedSession?.closureReport) {
+        await printClosureReportByMode({
+          report: closedSession.closureReport,
+          targetWindow: printWindow,
+        });
+        showToast({
+          title: "Ticket de cloture",
+          message:
+            printerForm.printerMode === "local_service"
+              ? "Le ticket de cloture a ete envoye au service local."
+              : "Le ticket de cloture a ete ouvert pour impression.",
+          variant: "success",
+        });
+      } else if (printWindow) {
+        printWindow.close();
+      }
     } catch (error) {
+      if (printWindow) {
+        printWindow.close();
+      }
       showToast({
         title: "Cloture impossible",
         message: error.message || "Impossible de cloturer la caisse.",
@@ -624,6 +767,53 @@ function Settings() {
       });
     } finally {
       setCashSessionSubmitting(false);
+    }
+  };
+
+  const handleGeneralClosure = async () => {
+    setGeneralClosing(true);
+    const shouldAutoPrintGeneral =
+      printerForm.autoPrintGeneralClosureTicket !== false;
+    const printWindow =
+      shouldAutoPrintGeneral && printerForm.printerMode === "browser"
+        ? window.open("", "_blank")
+        : null;
+
+    try {
+      const report = await apiPost("/api/cash-sessions/general-close", {});
+      showToast({
+        title: "Cloture generale",
+        message: `Rapport global genere pour ${report?.sessionCount || 0} caisse(s).`,
+        variant: "success",
+      });
+
+      if (shouldAutoPrintGeneral) {
+        await printClosureReportByMode({
+          report,
+          targetWindow: printWindow,
+        });
+        showToast({
+          title: "Ticket general",
+          message:
+            printerForm.printerMode === "local_service"
+              ? "Le ticket general a ete envoye au service local."
+              : "Le ticket general a ete ouvert pour impression.",
+          variant: "success",
+        });
+      } else if (printWindow) {
+        printWindow.close();
+      }
+    } catch (error) {
+      if (printWindow) {
+        printWindow.close();
+      }
+      showToast({
+        title: "Cloture generale impossible",
+        message: error.message || "Impossible de generer la cloture generale.",
+        variant: "danger",
+      });
+    } finally {
+      setGeneralClosing(false);
     }
   };
 
@@ -873,14 +1063,18 @@ function Settings() {
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-sm font-semibold text-text-primary">
-                  {cashSessionLoading
+                  {!canReadCashSession
+                    ? "Acces restreint"
+                    : cashSessionLoading
                     ? "Chargement..."
                     : cashSession
                       ? "Caisse ouverte"
                       : "Aucune caisse ouverte"}
                 </p>
                 <p className="mt-1 text-xs text-text-secondary">
-                  {cashSession
+                  {!canReadCashSession
+                    ? "La consultation de la caisse demande la permission cash_sessions.read."
+                    : cashSession
                     ? `Boutique: ${cashSession.storeName || user?.storeName || "--"} - Zone: ${cashSession.storageZoneName || zoneName || "--"}`
                     : "Ouvrez une caisse avant d'encaisser des ventes."}
                 </p>
@@ -888,15 +1082,19 @@ function Settings() {
               <span
                 className={[
                   "inline-flex rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide",
-                  cashSession ? "bg-success/15 text-success" : "bg-warning/15 text-warning",
+                  !canReadCashSession
+                    ? "bg-background text-text-secondary"
+                    : cashSession
+                      ? "bg-success/15 text-success"
+                      : "bg-warning/15 text-warning",
                 ].join(" ")}
               >
-                {cashSession ? "Ouverte" : "Fermee"}
+                {!canReadCashSession ? "Non autorise" : cashSession ? "Ouverte" : "Fermee"}
               </span>
             </div>
           </div>
 
-          {cashSession ? (
+          {canReadCashSession && cashSession ? (
             <div className="mt-4 grid gap-3 sm:grid-cols-2">
               <div className="rounded-xl border border-border bg-background px-4 py-3">
                 <p className="text-xs uppercase tracking-wide text-text-secondary">Fonds initial</p>
@@ -938,44 +1136,62 @@ function Settings() {
           <div className="mt-4 flex flex-wrap gap-2">
             {cashSession ? (
               <>
-                <Button
-                  type="button"
-                  label="Entree caisse"
-                  variant="default"
-                  size="small"
-                  onClick={() => {
-                    setCashMovementType("IN");
-                    setIsCashMovementModalOpen(true);
-                  }}
-                />
-                <Button
-                  type="button"
-                  label="Sortie caisse"
-                  variant="default"
-                  size="small"
-                  onClick={() => {
-                    setCashMovementType("OUT");
-                    setIsCashMovementModalOpen(true);
-                  }}
-                />
-              <Button
+                {canManageCashMovement ? (
+                  <Button
+                    type="button"
+                    label="Entree caisse"
+                    variant="default"
+                    size="small"
+                    onClick={() => {
+                      setCashMovementType("IN");
+                      setIsCashMovementModalOpen(true);
+                    }}
+                  />
+                ) : null}
+                {canManageCashMovement ? (
+                  <Button
+                    type="button"
+                    label="Sortie caisse"
+                    variant="default"
+                    size="small"
+                    onClick={() => {
+                      setCashMovementType("OUT");
+                      setIsCashMovementModalOpen(true);
+                    }}
+                  />
+                ) : null}
+                {canCloseCashSession ? (
+                  <Button
                   type="button"
                   label="Cloturer la caisse"
                   variant="primary"
                   size="small"
                   onClick={openCloseCashModal}
-                />
+                  />
+                ) : null}
               </>
             ) : (
+              canOpenCashSession ? (
+                <Button
+                  type="button"
+                  label="Ouvrir la caisse"
+                  variant="primary"
+                  size="small"
+                  onClick={() => setIsOpenCashModalOpen(true)}
+                  disabled={cashSessionLoading}
+                />
+              ) : null
+            )}
+            {canRunGeneralClosure ? (
               <Button
                 type="button"
-                label="Ouvrir la caisse"
-                variant="primary"
+                label={generalClosing ? "Cloture generale..." : "Cloture generale boutique"}
+                variant="default"
                 size="small"
-                onClick={() => setIsOpenCashModalOpen(true)}
-                disabled={cashSessionLoading}
+                onClick={handleGeneralClosure}
+                disabled={generalClosing || cashSessionSubmitting}
               />
-            )}
+            ) : null}
           </div>
         </div>
 
@@ -1070,6 +1286,34 @@ function Settings() {
             <label className="inline-flex items-center gap-3 text-sm text-text-primary">
               <input
                 type="checkbox"
+                checked={printerForm.autoPrintClosureTicket}
+                onChange={(event) =>
+                  setPrinterForm((current) => ({
+                    ...current,
+                    autoPrintClosureTicket: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 rounded border-border text-secondary accent-secondary"
+              />
+              Imprimer automatiquement le ticket de cloture caisse
+            </label>
+            <label className="inline-flex items-center gap-3 text-sm text-text-primary">
+              <input
+                type="checkbox"
+                checked={printerForm.autoPrintGeneralClosureTicket}
+                onChange={(event) =>
+                  setPrinterForm((current) => ({
+                    ...current,
+                    autoPrintGeneralClosureTicket: event.target.checked,
+                  }))
+                }
+                className="h-4 w-4 rounded border-border text-secondary accent-secondary"
+              />
+              Imprimer automatiquement le ticket de cloture generale
+            </label>
+            <label className="inline-flex items-center gap-3 text-sm text-text-primary">
+              <input
+                type="checkbox"
                 checked={printerForm.showSecondaryAmounts}
                 onChange={(event) =>
                   setPrinterForm((current) => ({
@@ -1103,6 +1347,132 @@ function Settings() {
           </div>
         </div>
 
+        <div className={settingsCardClassName}>
+          <div className="flex items-start gap-3">
+            <div className="rounded-xl bg-secondary/15 p-3 text-secondary">
+              <Printer size={18} />
+            </div>
+            <div className="flex-1">
+              <h2 className="text-base font-semibold text-text-primary">
+                Ticket de cloture
+              </h2>
+              <p className="mt-1 text-sm text-text-secondary">
+                Configurez le format POS du rapport de cloture caisse et de la cloture generale boutique.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-2">
+            <div className="flex flex-col gap-2">
+              <label className="text-sm font-medium text-text-primary">
+                Format papier
+              </label>
+              <select
+                value={closureTicketForm.closurePaperFormat}
+                onChange={(event) =>
+                  setClosureTicketForm((current) => ({
+                    ...current,
+                    closurePaperFormat: event.target.value,
+                  }))
+                }
+                className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-accent"
+              >
+                <option value="58mm">58 mm</option>
+                <option value="80mm">80 mm</option>
+              </select>
+            </div>
+
+            <div className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-secondary">
+              Le ticket imprime deux tableaux: produits vendus et ventes annulees, avec total general en bas.
+            </div>
+
+            <div className="flex flex-col gap-2 md:col-span-2">
+              <label className="text-sm font-medium text-text-primary">
+                Entete du ticket
+              </label>
+              <textarea
+                rows={3}
+                value={closureTicketForm.closureHeaderText}
+                onChange={(event) =>
+                  setClosureTicketForm((current) => ({
+                    ...current,
+                    closureHeaderText: event.target.value,
+                  }))
+                }
+                className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-accent"
+                placeholder="Rapport de cloture"
+              />
+            </div>
+
+            <div className="flex flex-col gap-2 md:col-span-2">
+              <label className="text-sm font-medium text-text-primary">
+                Pied du ticket
+              </label>
+              <textarea
+                rows={3}
+                value={closureTicketForm.closureFooterText}
+                onChange={(event) =>
+                  setClosureTicketForm((current) => ({
+                    ...current,
+                    closureFooterText: event.target.value,
+                  }))
+                }
+                className="rounded-xl border border-border bg-background px-4 py-3 text-sm text-text-primary outline-none transition focus:border-accent"
+                placeholder="Fin de cloture"
+              />
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {[
+              ["showClosureHeaderText", "Afficher l'entete"],
+              ["showClosureFooterText", "Afficher le pied du ticket"],
+              ["showClosureBusinessName", "Afficher l'entreprise"],
+              ["showClosureStoreName", "Afficher la boutique"],
+              ["showClosureCashier", "Afficher le vendeur"],
+              ["showClosureDateTime", "Afficher la date et l'heure"],
+              ["showClosureSummary", "Afficher le resume caisse"],
+              ["showClosureSalesTable", "Afficher le tableau des ventes"],
+              ["showClosureCanceledTable", "Afficher le tableau des annulations"],
+              ["showClosureGrandTotal", "Afficher les totaux"],
+            ].map(([key, label]) => (
+              <label
+                key={key}
+                className="inline-flex items-center gap-3 text-sm text-text-primary"
+              >
+                <input
+                  type="checkbox"
+                  checked={closureTicketForm[key]}
+                  onChange={(event) =>
+                    setClosureTicketForm((current) => ({
+                      ...current,
+                      [key]: event.target.checked,
+                    }))
+                  }
+                  className="h-4 w-4 rounded border-border text-secondary accent-secondary"
+                />
+                {label}
+              </label>
+            ))}
+          </div>
+
+          <div className="mt-4 flex flex-wrap justify-end gap-3">
+            <Button
+              type="button"
+              label="Sauvegarder ticket cloture"
+              variant="primary"
+              size="small"
+              disabled={!canUpdateReceiptSettings}
+              onClick={handleSaveClosureSettings}
+            />
+          </div>
+
+          {!canUpdateReceiptSettings ? (
+            <p className="mt-3 text-xs text-warning">
+              La sauvegarde de ce ticket demande la permission `settings.update`.
+            </p>
+          ) : null}
+        </div>
 
       </div>
 

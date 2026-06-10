@@ -14,10 +14,12 @@ import DropdownAction from "../components/ui/dropdownAction";
 import Badge from "../components/ui/badge";
 import StatCard from "../components/ui/statCard";
 import CustomerCreateModal from "../components/ui/customerCreateModal";
+import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
 import { apiGet, apiPost } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { getMonthRange, percentChange } from "../utils/metrics";
+import { hasAnyPermission } from "../utils/permissions";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveStatusVariant = (status) => {
@@ -56,6 +58,7 @@ const computeStatus = (lastPurchaseAt) =>
 
 function Customers() {
   const showToast = useToastStore((state) => state.showToast);
+  const user = useAuthStore((state) => state.user);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useSyncedQuerySearch("q");
@@ -64,6 +67,7 @@ function Customers() {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(6);
   const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const canCreateCustomer = hasAnyPermission(user, ["customers.create"]);
 
   useEffect(() => {
     let isMounted = true;
@@ -319,13 +323,16 @@ function Customers() {
             Suivez vos clients et leur niveau de fidelite.
           </p>
         </div>
-        <button 
-          type="button"
-          onClick={() => setIsCreateOpen(true)}
-        className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90 sm:w-auto">
-          <Plus size={16} />
-          Nouveau client
-        </button>
+        {canCreateCustomer ? (
+          <button
+            type="button"
+            onClick={() => setIsCreateOpen(true)}
+            className="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-secondary px-4 py-2 text-sm font-medium text-white hover:bg-secondary/90 sm:w-auto"
+          >
+            <Plus size={16} />
+            Nouveau client
+          </button>
+        ) : null}
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">

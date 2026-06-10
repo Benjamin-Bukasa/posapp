@@ -320,12 +320,13 @@ function Dashboard() {
   }, [supplyRequests]);
 
   const stockAlerts = useMemo(() => {
-    const alerts = products
-      .map((product) => ({
-        id: product.id,
-        name: product.product,
-        quantity: Number(product.quantity || 0),
-        stockLabel: product.stock || "",
+    const alerts = inventoryRows
+      .filter((row) => row?.product?.kind !== "ARTICLE")
+      .map((row) => ({
+        id: row.id,
+        name: row.product?.name || "Produit",
+        quantity: Number(row.quantity || 0),
+        stockLabel: row.product?.stock || "",
       }))
       .filter((item) => {
         const label = item.stockLabel.toLowerCase();
@@ -341,7 +342,7 @@ function Dashboard() {
       }));
 
     return alerts;
-  }, [products]);
+  }, [inventoryRows]);
 
   return (
     <section className="sectionDashboard">
