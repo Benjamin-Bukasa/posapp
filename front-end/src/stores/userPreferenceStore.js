@@ -11,6 +11,8 @@ export const DEFAULT_USER_PREFERENCES = {
   printerServiceUrl: "",
   printerName: "",
   autoPrintReceipt: true,
+  autoPrintClosureTicket: true,
+  autoPrintGeneralClosureTicket: true,
   showSecondaryAmounts: true,
 };
 
@@ -21,6 +23,14 @@ const normalizePreferences = (payload = {}) => ({
     payload?.autoPrintReceipt === undefined
       ? DEFAULT_USER_PREFERENCES.autoPrintReceipt
       : Boolean(payload.autoPrintReceipt),
+  autoPrintClosureTicket:
+    payload?.autoPrintClosureTicket === undefined
+      ? DEFAULT_USER_PREFERENCES.autoPrintClosureTicket
+      : Boolean(payload.autoPrintClosureTicket),
+  autoPrintGeneralClosureTicket:
+    payload?.autoPrintGeneralClosureTicket === undefined
+      ? DEFAULT_USER_PREFERENCES.autoPrintGeneralClosureTicket
+      : Boolean(payload.autoPrintGeneralClosureTicket),
   showSecondaryAmounts:
     payload?.showSecondaryAmounts === undefined
       ? DEFAULT_USER_PREFERENCES.showSecondaryAmounts

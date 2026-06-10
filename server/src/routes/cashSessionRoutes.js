@@ -11,6 +11,7 @@ router.get("/:id/gift-history", auth, cashSessionController.getGiftHistory);
 router.post("/:id/opening-stock", auth, cashSessionController.saveOpeningStockSnapshot);
 router.get("/:id", auth, cashSessionController.getById);
 router.post("/open", auth, cashSessionController.open);
+router.post("/general-close", auth, cashSessionController.closeGeneralStore);
 router.post("/:id/close", auth, cashSessionController.close);
 router.post("/:id/movements", auth, cashSessionController.addMovement);
 

@@ -1116,6 +1116,14 @@ const updateMyPreferences = async (req, res) => {
     printerName: body.printerName ? String(body.printerName).trim() : "",
     autoPrintReceipt:
       body.autoPrintReceipt === undefined ? true : Boolean(body.autoPrintReceipt),
+    autoPrintClosureTicket:
+      body.autoPrintClosureTicket === undefined
+        ? true
+        : Boolean(body.autoPrintClosureTicket),
+    autoPrintGeneralClosureTicket:
+      body.autoPrintGeneralClosureTicket === undefined
+        ? true
+        : Boolean(body.autoPrintGeneralClosureTicket),
     showSecondaryAmounts:
       body.showSecondaryAmounts === undefined
         ? true

@@ -59,6 +59,222 @@ const loadSessionClosureInsights = async (tenantId, sessionId) => {
   };
 };
 
+const buildDisplayName = (entry = {}) =>
+  [entry.firstName, entry.lastName].filter(Boolean).join(" ").trim() ||
+  entry.userName ||
+  entry.email ||
+  "";
+
+const isSameCalendarDay = (value, referenceDate = new Date()) => {
+  const date = value ? new Date(value) : null;
+  if (!date || Number.isNaN(date.getTime())) return false;
+
+  return (
+    date.getFullYear() === referenceDate.getFullYear() &&
+    date.getMonth() === referenceDate.getMonth() &&
+    date.getDate() === referenceDate.getDate()
+  );
+};
+
+const listCashSessionOrderIds = async ({ tenantId, sessionId }) => {
+  const rows = await prisma.$queryRawUnsafe(
+    `
+      SELECT DISTINCT payment."orderId" AS "orderId"
+      FROM "cashSessionPayments" link
+      INNER JOIN "payements" payment ON payment."id" = link."paymentId"
+      INNER JOIN "orders" "order" ON "order"."id" = payment."orderId"
+      WHERE link."tenantId" = $1
+        AND link."cashSessionId" = $2
+        AND "order"."tenantId" = $1
+    `,
+    tenantId,
+    sessionId,
+  );
+
+  return rows.map((row) => row.orderId).filter(Boolean);
+};
+
+const loadOrdersForClosureReport = async ({ tenantId, orderIds = [] }) => {
+  const uniqueOrderIds = [...new Set((orderIds || []).filter(Boolean))];
+  if (!uniqueOrderIds.length) {
+    return [];
+  }
+
+  return prisma.order.findMany({
+    where: {
+      tenantId,
+      id: { in: uniqueOrderIds },
+    },
+    include: {
+      store: {
+        select: {
+          id: true,
+          name: true,
+        },
+      },
+      createdBy: {
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+        },
+      },
+      items: {
+        include: {
+          product: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+        },
+      },
+      payments: {
+        select: {
+          id: true,
+          amount: true,
+          method: true,
+          status: true,
+          currencyCode: true,
+        },
+      },
+    },
+    orderBy: {
+      createdAt: "asc",
+    },
+  });
+};
+
+const aggregateClosureItems = (orders = [], { includeCanceled = false } = {}) => {
+  const rows = new Map();
+
+  (orders || []).forEach((order) => {
+    const isCanceled = order?.status === "CANCELED";
+    if (includeCanceled !== isCanceled) {
+      return;
+    }
+
+    (order.items || []).forEach((item) => {
+      const unitPrice = Number(item.unitPrice || 0);
+      const key = `${item.productId || "article"}:${unitPrice.toFixed(2)}`;
+      const current = rows.get(key) || {
+        productId: item.productId || null,
+        productName: item.product?.name || "Article",
+        quantity: 0,
+        unitPrice,
+        total: 0,
+      };
+
+      current.quantity += Number(item.quantity || 0);
+      current.total += Number(item.total || 0);
+      rows.set(key, current);
+    });
+  });
+
+  return [...rows.values()]
+    .map((row) => ({
+      ...row,
+      quantity: Number(row.quantity || 0),
+      unitPrice: Number(Number(row.unitPrice || 0).toFixed(2)),
+      total: Number(Number(row.total || 0).toFixed(2)),
+    }))
+    .sort((left, right) => left.productName.localeCompare(right.productName, "fr"));
+};
+
+const buildClosureReport = ({
+  type,
+  currencyCode,
+  orders = [],
+  session = null,
+  sessions = [],
+  businessName = "POSapp",
+  storeName = "",
+  cashierName = "",
+  generatedByName = "",
+}) => {
+  const soldItems = aggregateClosureItems(orders, { includeCanceled: false });
+  const canceledItems = aggregateClosureItems(orders, { includeCanceled: true });
+  const soldGrandTotal = soldItems.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const canceledGrandTotal = canceledItems.reduce(
+    (sum, item) => sum + Number(item.total || 0),
+    0,
+  );
+  const sourceSessions = session ? [session] : sessions;
+  const soldOrderCount = (orders || []).filter((order) => order.status !== "CANCELED").length;
+  const canceledOrderCount = (orders || []).filter((order) => order.status === "CANCELED").length;
+
+  return {
+    type,
+    title:
+      type === "STORE_GENERAL"
+        ? "Cloture generale boutique"
+        : "Cloture de caisse",
+    generatedAt: new Date().toISOString(),
+    businessName,
+    storeName,
+    cashierName,
+    generatedByName,
+    currencyCode,
+    sessionId: session?.id || null,
+    sessionCount: sourceSessions.length,
+    soldOrderCount,
+    canceledOrderCount,
+    periodStart:
+      sourceSessions.length > 0
+        ? sourceSessions.reduce((min, entry) => {
+            const current = entry?.openedAt ? new Date(entry.openedAt).getTime() : null;
+            return current != null && (min == null || current < min) ? current : min;
+          }, null)
+        : null,
+    periodEnd:
+      sourceSessions.length > 0
+        ? sourceSessions.reduce((max, entry) => {
+            const current = entry?.closedAt ? new Date(entry.closedAt).getTime() : null;
+            return current != null && (max == null || current > max) ? current : max;
+          }, null)
+        : null,
+    summary: {
+      openingFloat: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.openingFloat || 0),
+        0,
+      ),
+      totalCashSales: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.totalCashSales || 0),
+        0,
+      ),
+      totalNonCashSales: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.totalNonCashSales || 0),
+        0,
+      ),
+      totalCashIn: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.totalCashIn || 0),
+        0,
+      ),
+      totalCashOut: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.totalCashOut || 0),
+        0,
+      ),
+      expectedCash: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.expectedCash || 0),
+        0,
+      ),
+      closingCounted: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.closingCounted || 0),
+        0,
+      ),
+      variance: sourceSessions.reduce(
+        (sum, entry) => sum + Number(entry?.variance || 0),
+        0,
+      ),
+      soldGrandTotal: Number(soldGrandTotal.toFixed(2)),
+      canceledGrandTotal: Number(canceledGrandTotal.toFixed(2)),
+    },
+    soldItems,
+    canceledItems,
+  };
+};
+
 const resolveCashierStorageZone = async ({ tenantId, storeId, defaultStorageZoneId }) => {
   if (defaultStorageZoneId) {
     const zone = await prisma.storageZone.findFirst({
@@ -330,6 +546,24 @@ const close = async (req, res) => {
       req.user.tenantId,
       req.params.id,
     );
+    const closureOrderIds = await listCashSessionOrderIds({
+      tenantId: req.user.tenantId,
+      sessionId: req.params.id,
+    });
+    const closureOrders = await loadOrdersForClosureReport({
+      tenantId: req.user.tenantId,
+      orderIds: closureOrderIds,
+    });
+    const closureReport = buildClosureReport({
+      type: "CASH_SESSION",
+      currencyCode: currencySettings.primaryCurrencyCode,
+      orders: closureOrders,
+      session: closedSession,
+      businessName: req.user.tenantName || "POSapp",
+      storeName: closedSession.storeName || req.user.storeName || "",
+      cashierName: closedSession.userName || buildDisplayName(req.user),
+      generatedByName: buildDisplayName(req.user),
+    });
 
     const payload = {
       id: closedSession.id,
@@ -347,6 +581,7 @@ const close = async (req, res) => {
       currencyCode: currencySettings.primaryCurrencyCode,
       stockAudit,
       giftHistory,
+      closureReport,
     });
   } catch (error) {
     return sendErrorResponse(res, error, "Impossible de cloturer la caisse.");
@@ -449,6 +684,81 @@ const getGiftHistory = async (req, res) => {
     cashSessionId: req.params.id,
   });
   return res.json(history);
+};
+
+const closeGeneralStore = async (req, res) => {
+  await ensureCashSessionTables();
+
+  if (!req.user.storeId) {
+    return res.status(400).json({
+      message: "L'utilisateur connecte n'est rattache a aucune boutique.",
+    });
+  }
+
+  if (req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN") {
+    return res.status(403).json({
+      message: "Seuls les administrateurs peuvent lancer la cloture generale.",
+    });
+  }
+
+  const openSessions = await listCashSessions({
+    tenantId: req.user.tenantId,
+    storeId: req.user.storeId,
+    status: "OPEN",
+    paginate: false,
+  });
+
+  if (openSessions.length) {
+    const names = openSessions
+      .map((entry) => entry.userName || entry.id.slice(-6).toUpperCase())
+      .join(", ");
+
+    return res.status(409).json({
+      message: `Cloturez d'abord toutes les caisses encore ouvertes dans cette boutique: ${names}.`,
+    });
+  }
+
+  const currencySettings = await loadTenantCurrencySettings(prisma, req.user.tenantId);
+  const closedSessions = await listCashSessions({
+    tenantId: req.user.tenantId,
+    storeId: req.user.storeId,
+    status: "CLOSED",
+    paginate: false,
+  });
+  const todaySessions = closedSessions.filter((entry) =>
+    isSameCalendarDay(entry.closedAt || entry.openedAt, new Date()),
+  );
+
+  if (!todaySessions.length) {
+    return res.status(404).json({
+      message: "Aucune caisse cloturee aujourd'hui dans cette boutique.",
+    });
+  }
+
+  const groupedOrderIds = await Promise.all(
+    todaySessions.map((entry) =>
+      listCashSessionOrderIds({
+        tenantId: req.user.tenantId,
+        sessionId: entry.id,
+      }),
+    ),
+  );
+  const orders = await loadOrdersForClosureReport({
+    tenantId: req.user.tenantId,
+    orderIds: groupedOrderIds.flat(),
+  });
+  const report = buildClosureReport({
+    type: "STORE_GENERAL",
+    currencyCode: currencySettings.primaryCurrencyCode,
+    orders,
+    sessions: todaySessions,
+    businessName: req.user.tenantName || "POSapp",
+    storeName: todaySessions[0]?.storeName || req.user.storeName || "",
+    cashierName: "",
+    generatedByName: buildDisplayName(req.user),
+  });
+
+  return res.json(report);
 };
 
 const list = async (req, res) => {
@@ -600,6 +910,7 @@ module.exports = {
   getById,
   open,
   close,
+  closeGeneralStore,
   list,
   addMovement,
   saveOpeningStockSnapshot,

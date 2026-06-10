@@ -25,6 +25,19 @@ const defaultReceiptSettings = {
   showOriginalAmount: true,
   showChange: true,
   showLoyaltyPoints: true,
+  closurePaperFormat: "80mm",
+  closureHeaderText: "Rapport de cloture",
+  closureFooterText: "Fin de cloture",
+  showClosureHeaderText: true,
+  showClosureFooterText: true,
+  showClosureBusinessName: true,
+  showClosureStoreName: true,
+  showClosureCashier: true,
+  showClosureDateTime: true,
+  showClosureSummary: true,
+  showClosureSalesTable: true,
+  showClosureCanceledTable: true,
+  showClosureGrandTotal: true,
 };
 
 const mapReceiptSettingsRow = (row) => ({
@@ -92,6 +105,56 @@ const mapReceiptSettingsRow = (row) => ({
     row?.showLoyaltyPoints === undefined
       ? defaultReceiptSettings.showLoyaltyPoints
       : Boolean(row.showLoyaltyPoints),
+  closurePaperFormat:
+    row?.closurePaperFormat || defaultReceiptSettings.closurePaperFormat,
+  closureHeaderText:
+    row?.closureHeaderText === undefined
+      ? defaultReceiptSettings.closureHeaderText
+      : row.closureHeaderText || "",
+  closureFooterText:
+    row?.closureFooterText === undefined
+      ? defaultReceiptSettings.closureFooterText
+      : row.closureFooterText || "",
+  showClosureHeaderText:
+    row?.showClosureHeaderText === undefined
+      ? defaultReceiptSettings.showClosureHeaderText
+      : Boolean(row.showClosureHeaderText),
+  showClosureFooterText:
+    row?.showClosureFooterText === undefined
+      ? defaultReceiptSettings.showClosureFooterText
+      : Boolean(row.showClosureFooterText),
+  showClosureBusinessName:
+    row?.showClosureBusinessName === undefined
+      ? defaultReceiptSettings.showClosureBusinessName
+      : Boolean(row.showClosureBusinessName),
+  showClosureStoreName:
+    row?.showClosureStoreName === undefined
+      ? defaultReceiptSettings.showClosureStoreName
+      : Boolean(row.showClosureStoreName),
+  showClosureCashier:
+    row?.showClosureCashier === undefined
+      ? defaultReceiptSettings.showClosureCashier
+      : Boolean(row.showClosureCashier),
+  showClosureDateTime:
+    row?.showClosureDateTime === undefined
+      ? defaultReceiptSettings.showClosureDateTime
+      : Boolean(row.showClosureDateTime),
+  showClosureSummary:
+    row?.showClosureSummary === undefined
+      ? defaultReceiptSettings.showClosureSummary
+      : Boolean(row.showClosureSummary),
+  showClosureSalesTable:
+    row?.showClosureSalesTable === undefined
+      ? defaultReceiptSettings.showClosureSalesTable
+      : Boolean(row.showClosureSalesTable),
+  showClosureCanceledTable:
+    row?.showClosureCanceledTable === undefined
+      ? defaultReceiptSettings.showClosureCanceledTable
+      : Boolean(row.showClosureCanceledTable),
+  showClosureGrandTotal:
+    row?.showClosureGrandTotal === undefined
+      ? defaultReceiptSettings.showClosureGrandTotal
+      : Boolean(row.showClosureGrandTotal),
 });
 
 const ensureReceiptSettingsTable = async () => {
@@ -121,6 +184,19 @@ const ensureReceiptSettingsTable = async () => {
       "showOriginalAmount" BOOLEAN NOT NULL DEFAULT TRUE,
       "showChange" BOOLEAN NOT NULL DEFAULT TRUE,
       "showLoyaltyPoints" BOOLEAN NOT NULL DEFAULT TRUE,
+      "closurePaperFormat" TEXT NOT NULL DEFAULT '80mm',
+      "closureHeaderText" TEXT,
+      "closureFooterText" TEXT,
+      "showClosureHeaderText" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureFooterText" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureBusinessName" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureStoreName" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureCashier" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureDateTime" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureSummary" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureSalesTable" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureCanceledTable" BOOLEAN NOT NULL DEFAULT TRUE,
+      "showClosureGrandTotal" BOOLEAN NOT NULL DEFAULT TRUE,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "receipt_settings_paper_format_check"
@@ -131,6 +207,59 @@ const ensureReceiptSettingsTable = async () => {
   await prisma.$executeRawUnsafe(`
     CREATE INDEX IF NOT EXISTS "receipt_settings_tenant_idx"
     ON "${tableName}" ("tenantId")
+  `);
+
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "closurePaperFormat" TEXT NOT NULL DEFAULT '80mm'
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "closureHeaderText" TEXT
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "closureFooterText" TEXT
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureHeaderText" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureFooterText" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureBusinessName" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureStoreName" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureCashier" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureDateTime" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureSummary" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureSalesTable" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureCanceledTable" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "showClosureGrandTotal" BOOLEAN NOT NULL DEFAULT TRUE
   `);
 };
 
@@ -163,6 +292,19 @@ const getReceiptSettings = async ({ tenantId }) => {
         "showOriginalAmount",
         "showChange",
         "showLoyaltyPoints",
+        "closurePaperFormat",
+        "closureHeaderText",
+        "closureFooterText",
+        "showClosureHeaderText",
+        "showClosureFooterText",
+        "showClosureBusinessName",
+        "showClosureStoreName",
+        "showClosureCashier",
+        "showClosureDateTime",
+        "showClosureSummary",
+        "showClosureSalesTable",
+        "showClosureCanceledTable",
+        "showClosureGrandTotal",
         "createdAt",
         "updatedAt"
       FROM "${tableName}"
@@ -210,9 +352,22 @@ const upsertReceiptSettings = async ({ tenantId, settings = {} }) => {
         "showOriginalAmount",
         "showChange",
         "showLoyaltyPoints",
+        "closurePaperFormat",
+        "closureHeaderText",
+        "closureFooterText",
+        "showClosureHeaderText",
+        "showClosureFooterText",
+        "showClosureBusinessName",
+        "showClosureStoreName",
+        "showClosureCashier",
+        "showClosureDateTime",
+        "showClosureSummary",
+        "showClosureSalesTable",
+        "showClosureCanceledTable",
+        "showClosureGrandTotal",
         "updatedAt"
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,CURRENT_TIMESTAMP
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36,CURRENT_TIMESTAMP
       )
       ON CONFLICT ("tenantId")
       DO UPDATE SET
@@ -238,6 +393,19 @@ const upsertReceiptSettings = async ({ tenantId, settings = {} }) => {
         "showOriginalAmount" = EXCLUDED."showOriginalAmount",
         "showChange" = EXCLUDED."showChange",
         "showLoyaltyPoints" = EXCLUDED."showLoyaltyPoints",
+        "closurePaperFormat" = EXCLUDED."closurePaperFormat",
+        "closureHeaderText" = EXCLUDED."closureHeaderText",
+        "closureFooterText" = EXCLUDED."closureFooterText",
+        "showClosureHeaderText" = EXCLUDED."showClosureHeaderText",
+        "showClosureFooterText" = EXCLUDED."showClosureFooterText",
+        "showClosureBusinessName" = EXCLUDED."showClosureBusinessName",
+        "showClosureStoreName" = EXCLUDED."showClosureStoreName",
+        "showClosureCashier" = EXCLUDED."showClosureCashier",
+        "showClosureDateTime" = EXCLUDED."showClosureDateTime",
+        "showClosureSummary" = EXCLUDED."showClosureSummary",
+        "showClosureSalesTable" = EXCLUDED."showClosureSalesTable",
+        "showClosureCanceledTable" = EXCLUDED."showClosureCanceledTable",
+        "showClosureGrandTotal" = EXCLUDED."showClosureGrandTotal",
         "updatedAt" = CURRENT_TIMESTAMP
     `,
     `${tenantId}:receipt`,
@@ -264,6 +432,19 @@ const upsertReceiptSettings = async ({ tenantId, settings = {} }) => {
     Boolean(next.showOriginalAmount),
     Boolean(next.showChange),
     Boolean(next.showLoyaltyPoints),
+    next.closurePaperFormat || "80mm",
+    next.closureHeaderText || null,
+    next.closureFooterText || null,
+    Boolean(next.showClosureHeaderText),
+    Boolean(next.showClosureFooterText),
+    Boolean(next.showClosureBusinessName),
+    Boolean(next.showClosureStoreName),
+    Boolean(next.showClosureCashier),
+    Boolean(next.showClosureDateTime),
+    Boolean(next.showClosureSummary),
+    Boolean(next.showClosureSalesTable),
+    Boolean(next.showClosureCanceledTable),
+    Boolean(next.showClosureGrandTotal),
   );
 
   return getReceiptSettings({ tenantId });

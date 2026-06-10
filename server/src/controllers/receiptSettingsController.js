@@ -45,6 +45,31 @@ const updateCurrentReceiptSettings = async (req, res) => {
     showChange: body.showChange === undefined ? true : Boolean(body.showChange),
     showLoyaltyPoints:
       body.showLoyaltyPoints === undefined ? true : Boolean(body.showLoyaltyPoints),
+    closurePaperFormat: allowedFormats.has(String(body.closurePaperFormat || "").trim())
+      ? String(body.closurePaperFormat).trim()
+      : "80mm",
+    closureHeaderText: normalizeText(body.closureHeaderText, 300),
+    closureFooterText: normalizeText(body.closureFooterText, 300),
+    showClosureHeaderText:
+      body.showClosureHeaderText === undefined ? true : Boolean(body.showClosureHeaderText),
+    showClosureFooterText:
+      body.showClosureFooterText === undefined ? true : Boolean(body.showClosureFooterText),
+    showClosureBusinessName:
+      body.showClosureBusinessName === undefined ? true : Boolean(body.showClosureBusinessName),
+    showClosureStoreName:
+      body.showClosureStoreName === undefined ? true : Boolean(body.showClosureStoreName),
+    showClosureCashier:
+      body.showClosureCashier === undefined ? true : Boolean(body.showClosureCashier),
+    showClosureDateTime:
+      body.showClosureDateTime === undefined ? true : Boolean(body.showClosureDateTime),
+    showClosureSummary:
+      body.showClosureSummary === undefined ? true : Boolean(body.showClosureSummary),
+    showClosureSalesTable:
+      body.showClosureSalesTable === undefined ? true : Boolean(body.showClosureSalesTable),
+    showClosureCanceledTable:
+      body.showClosureCanceledTable === undefined ? true : Boolean(body.showClosureCanceledTable),
+    showClosureGrandTotal:
+      body.showClosureGrandTotal === undefined ? true : Boolean(body.showClosureGrandTotal),
   };
 
   const updated = await upsertReceiptSettings({
