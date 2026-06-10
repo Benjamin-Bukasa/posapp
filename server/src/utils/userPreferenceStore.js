@@ -16,6 +16,8 @@ const ensureUserPreferenceTable = async () => {
       "printerServiceUrl" TEXT,
       "printerName" TEXT,
       "autoPrintReceipt" BOOLEAN NOT NULL DEFAULT TRUE,
+      "autoPrintClosureTicket" BOOLEAN NOT NULL DEFAULT TRUE,
+      "autoPrintGeneralClosureTicket" BOOLEAN NOT NULL DEFAULT TRUE,
       "showSecondaryAmounts" BOOLEAN NOT NULL DEFAULT TRUE,
       "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -39,6 +41,14 @@ const ensureUserPreferenceTable = async () => {
     ALTER TABLE "${tableName}"
     ADD COLUMN IF NOT EXISTS "accentColor" TEXT
   `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "autoPrintClosureTicket" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
+  await prisma.$executeRawUnsafe(`
+    ALTER TABLE "${tableName}"
+    ADD COLUMN IF NOT EXISTS "autoPrintGeneralClosureTicket" BOOLEAN NOT NULL DEFAULT TRUE
+  `);
 };
 
 const defaultPreferences = {
@@ -50,6 +60,8 @@ const defaultPreferences = {
   printerServiceUrl: "",
   printerName: "",
   autoPrintReceipt: true,
+  autoPrintClosureTicket: true,
+  autoPrintGeneralClosureTicket: true,
   showSecondaryAmounts: true,
 };
 
@@ -60,6 +72,14 @@ const mapPreferenceRow = (row) => ({
     row?.autoPrintReceipt === undefined
       ? defaultPreferences.autoPrintReceipt
       : Boolean(row.autoPrintReceipt),
+  autoPrintClosureTicket:
+    row?.autoPrintClosureTicket === undefined
+      ? defaultPreferences.autoPrintClosureTicket
+      : Boolean(row.autoPrintClosureTicket),
+  autoPrintGeneralClosureTicket:
+    row?.autoPrintGeneralClosureTicket === undefined
+      ? defaultPreferences.autoPrintGeneralClosureTicket
+      : Boolean(row.autoPrintGeneralClosureTicket),
   showSecondaryAmounts:
     row?.showSecondaryAmounts === undefined
       ? defaultPreferences.showSecondaryAmounts
@@ -82,6 +102,8 @@ const getUserPreferences = async ({ tenantId, userId }) => {
         "printerServiceUrl",
         "printerName",
         "autoPrintReceipt",
+        "autoPrintClosureTicket",
+        "autoPrintGeneralClosureTicket",
         "showSecondaryAmounts",
         "createdAt",
         "updatedAt"
@@ -122,9 +144,11 @@ const upsertUserPreferences = async ({ tenantId, userId, preferences = {} }) => 
         "printerServiceUrl",
         "printerName",
         "autoPrintReceipt",
+        "autoPrintClosureTicket",
+        "autoPrintGeneralClosureTicket",
         "showSecondaryAmounts",
         "updatedAt"
-      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,CURRENT_TIMESTAMP)
+      ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,CURRENT_TIMESTAMP)
       ON CONFLICT ("userId")
       DO UPDATE SET
         "theme" = EXCLUDED."theme",
@@ -135,6 +159,8 @@ const upsertUserPreferences = async ({ tenantId, userId, preferences = {} }) => 
         "printerServiceUrl" = EXCLUDED."printerServiceUrl",
         "printerName" = EXCLUDED."printerName",
         "autoPrintReceipt" = EXCLUDED."autoPrintReceipt",
+        "autoPrintClosureTicket" = EXCLUDED."autoPrintClosureTicket",
+        "autoPrintGeneralClosureTicket" = EXCLUDED."autoPrintGeneralClosureTicket",
         "showSecondaryAmounts" = EXCLUDED."showSecondaryAmounts",
         "updatedAt" = CURRENT_TIMESTAMP
     `,
@@ -149,6 +175,8 @@ const upsertUserPreferences = async ({ tenantId, userId, preferences = {} }) => 
     next.printerServiceUrl || null,
     next.printerName || null,
     Boolean(next.autoPrintReceipt),
+    Boolean(next.autoPrintClosureTicket),
+    Boolean(next.autoPrintGeneralClosureTicket),
     Boolean(next.showSecondaryAmounts),
   );
 

@@ -21,6 +21,19 @@ export const DEFAULT_RECEIPT_SETTINGS = {
   showOriginalAmount: true,
   showChange: true,
   showLoyaltyPoints: true,
+  closurePaperFormat: "80mm",
+  closureHeaderText: "Rapport de cloture",
+  closureFooterText: "Fin de cloture",
+  showClosureHeaderText: true,
+  showClosureFooterText: true,
+  showClosureBusinessName: true,
+  showClosureStoreName: true,
+  showClosureCashier: true,
+  showClosureDateTime: true,
+  showClosureSummary: true,
+  showClosureSalesTable: true,
+  showClosureCanceledTable: true,
+  showClosureGrandTotal: true,
 };
 
 export const normalizeReceiptSettings = (payload = {}) => ({
@@ -98,4 +111,54 @@ export const normalizeReceiptSettings = (payload = {}) => ({
     payload?.showLoyaltyPoints === undefined
       ? DEFAULT_RECEIPT_SETTINGS.showLoyaltyPoints
       : Boolean(payload.showLoyaltyPoints),
+  closurePaperFormat:
+    payload?.closurePaperFormat || DEFAULT_RECEIPT_SETTINGS.closurePaperFormat,
+  closureHeaderText:
+    payload?.closureHeaderText === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.closureHeaderText
+      : payload.closureHeaderText || "",
+  closureFooterText:
+    payload?.closureFooterText === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.closureFooterText
+      : payload.closureFooterText || "",
+  showClosureHeaderText:
+    payload?.showClosureHeaderText === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureHeaderText
+      : Boolean(payload.showClosureHeaderText),
+  showClosureFooterText:
+    payload?.showClosureFooterText === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureFooterText
+      : Boolean(payload.showClosureFooterText),
+  showClosureBusinessName:
+    payload?.showClosureBusinessName === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureBusinessName
+      : Boolean(payload.showClosureBusinessName),
+  showClosureStoreName:
+    payload?.showClosureStoreName === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureStoreName
+      : Boolean(payload.showClosureStoreName),
+  showClosureCashier:
+    payload?.showClosureCashier === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureCashier
+      : Boolean(payload.showClosureCashier),
+  showClosureDateTime:
+    payload?.showClosureDateTime === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureDateTime
+      : Boolean(payload.showClosureDateTime),
+  showClosureSummary:
+    payload?.showClosureSummary === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureSummary
+      : Boolean(payload.showClosureSummary),
+  showClosureSalesTable:
+    payload?.showClosureSalesTable === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureSalesTable
+      : Boolean(payload.showClosureSalesTable),
+  showClosureCanceledTable:
+    payload?.showClosureCanceledTable === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureCanceledTable
+      : Boolean(payload.showClosureCanceledTable),
+  showClosureGrandTotal:
+    payload?.showClosureGrandTotal === undefined
+      ? DEFAULT_RECEIPT_SETTINGS.showClosureGrandTotal
+      : Boolean(payload.showClosureGrandTotal),
 });
