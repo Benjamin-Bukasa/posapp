@@ -7,8 +7,9 @@ const {
   buildDateRangeFilter,
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const listInventoryMovements = async (req, res) => {
   const { movementType, productId, storageZoneId, sourceType } = req.query || {};

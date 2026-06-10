@@ -15,8 +15,9 @@ const {
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
 const { sendErrorResponse } = require("../utils/httpErrors");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 const { cancelOrderSale } = require("./orderController");
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const hydratePaymentsWithCurrencyCodes = async (records) => {
   const list = Array.isArray(records)
@@ -192,6 +193,7 @@ const refundPayment = async (req, res) => {
       orderId: payment.orderId,
       actorUserId: req.user.id,
       actorRole: req.user.role,
+      actorPermissions: req.user.permissions,
       reason,
       auditAction: "REFUNDED",
       auditReasonFallback: "Remboursement client.",

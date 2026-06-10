@@ -47,12 +47,13 @@ const {
   synchronizeInventoryAggregate,
 } = require("../utils/inventoryLotStore");
 const { normalizeError } = require("../utils/httpErrors");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
 const LONG_TRANSACTION_OPTIONS = {
   maxWait: 15000,
   timeout: 45000,
 };
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const PAYMENT_METHOD_MAP = {
   cash: "CASH",
@@ -746,6 +747,7 @@ const cancelOrderSale = async ({
   orderId,
   actorUserId,
   actorRole = null,
+  actorPermissions = null,
   reason,
   auditAction = "DELETED",
   auditReasonFallback = "Suppression logique de la vente.",
@@ -757,7 +759,7 @@ const cancelOrderSale = async ({
     throw Object.assign(new Error("Order not found."), { status: 404 });
   }
   assertSellerOwnsOrder(
-    { id: actorUserId, role: actorRole },
+    { id: actorUserId, role: actorRole, permissions: actorPermissions },
     existingOrder,
     "Vous ne pouvez pas annuler la vente d'un autre vendeur.",
   );
@@ -1311,6 +1313,7 @@ const deleteOrder = async (req, res) => {
       orderId: req.params.id,
       actorUserId: req.user.id,
       actorRole: req.user.role,
+      actorPermissions: req.user.permissions,
       reason: req.body?.reason,
       auditAction: "DELETED",
       auditReasonFallback: "Suppression logique de la vente.",

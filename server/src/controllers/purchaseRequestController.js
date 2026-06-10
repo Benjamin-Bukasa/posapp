@@ -17,8 +17,9 @@ const {
 } = require("../utils/documentCodeStore");
 const { expandArticleItems } = require("../utils/expandArticleItems");
 const { sendErrorResponse } = require("../utils/httpErrors");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const includesSearch = (value, search) =>
   String(value || "")

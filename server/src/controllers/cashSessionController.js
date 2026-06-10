@@ -15,6 +15,7 @@ const {
   getCashSessionStockAudit,
 } = require("../utils/cashSessionStore");
 const { listGiftHistoryByCashSession } = require("../utils/orderItemOfferStore");
+const { hasPermission } = require("../utils/permissionAccess");
 const { emitToStore, emitToTenant, emitToUser } = require("../socket");
 const { sendErrorResponse } = require("../utils/httpErrors");
 
@@ -24,6 +25,8 @@ const toMoney = (value) => {
 };
 
 const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
+const canManageOwnOrPermittedSession = (user, session, permissionCode) =>
+  session?.userId === user?.id || hasPermission(user, permissionCode);
 
 const loadSessionClosureInsights = async (tenantId, sessionId) => {
   const [stockAuditResult, giftHistoryResult] = await Promise.allSettled([
@@ -413,7 +416,11 @@ const getById = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
+  const canView = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.read",
+  );
 
   if (!canView) {
     return res.status(403).json({
@@ -521,10 +528,11 @@ const close = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canClose =
-    session.userId === req.user.id ||
-    req.user.role === "ADMIN" ||
-    req.user.role === "SUPERADMIN";
+  const canClose = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.close",
+  );
 
   if (!canClose) {
     return res.status(403).json({
@@ -604,10 +612,11 @@ const saveOpeningStockSnapshot = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canEdit =
-    session.userId === req.user.id ||
-    req.user.role === "ADMIN" ||
-    req.user.role === "SUPERADMIN";
+  const canEdit = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.open",
+  );
 
   if (!canEdit) {
     return res.status(403).json({
@@ -653,7 +662,11 @@ const getStockAudit = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
+  const canView = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.read",
+  );
   if (!canView) {
     return res.status(403).json({
       message: "Vous ne pouvez pas consulter ce controle de stock.",
@@ -678,7 +691,11 @@ const getGiftHistory = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canView = !isFrontOfficeRole(req.user.role) || session.userId === req.user.id;
+  const canView = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.read",
+  );
   if (!canView) {
     return res.status(403).json({
       message: "Vous ne pouvez pas consulter l'historique des offerts de cette caisse.",
@@ -698,12 +715,6 @@ const closeGeneralStore = async (req, res) => {
   if (!req.user.storeId) {
     return res.status(400).json({
       message: "L'utilisateur connecte n'est rattache a aucune boutique.",
-    });
-  }
-
-  if (req.user.role !== "ADMIN" && req.user.role !== "SUPERADMIN") {
-    return res.status(403).json({
-      message: "Seuls les administrateurs peuvent lancer la cloture generale.",
     });
   }
 
@@ -774,7 +785,7 @@ const list = async (req, res) => {
   const status = req.query?.status ? String(req.query.status).trim().toUpperCase() : null;
   const requestedUserId = req.query?.userId ? String(req.query.userId).trim() : null;
   const storeId = req.query?.storeId ? String(req.query.storeId).trim() : null;
-  const scopedUserId = isFrontOfficeRole(req.user.role) ? req.user.id : requestedUserId;
+  const scopedUserId = requestedUserId;
 
   if (exportType) {
     const exportRows = await listCashSessions({
@@ -863,10 +874,11 @@ const addMovement = async (req, res) => {
     return res.status(404).json({ message: "Session de caisse introuvable." });
   }
 
-  const canEdit =
-    session.userId === req.user.id ||
-    req.user.role === "ADMIN" ||
-    req.user.role === "SUPERADMIN";
+  const canEdit = canManageOwnOrPermittedSession(
+    req.user,
+    session,
+    "cash_sessions.movement",
+  );
 
   if (!canEdit) {
     return res.status(403).json({
