@@ -16,13 +16,14 @@ const {
   materializeResidualUntrackedLot,
   emitLotExpiryNotifications,
 } = require("../utils/inventoryLotStore");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
 const toNumber = (value) => {
   const amount = Number(value || 0);
   return Number.isFinite(amount) ? amount : 0;
 };
 
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const getExpiryStatus = (expiryDate) => {
   if (!expiryDate) return "SANS_DATE";

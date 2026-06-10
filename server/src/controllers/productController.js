@@ -19,6 +19,7 @@ const {
   buildDateRangeFilter,
 } = require("../utils/listing");
 const { sendExport } = require("../utils/exporter");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 const {
   FAMILY_KIND,
   getProductFamilyByKind,
@@ -1183,7 +1184,7 @@ const computeArticleAvailability = (product, inventoryMap) => {
 const listCashierArticles = async (req, res) => {
   await normalizeManagementUnits(prisma);
 
-  const sellerStoreId = req.user?.role === "SELLER" ? req.user.storeId : null;
+  const sellerStoreId = isRestrictedSeller(req.user) ? req.user.storeId : null;
   const storeId = sellerStoreId || req.query?.storeId || null;
   const storageZoneId = req.query?.storageZoneId || null;
 

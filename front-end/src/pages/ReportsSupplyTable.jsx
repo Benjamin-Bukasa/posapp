@@ -3,6 +3,7 @@ import DataTable from "../components/ui/datatable";
 import Badge from "../components/ui/badge";
 import { apiGet } from "../services/apiClient";
 import { formatAmount, formatDate, formatName, shortId } from "../utils/formatters";
+import { isRestrictedSeller } from "../utils/permissions";
 import useToastStore from "../stores/toastStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
@@ -30,7 +31,7 @@ const mapSupplierLabel = (sourceType) => {
 
 function ReportsSupplyTable() {
   const user = useAuthStore((state) => state.user);
-  const isSeller = user?.role === "SELLER";
+  const isSeller = isRestrictedSeller(user);
   const refreshTick = useRealtimeRefetch([
     "stock:entry:created",
     "stock:entry:posted",

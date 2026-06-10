@@ -22,8 +22,10 @@ const { emitLotExpiryNotifications } = require("../utils/inventoryLotStore");
 const { emitToStore, emitToTenant } = require("../socket");
 const { sendErrorResponse } = require("../utils/httpErrors");
 const { hasScopedPermission } = require("../utils/documentPermissionScopes");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
-const isFrontOfficeRole = (role) => role === "USER" || role === "SELLER";
+const isFrontOfficeRole = (user) =>
+  user?.role === "USER" || isRestrictedSeller(user);
 const INVENTORY_TEMPLATE_SHEET = "InventoryCounts";
 
 const pickFirstValue = (row, keys = []) => {
@@ -412,7 +414,7 @@ const importTemplate = async (req, res) => {
 const create = async (req, res) => {
   await ensureInventorySessionTables();
   const requestedStoreId =
-    req.body?.storeId && !isFrontOfficeRole(req.user.role)
+    req.body?.storeId && !isFrontOfficeRole(req.user)
       ? String(req.body.storeId).trim()
       : req.user.storeId || null;
 
@@ -426,7 +428,7 @@ const create = async (req, res) => {
     tenantId: req.user.tenantId,
     storeId: requestedStoreId,
     requestedZoneId:
-      req.body?.storageZoneId && !isFrontOfficeRole(req.user.role)
+      req.body?.storageZoneId && !isFrontOfficeRole(req.user)
         ? String(req.body.storageZoneId).trim()
         : req.body?.storageZoneId
           ? String(req.body.storageZoneId).trim()

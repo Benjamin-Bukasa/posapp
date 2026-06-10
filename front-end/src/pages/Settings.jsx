@@ -125,6 +125,14 @@ function Settings() {
   const [closingStockLoading, setClosingStockLoading] = useState(false);
   const [lastClosedSessionReport, setLastClosedSessionReport] = useState(null);
   const [generalClosing, setGeneralClosing] = useState(false);
+  const canUpdateReceiptSettings = hasAnyPermission(user, ["settings.update"]);
+  const canReadCashSession = hasAnyPermission(user, ["cash_sessions.read"]);
+  const canOpenCashSession = hasAnyPermission(user, ["cash_sessions.open"]);
+  const canManageCashMovement = hasAnyPermission(user, ["cash_sessions.movement"]);
+  const canCloseCashSession = hasAnyPermission(user, ["cash_sessions.close"]);
+  const canRunGeneralClosure = hasAnyPermission(user, [
+    "cash_sessions.close_general",
+  ]);
 
   useEffect(() => {
     loadCurrencySettings();
@@ -373,14 +381,6 @@ function Settings() {
   }, [currencySettings]);
 
   const secondaryEnabled = hasSecondaryCurrency(currencySettings);
-  const canUpdateReceiptSettings = hasAnyPermission(user, ["settings.update"]);
-  const canReadCashSession = hasAnyPermission(user, ["cash_sessions.read"]);
-  const canOpenCashSession = hasAnyPermission(user, ["cash_sessions.open"]);
-  const canManageCashMovement = hasAnyPermission(user, ["cash_sessions.movement"]);
-  const canCloseCashSession = hasAnyPermission(user, ["cash_sessions.close"]);
-  const canRunGeneralClosure =
-    (user?.role === "ADMIN" || user?.role === "SUPERADMIN") &&
-    hasAnyPermission(user, ["cash_sessions.close_general"]);
 
   const handleLogout = async () => {
     await logout();

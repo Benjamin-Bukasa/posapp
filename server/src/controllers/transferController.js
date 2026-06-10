@@ -29,10 +29,11 @@ const {
 const { expandArticleItems } = require("../utils/expandArticleItems");
 const { sendErrorResponse } = require("../utils/httpErrors");
 const { hasScopedPermission } = require("../utils/documentPermissionScopes");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
 const TRANSFER_DOCUMENT_TYPE = "TRANSFER";
 const TRANSFER_FLOW_CODE = "TRANSFER";
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 
 const queueTransferExpiryNotifications = (tenantId) => {
   Promise.resolve()

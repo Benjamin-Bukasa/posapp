@@ -41,10 +41,11 @@ const {
 } = require("../utils/expandArticleItems");
 const { sendErrorResponse } = require("../utils/httpErrors");
 const { hasScopedPermission } = require("../utils/documentPermissionScopes");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
 const toNumber = (value) => Number(value || 0);
 const STOCK_ENTRY_DOCUMENT_TYPE = "STOCK_ENTRY";
-const isSeller = (user) => user?.role === "SELLER";
+const isSeller = isRestrictedSeller;
 const STOCK_ENTRY_TEMPLATE_SHEET = "StockEntries";
 const STOCK_ENTRY_TEMPLATE_INFO_SHEET = "Instructions";
 

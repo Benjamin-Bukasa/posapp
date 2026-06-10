@@ -4,6 +4,7 @@ const {
   loadTenantCurrencySettings,
   normalizeCurrencyCode,
 } = require("../utils/currencySettings");
+const { isRestrictedSeller } = require("../utils/permissionAccess");
 
 const DAY_LABELS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
@@ -83,12 +84,12 @@ const buildWeeklyCustomerSeries = (orders, weeksCount) => {
 };
 
 const getScopedStoreId = (user, requestedStoreId = null) =>
-  user?.role === "SELLER" ? user.storeId || null : requestedStoreId || null;
-const isSeller = (user) => user?.role === "SELLER";
+  isRestrictedSeller(user) ? user.storeId || null : requestedStoreId || null;
+const isSeller = isRestrictedSeller;
 
 const getSalesSummary = async (req, res) => {
   const scopedStoreId = getScopedStoreId(req.user, req.query?.storeId);
-  if (req.user?.role === "SELLER" && !scopedStoreId) {
+  if (isRestrictedSeller(req.user) && !scopedStoreId) {
     return res.json({
       currencyCode: "USD",
       summary: {

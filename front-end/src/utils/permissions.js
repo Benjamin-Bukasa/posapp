@@ -28,8 +28,8 @@ const normalizePermissionCode = (entry) => {
   return null;
 };
 
-export const getGrantedPermissions = (user) => {
-  const granted = Array.from(
+const getExplicitPermissions = (user) =>
+  Array.from(
     new Set(
       (Array.isArray(user?.permissions) ? user.permissions : [])
         .map(normalizePermissionCode)
@@ -37,12 +37,20 @@ export const getGrantedPermissions = (user) => {
     ),
   );
 
+export const hasExplicitPermissions = (user) => getExplicitPermissions(user).length > 0;
+
+export const getGrantedPermissions = (user) => {
+  const granted = getExplicitPermissions(user);
+
   if (user?.role === "SELLER" && granted.length === 0) {
     return [...SELLER_DEFAULT_PERMISSION_CODES];
   }
 
   return granted;
 };
+
+export const isRestrictedSeller = (user) =>
+  user?.role === "SELLER" && !hasExplicitPermissions(user);
 
 export const hasAnyPermission = (user, permissions = []) => {
   if (!permissions || !permissions.length) return true;
