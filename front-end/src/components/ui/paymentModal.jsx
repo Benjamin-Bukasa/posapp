@@ -8,8 +8,10 @@ import {
 } from "lucide-react";
 import CustomerCreateModal from "./customerCreateModal";
 import { apiGet, apiPost } from "../../services/apiClient";
+import useAuthStore from "../../stores/authStore";
 import useToastStore from "../../stores/toastStore";
 import { formatName } from "../../utils/formatters";
+import { hasAnyPermission } from "../../utils/permissions";
 import {
   buildSecondaryRateLabel,
   convertCurrencyAmount,
@@ -56,7 +58,9 @@ const PaymentModal = ({
   const [loadingCustomers, setLoadingCustomers] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [bonusProgram, setBonusProgram] = useState(null);
+  const user = useAuthStore((state) => state.user);
   const showToast = useToastStore((state) => state.showToast);
+  const canCreateCustomer = hasAnyPermission(user, ["customers.create"]);
 
   const normalizeCustomer = useCallback(
     (customer) => ({
@@ -476,14 +480,16 @@ const PaymentModal = ({
                         <p>Client introuvable.</p>
                         <p className="mt-1">Creer un compte ?</p>
                         <div className="mt-3 flex items-center gap-2">
-                          <button
-                            type="button"
-                            onClick={handleCreateCustomer}
-                            className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 text-xs font-semibold text-white hover:bg-secondary/90"
-                          >
-                            <UserPlus size={14} strokeWidth={1.5} />
-                            Oui
-                          </button>
+                          {canCreateCustomer ? (
+                            <button
+                              type="button"
+                              onClick={handleCreateCustomer}
+                              className="flex items-center gap-2 rounded-lg bg-secondary px-3 py-1.5 text-xs font-semibold text-white hover:bg-secondary/90"
+                            >
+                              <UserPlus size={14} strokeWidth={1.5} />
+                              Oui
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             onClick={() => setIsCustomerMenuOpen(false)}

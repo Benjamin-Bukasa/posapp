@@ -222,17 +222,23 @@ const buildClosureReport = ({
     canceledOrderCount,
     periodStart:
       sourceSessions.length > 0
-        ? sourceSessions.reduce((min, entry) => {
-            const current = entry?.openedAt ? new Date(entry.openedAt).getTime() : null;
-            return current != null && (min == null || current < min) ? current : min;
-          }, null)
+        ? (() => {
+            const timestamp = sourceSessions.reduce((min, entry) => {
+              const current = entry?.openedAt ? new Date(entry.openedAt).getTime() : null;
+              return current != null && (min == null || current < min) ? current : min;
+            }, null);
+            return timestamp == null ? null : new Date(timestamp).toISOString();
+          })()
         : null,
     periodEnd:
       sourceSessions.length > 0
-        ? sourceSessions.reduce((max, entry) => {
-            const current = entry?.closedAt ? new Date(entry.closedAt).getTime() : null;
-            return current != null && (max == null || current > max) ? current : max;
-          }, null)
+        ? (() => {
+            const timestamp = sourceSessions.reduce((max, entry) => {
+              const current = entry?.closedAt ? new Date(entry.closedAt).getTime() : null;
+              return current != null && (max == null || current > max) ? current : max;
+            }, null);
+            return timestamp == null ? null : new Date(timestamp).toISOString();
+          })()
         : null,
     summary: {
       openingFloat: sourceSessions.reduce(

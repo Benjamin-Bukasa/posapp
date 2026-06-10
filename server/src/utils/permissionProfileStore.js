@@ -82,7 +82,7 @@ const ensureDefaultProfilesForTenant = async (tenantId) => {
   for (const profile of DEFAULT_PERMISSION_PROFILES) {
     const rows = await prisma.$queryRawUnsafe(
       `
-        SELECT id
+        SELECT id, permissions_json
         FROM permission_profiles
         WHERE tenant_id = $1 AND name = $2
         LIMIT 1
@@ -92,6 +92,27 @@ const ensureDefaultProfilesForTenant = async (tenantId) => {
     );
 
     if (rows?.[0]?.id) {
+      const existingPermissions = normalizePermissionCodes(
+        parseJson(rows[0].permissions_json, []),
+      );
+      const mergedPermissions = normalizePermissionCodes([
+        ...existingPermissions,
+        ...profile.permissions,
+      ]);
+
+      if (mergedPermissions.length !== existingPermissions.length) {
+        await prisma.$executeRawUnsafe(
+          `
+            UPDATE permission_profiles
+            SET permissions_json = $2::jsonb,
+                updated_at = NOW()
+            WHERE id = $1
+          `,
+          rows[0].id,
+          JSON.stringify(mergedPermissions),
+        );
+      }
+
       continue;
     }
 

@@ -174,6 +174,21 @@ const PERMISSION_MODULES = [
       { code: "customers.delete", label: "Supprimer" },
     ],
   },
+  {
+    key: "cash_sessions",
+    label: "Caisse",
+    description: "Ouverture, mouvements, cloture de caisse et cloture generale boutique.",
+    actions: [
+      { code: "cash_sessions.read", label: "Voir" },
+      { code: "cash_sessions.open", label: "Ouvrir la caisse" },
+      { code: "cash_sessions.movement", label: "Mouvement de caisse" },
+      { code: "cash_sessions.close", label: "Cloturer la caisse" },
+      {
+        code: "cash_sessions.close_general",
+        label: "Cloturer la caisse generale",
+      },
+    ],
+  },
 ];
 
 const PERMISSION_CODE_SET = new Set(
