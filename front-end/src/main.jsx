@@ -18,17 +18,25 @@ if (useAuthStore.getState().isAuthenticated) {
   useUserPreferenceStore.getState().loadPreferences();
 }
 
-const syncCurrencySettings = () => {
+const syncSessionContext = async () => {
+  const auth = useAuthStore.getState();
+  if (!auth.isAuthenticated) return;
+
+  await auth.syncSessionSilently();
+
   if (useAuthStore.getState().isAuthenticated) {
     useCurrencyStore.getState().loadSettings({ force: true });
+    useUserPreferenceStore.getState().loadPreferences({ force: true });
   }
 };
 
 if (typeof window !== "undefined") {
-  window.addEventListener("focus", syncCurrencySettings);
+  window.addEventListener("focus", () => {
+    syncSessionContext();
+  });
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") {
-      syncCurrencySettings();
+      syncSessionContext();
     }
   });
 }
