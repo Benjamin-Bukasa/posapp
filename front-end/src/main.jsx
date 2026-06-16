@@ -8,11 +8,18 @@ import useThemeStore from "./stores/themeStore";
 import useAuthStore from "./stores/authStore";
 import useCurrencyStore from "./stores/currencyStore";
 import useUserPreferenceStore from "./stores/userPreferenceStore";
+import useRealtimeStore from "./stores/realtimeStore";
 import ToastContainer from "./components/ui/toast";
 import { initRealtimeListeners } from "./services/realtimeListeners";
 
+const buildRealtimeScope = (state) =>
+  state?.isAuthenticated && state?.user?.id
+    ? `${state.user.tenantId || "tenant"}:${state.user.id}`
+    : null;
+
 useThemeStore.getState().initTheme();
 useAuthStore.getState().init();
+useRealtimeStore.getState().setPersistenceScope(buildRealtimeScope(useAuthStore.getState()));
 if (useAuthStore.getState().isAuthenticated) {
   useCurrencyStore.getState().loadSettings();
   useUserPreferenceStore.getState().loadPreferences();
@@ -42,6 +49,13 @@ if (typeof window !== "undefined") {
 }
 
 useAuthStore.subscribe((state, previousState) => {
+  const nextScope = buildRealtimeScope(state);
+  const previousScope = buildRealtimeScope(previousState);
+
+  if (nextScope !== previousScope) {
+    useRealtimeStore.getState().setPersistenceScope(nextScope);
+  }
+
   if (state.isAuthenticated && state.accessToken !== previousState.accessToken) {
     useCurrencyStore.getState().loadSettings({ force: true });
     useUserPreferenceStore.getState().loadPreferences({ force: true });

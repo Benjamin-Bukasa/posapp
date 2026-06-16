@@ -40,16 +40,19 @@ export const startLotAlertPolling = () => {
           `${item.status === "EXPIRE" ? "est expire" : "expire bientot"} ` +
           `(${item.storeName || "--"} / ${item.storageZoneName || "--"}).`;
 
-        realtime.addNotification({
+        const inserted = realtime.addNotification({
           title,
           message,
           payload: item,
         });
-        toast.showToast({
-          title,
-          message,
-          variant: item.status === "EXPIRE" ? "danger" : "warning",
-        });
+
+        if (inserted) {
+          toast.showToast({
+            title,
+            message,
+            variant: item.status === "EXPIRE" ? "danger" : "warning",
+          });
+        }
       });
 
       lastSeenKeys = nextKeys;
