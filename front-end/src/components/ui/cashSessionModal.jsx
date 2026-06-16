@@ -12,7 +12,7 @@ const CashSessionModal = ({
   isOpen,
   session = null,
   currencySettings,
-  stockItems = [],
+  stockItems = null,
   stockLoading = false,
   submitting = false,
   onClose,
@@ -21,6 +21,7 @@ const CashSessionModal = ({
   const [amount, setAmount] = useState("");
   const [note, setNote] = useState("");
   const [stockCounts, setStockCounts] = useState({});
+  const safeStockItems = Array.isArray(stockItems) ? stockItems : null;
 
   useEffect(() => {
     if (!isOpen) return;
@@ -31,7 +32,7 @@ const CashSessionModal = ({
       setNote("");
       setStockCounts(
         Object.fromEntries(
-          (stockItems || []).map((item) => [
+          (safeStockItems || []).map((item) => [
             item.productId || item.id,
             String(Number(item.theoreticalQuantity ?? item.quantity ?? 0)),
           ]),
@@ -43,7 +44,7 @@ const CashSessionModal = ({
     setAmount("");
     setNote("");
     setStockCounts({});
-  }, [isOpen, mode, session, stockItems]);
+  }, [isOpen, mode, session?.expectedCash, safeStockItems]);
 
   const numericAmount = useMemo(() => {
     const parsed = Number(String(amount || "").replace(",", "."));
@@ -53,7 +54,7 @@ const CashSessionModal = ({
   const secondaryEnabled = hasSecondaryCurrency(currencySettings);
   const exchangeRateLabel = buildSecondaryRateLabel(currencySettings);
   const isCloseMode = mode === "close";
-  const normalizedStockItems = (stockItems || []).map((item) => {
+  const normalizedStockItems = (safeStockItems || []).map((item) => {
     const productId = item.productId || item.id;
     const theoreticalQuantity = Number(
       item.theoreticalQuantity ?? item.quantity ?? 0,

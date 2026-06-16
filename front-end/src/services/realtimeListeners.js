@@ -27,13 +27,17 @@ export const initRealtimeListeners = () => {
   });
 
   socket.on("notification:new", (payload) => {
-    realtime.addNotification(payload);
-    notify(payload?.title || "Notification", payload?.message || "");
+    const inserted = realtime.addNotification(payload);
+    if (inserted) {
+      notify(payload?.title || "Notification", payload?.message || "");
+    }
   });
 
   socket.on("message:new", (payload) => {
-    realtime.addMessage(payload);
-    notify(payload?.title || "Message", payload?.message || "");
+    const inserted = realtime.addMessage(payload);
+    if (inserted) {
+      notify(payload?.title || "Message", payload?.message || "");
+    }
   });
 
   socket.on("order:created", (payload) => {
