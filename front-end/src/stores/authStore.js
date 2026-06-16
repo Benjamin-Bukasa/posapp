@@ -6,6 +6,7 @@ const TOKEN_KEY = "token";
 const REFRESH_KEY = "refreshToken";
 const USER_KEY = "user";
 const PENDING_KEY = "pendingIdentifier";
+const SESSION_SYNC_MIN_INTERVAL_MS = 30000;
 
 const parseJson = async (response) => {
   try {
@@ -54,6 +55,7 @@ const useAuthStore = create((set, get) => ({
   error: null,
   requirePasswordChange: false,
   pendingIdentifier: null,
+  lastSessionSyncAt: 0,
 
   init: () => {
     const { accessToken, refreshToken, user } = getStoredAuth();
@@ -64,10 +66,7 @@ const useAuthStore = create((set, get) => ({
       isAuthenticated: Boolean(accessToken),
     });
 
-    if (
-      refreshToken &&
-      (!user || !user.tenantName || !Array.isArray(user.permissions))
-    ) {
+    if (refreshToken) {
       get()
         .refreshSession()
         .catch(() => {});
@@ -208,9 +207,28 @@ const useAuthStore = create((set, get) => ({
       accessToken: data.accessToken,
       refreshToken: data.refreshToken,
       isAuthenticated: true,
+      lastSessionSyncAt: Date.now(),
     });
 
     return data;
+  },
+
+  syncSessionSilently: async ({ force = false } = {}) => {
+    const { isAuthenticated, refreshToken, loading, lastSessionSyncAt } = get();
+    if (!isAuthenticated || !refreshToken || loading) {
+      return null;
+    }
+
+    const now = Date.now();
+    if (!force && now - Number(lastSessionSyncAt || 0) < SESSION_SYNC_MIN_INTERVAL_MS) {
+      return null;
+    }
+
+    try {
+      return await get().refreshSession();
+    } catch (_error) {
+      return null;
+    }
   },
 
   logout: async () => {

@@ -45,6 +45,7 @@ import AdminResourcePage from "../pages/AdminResourcePage";
 import AdminCreatePage from "../pages/AdminCreatePage";
 import AdminDetailPage from "../pages/AdminDetailPage";
 import AdminInventoryCountPage from "../pages/AdminInventoryCountPage";
+import SalesReportPage from "../pages/SalesReportPage";
 import SettingsPage from "../pages/SettingsPage";
 import ReceiptSettingsPage from "../pages/ReceiptSettingsPage";
 import Login from "../pages/Login";
@@ -515,6 +516,17 @@ export const sidebarSections = [
         summary: "Analyse des sorties et tendances de consommation.",
         sectionLabel: "Exploitation",
       }),
+      leaf({
+        id: "rapport-vente",
+        name: "Rapport de vente",
+        path: "/rapport-vente",
+        link: "rapport-vente",
+        icon: FileBadge,
+        summary:
+          "Lecture detaillee des ventes par article, client, date, caissier, boutique, annulation et remboursement.",
+        sectionLabel: "Exploitation",
+        requiredPermissions: ["sales.read"],
+      }),
       {
         id: "inventaire",
         name: "Inventaire",
@@ -880,6 +892,9 @@ const routePermissionConfig = {
   },
   "/etat-stock": {
     read: ["stock_state.read"],
+  },
+  "/rapport-vente": {
+    read: ["sales.read"],
   },
   "/inventaire/inventaire": {
     read: ["inventory.read"],
@@ -5469,7 +5484,8 @@ const workspaceRoutes = allRouteMeta
     (item) =>
       item.path !== dashboardMeta.path &&
       item.path !== settingsMeta.path &&
-      item.path !== "/configurations/parametres/ticket-vente",
+      item.path !== "/configurations/parametres/ticket-vente" &&
+      item.path !== "/rapport-vente",
   )
   .map((item) => ({
     path: item.path.slice(1),
@@ -5523,6 +5539,10 @@ const router = createBrowserRouter([
           {
             path: "configurations/articles/produits-vente",
             element: <Navigate to="/configurations/articles/articles" replace />,
+          },
+          {
+            path: "rapport-vente",
+            element: <SalesReportPage />,
           },
           ...redirectRoutes,
           ...workspaceRoutes,
