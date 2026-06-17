@@ -7,6 +7,7 @@ import { formatAmount, formatDate, formatName, shortId } from "../utils/formatte
 import useToastStore from "../stores/toastStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveSaleVariant = (status) => {
@@ -61,6 +62,10 @@ function ReportsSalesTable() {
         const list = Array.isArray(data?.data) ? data.data : data;
         setOrders(Array.isArray(list) ? list : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) setOrders([]);
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les ventes.",

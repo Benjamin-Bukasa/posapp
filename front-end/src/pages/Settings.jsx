@@ -39,6 +39,7 @@ import {
   printBytesViaLocalService,
   printReceiptViaLocalService,
 } from "../utils/localPrintService";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 import printSaleReceipt from "../utils/printSaleReceipt";
 
@@ -151,6 +152,8 @@ function Settings() {
     } catch (error) {
       if (error.status === 404) {
         setCashSession(null);
+      } else if (shouldSkipPermissionToast(error)) {
+        setCashSession(null);
       } else if (!silent) {
         showToast({
           title: "Caisse",
@@ -209,7 +212,10 @@ function Settings() {
       setStockAudit(audit || null);
       setGiftHistory(Array.isArray(gifts) ? gifts : []);
     } catch (error) {
-      if (!silent) {
+      if (shouldSkipPermissionToast(error)) {
+        setStockAudit(null);
+        setGiftHistory([]);
+      } else if (!silent) {
         showToast({
           title: "Session de caisse",
           message:

@@ -32,6 +32,7 @@ import {
 } from "../utils/formatters";
 import { percentChange } from "../utils/metrics";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 import { hasAnyPermission } from "../utils/permissions";
 
@@ -121,6 +122,15 @@ function Sales() {
   useEffect(() => {
     let isMounted = true;
 
+    if (!canReadSales) {
+      setOrders([]);
+      setCashSessions([]);
+      setLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
+
     const load = async () => {
       setLoading(true);
       try {
@@ -139,6 +149,13 @@ function Sales() {
         setOrders(Array.isArray(ordersList) ? ordersList : []);
         setCashSessions(Array.isArray(sessionList) ? sessionList : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) {
+            setOrders([]);
+            setCashSessions([]);
+          }
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les ventes.",
@@ -153,7 +170,7 @@ function Sales() {
     return () => {
       isMounted = false;
     };
-  }, [refreshTick, showToast]);
+  }, [canReadSales, refreshTick, showToast]);
 
   const salesRows = useMemo(
     () =>

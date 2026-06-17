@@ -6,6 +6,7 @@ import { formatAmount, formatDate, formatName, shortId } from "../utils/formatte
 import { isRestrictedSeller } from "../utils/permissions";
 import useToastStore from "../stores/toastStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 import useAuthStore from "../stores/authStore";
 
@@ -76,6 +77,14 @@ function ReportsSupplyTable() {
           Array.isArray(orderData?.data) ? orderData.data : orderData
         );
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) {
+            setEntries([]);
+            setRequests([]);
+            setPurchaseOrders([]);
+          }
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger le rapport.",

@@ -14,6 +14,7 @@ import {
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useToastStore from "../stores/toastStore";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 
 const pickRows = (payload) => {
@@ -371,6 +372,10 @@ const AdminCreatePage = () => {
           return;
         }
 
+        if (shouldSkipPermissionToast(requestError)) {
+          setError("");
+          return;
+        }
         setError(requestError.message || "Impossible de charger les options.");
         showToast({
           title: "Erreur",
@@ -441,6 +446,10 @@ const AdminCreatePage = () => {
           return;
         }
 
+        if (shouldSkipPermissionToast(requestError)) {
+          setError("");
+          return;
+        }
         setError(requestError.message || "Impossible de charger cette fiche.");
         showToast({
           title: "Erreur",
@@ -518,6 +527,10 @@ const AdminCreatePage = () => {
             return;
           }
 
+          if (shouldSkipPermissionToast(requestError)) {
+            setError("");
+            return;
+          }
           setError(requestError.message || "Impossible de precharger ce formulaire.");
           showToast({
             title: "Erreur",
@@ -627,6 +640,10 @@ const AdminCreatePage = () => {
             return;
           }
 
+          if (shouldSkipPermissionToast(requestError)) {
+            setError("");
+            return;
+          }
           setError(requestError.message || "Impossible de precharger ce formulaire.");
           showToast({
             title: "Erreur",

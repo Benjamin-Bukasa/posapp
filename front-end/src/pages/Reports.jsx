@@ -16,6 +16,7 @@ import { apiGet, buildQuery } from "../services/apiClient";
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { formatDisplayAmount, toDisplayAmount } from "../utils/formatters";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 
 const DAY_LABELS = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
 
@@ -367,6 +368,13 @@ function Reports() {
         setOrders(Array.isArray(ordersList) ? ordersList : []);
         setStockEntries(Array.isArray(stockList) ? stockList : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) {
+            setOrders([]);
+            setStockEntries([]);
+          }
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les rapports.",

@@ -19,6 +19,7 @@ import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useToastStore from "../stores/toastStore";
 import { formatMoney } from "../utils/currencyDisplay";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 
 const formatDate = (value) => {
@@ -391,6 +392,11 @@ const AdminDetailPage = () => {
         return;
       }
 
+      if (shouldSkipPermissionToast(requestError)) {
+        setError("");
+        setRecord(null);
+        return;
+      }
       setError(requestError.message || "Impossible de charger le detail.");
       setRecord(null);
       showToast({

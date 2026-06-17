@@ -16,6 +16,7 @@ import { ApiError, requestBlob, requestJson } from "../api/client";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
 import { formatMoney } from "../utils/currencyDisplay";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 
 const VIEW_OPTIONS = [
@@ -183,6 +184,11 @@ function SalesReportPage() {
           return;
         }
 
+        if (shouldSkipPermissionToast(requestError)) {
+          setReport((current) => ({ ...current, rows: [] }));
+          setError("");
+          return;
+        }
         setReport((current) => ({ ...current, rows: [] }));
         setError(requestError.message || "Impossible de charger le rapport de vente.");
         showToast({

@@ -25,6 +25,7 @@ import {
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import useToastStore from "../stores/toastStore";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
@@ -495,6 +496,12 @@ const AdminResourcePage = () => {
           return;
         }
 
+        if (shouldSkipPermissionToast(requestError)) {
+          setRows([]);
+          setMeta(null);
+          setError("");
+          return;
+        }
         setRows([]);
         setMeta(null);
         setError(requestError.message || "Impossible de charger les donnees.");

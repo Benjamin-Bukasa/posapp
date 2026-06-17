@@ -67,8 +67,11 @@ useAuthStore.subscribe((state, previousState) => {
   }
 });
 initRealtimeListeners();
-registerSW({
+const updateFrontEndSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    updateFrontEndSW(true);
+  },
 });
 
 createRoot(document.getElementById('root')).render(

@@ -22,6 +22,7 @@ import {
 import useAuthStore from "../stores/authStore";
 import useCurrencyStore from "../stores/currencyStore";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { hasAnyPermission } from "../utils/permissions";
 
 const sumOrderItems = (order) =>
   (order?.items || []).reduce(
@@ -75,6 +76,9 @@ function Dashboard() {
   const [supplyRequests, setSupplyRequests] = useState([]);
   const [inventoryRows, setInventoryRows] = useState([]);
   const [loading, setLoading] = useState(false);
+  const canReadOrders = hasAnyPermission(user, ["sales.read"]);
+  const canReadStockEntries = hasAnyPermission(user, ["movements.read"]);
+  const canReadInventory = hasAnyPermission(user, ["stock_state.read", "inventory.read"]);
 
   useEffect(() => {
     let isMounted = true;
@@ -83,11 +87,28 @@ function Dashboard() {
       try {
         const query = buildQuery(storeId ? { storeId } : {});
         const suffix = query ? `?${query}` : "";
+        const loadOrEmpty = async (requestFactory, fallbackValue = []) => {
+          try {
+            return await requestFactory();
+          } catch (error) {
+            if (error?.status === 403) {
+              return fallbackValue;
+            }
+            throw error;
+          }
+        };
+
         const [ordersData, stockData, requestsData, inventoryData] = await Promise.all([
-          apiGet(`/api/orders${suffix}`),
-          apiGet(`/api/stock-entries${suffix}`),
-          apiGet(`/api/supply-requests${suffix}`),
-          apiGet(`/api/inventory${suffix}`),
+          canReadOrders
+            ? loadOrEmpty(() => apiGet(`/api/orders${suffix}`))
+            : Promise.resolve([]),
+          canReadStockEntries
+            ? loadOrEmpty(() => apiGet(`/api/stock-entries${suffix}`))
+            : Promise.resolve([]),
+          loadOrEmpty(() => apiGet(`/api/supply-requests${suffix}`)),
+          canReadInventory
+            ? loadOrEmpty(() => apiGet(`/api/inventory${suffix}`))
+            : Promise.resolve([]),
         ]);
         if (!isMounted) return;
         const ordersList = Array.isArray(ordersData?.data)
@@ -120,7 +141,14 @@ function Dashboard() {
     return () => {
       isMounted = false;
     };
-  }, [refreshTick, showToast, storeId]);
+  }, [
+    canReadInventory,
+    canReadOrders,
+    canReadStockEntries,
+    refreshTick,
+    showToast,
+    storeId,
+  ]);
 
   const stats = useMemo(() => {
     const now = new Date();
@@ -184,14 +212,13 @@ function Dashboard() {
       0
     );
 
-    const stockedProducts = inventoryRows.filter(
-      (row) => row?.product?.kind !== "ARTICLE",
+    const stockedArticles = inventoryRows.filter(
+      (row) => row?.product?.kind === "ARTICLE",
     );
-    const totalQuantity = stockedProducts.reduce(
-      (sum, row) => sum + Number(row.quantity || 0),
-      0
-    );
-    const totalValue = stockedProducts.reduce(
+    const stockedArticleCount = new Set(
+      stockedArticles.map((row) => row?.productId || row?.product?.id).filter(Boolean),
+    ).size;
+    const totalValue = stockedArticles.reduce(
       (sum, row) =>
         sum +
         Number(row.quantity || 0) *
@@ -203,7 +230,7 @@ function Dashboard() {
     );
 
     return {
-      totalQuantity,
+      stockedArticleCount,
       totalValue,
       monthSold,
       prevMonthSold,
@@ -219,8 +246,8 @@ function Dashboard() {
   const productCards = useMemo(
     () => [
       {
-        title: "Produits en stock",
-        value: stats.totalQuantity.toString(),
+        title: "Articles en stock",
+        value: stats.stockedArticleCount.toString(),
         subtitle: storeId ? "Stock global boutique" : "Stock global reseau",
         icon: Boxes,
         change: 0,

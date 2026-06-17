@@ -11,6 +11,7 @@ import {
 } from "../routes/router";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 
 const pickRows = (payload) => {
@@ -157,6 +158,12 @@ const AdminInventoryCountPage = () => {
         return;
       }
 
+      if (shouldSkipPermissionToast(error)) {
+        setStores([]);
+        setZones([]);
+        return;
+      }
+
       showToast({
         title: "Erreur",
         message: error.message || "Impossible de charger les zones de stockage.",
@@ -213,6 +220,12 @@ const AdminInventoryCountPage = () => {
 
       if (error instanceof ApiError && error.status === 401) {
         await handleUnauthorized();
+        return;
+      }
+
+      if (shouldSkipPermissionToast(error)) {
+        setSession(null);
+        setDraftItems({});
         return;
       }
 

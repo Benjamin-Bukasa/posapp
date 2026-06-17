@@ -31,6 +31,7 @@ import {
   isWithinRange,
   percentChange,
 } from "../utils/metrics";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 import { hasAnyPermission } from "../utils/permissions";
 
@@ -92,6 +93,10 @@ function Payments() {
       const list = Array.isArray(data?.data) ? data.data : data;
       setPayments(Array.isArray(list) ? list : []);
     } catch (error) {
+      if (shouldSkipPermissionToast(error)) {
+        if (isMounted) setPayments([]);
+        return;
+      }
       showToast({
         title: "Erreur",
         message: error.message || "Impossible de charger les paiements.",
@@ -104,11 +109,18 @@ function Payments() {
 
   useEffect(() => {
     let isMounted = true;
+    if (!canReadPayments) {
+      setPayments([]);
+      setLoading(false);
+      return () => {
+        isMounted = false;
+      };
+    }
     loadPayments(isMounted);
     return () => {
       isMounted = false;
     };
-  }, [showToast]);
+  }, [canReadPayments, showToast]);
 
   const rows = useMemo(
     () =>

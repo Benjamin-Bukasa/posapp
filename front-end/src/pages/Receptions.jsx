@@ -6,6 +6,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import { formatDate, formatName, shortId } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const resolveStatusVariant = (status) => {
@@ -59,6 +60,10 @@ function Receptions() {
         const list = Array.isArray(data?.data) ? data.data : data;
         setEntries(Array.isArray(list) ? list : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) setEntries([]);
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les receptions.",

@@ -19,6 +19,7 @@ import useToastStore from "../stores/toastStore";
 import { apiGet, apiPost } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { getMonthRange, percentChange } from "../utils/metrics";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
@@ -79,6 +80,10 @@ function Customers() {
         const list = Array.isArray(data?.data) ? data.data : data;
         setCustomers(Array.isArray(list) ? list : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) setCustomers([]);
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les clients.",
