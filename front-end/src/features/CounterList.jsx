@@ -6,6 +6,7 @@ import Input from "../components/ui/input";
 import DropdownFilter from "../components/ui/dropdownFilter";
 import DropdownSort from "../components/ui/dropdownSort";
 import PaymentModal from "../components/ui/paymentModal";
+import ProductThumbnail from "../components/ui/productThumbnail";
 import { resolveCategoryAvatar } from "./ProductsList";
 import { useProductsData } from "../hooks/useProductsData";
 import { apiGet, apiPost, buildUrl } from "../services/apiClient";
@@ -688,11 +689,11 @@ const CounterList = () => {
                       className="flex h-full flex-col gap-3 rounded-xl border border-border bg-surface p-4"
                     >
                       <div className="flex items-start gap-3">
-                        <img
+                        <ProductThumbnail
                           src={resolveProductImage(product)}
                           alt={product.product}
                           className="h-12 w-12 rounded-lg object-cover"
-                          loading="lazy"
+                          iconSize={18}
                         />
                         <div className="flex-1">
                           <div>
@@ -868,11 +869,11 @@ const CounterList = () => {
                     className="flex flex-col gap-3 rounded-lg border border-border bg-surface/80 px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
                   >
                     <div className="flex flex-1 items-start gap-3">
-                      <img
+                      <ProductThumbnail
                         src={resolveProductImage(item)}
                         alt={item.product}
                         className="h-12 w-12 rounded-lg object-cover"
-                        loading="lazy"
+                        iconSize={18}
                       />
                       <div className="flex-1">
                         <p className="text-sm font-semibold text-text-primary">{item.product}</p>

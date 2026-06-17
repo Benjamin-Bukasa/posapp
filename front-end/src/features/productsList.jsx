@@ -5,6 +5,7 @@ import DataTable from "../components/ui/datatable";
 import DropdownAction from "../components/ui/dropdownAction";
 import Modal from "../components/ui/modal";
 import Badge from "../components/ui/badge";
+import ProductThumbnail from "../components/ui/productThumbnail";
 import useToastStore from "../stores/toastStore";
 import { apiDelete } from "../services/apiClient";
 import { useProductsData } from "../hooks/useProductsData";
@@ -50,13 +51,10 @@ const CATEGORY_AVATAR_MAP = {
   ],
 };
 
-const DEFAULT_AVATAR =
-  "https://icons.veryicon.com/png/o/application/applet-1/product-17.png";
-
 export const resolveCategoryAvatar = (category, seed = 0) => {
   const key = category?.toLowerCase?.().trim?.() ?? "";
   const list = CATEGORY_AVATAR_MAP[key];
-  if (!list || list.length === 0) return DEFAULT_AVATAR;
+  if (!list || list.length === 0) return "";
   const index = Math.abs(Number(seed) || 0) % list.length;
   return list[index];
 };
@@ -142,11 +140,11 @@ export const productsColumns = [
     render: (row) => {
       const avatarSrc = resolveCategoryAvatar(row.category, row.id);
       return (
-        <img
+        <ProductThumbnail
           src={avatarSrc}
           alt={row.product}
-          className="w-8 h-8 rounded-full"
-          loading="lazy"
+          className="h-8 w-8 rounded-full"
+          iconSize={14}
         />
       );
     },
