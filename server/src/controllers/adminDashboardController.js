@@ -192,6 +192,7 @@ const getAdminDashboard = async (req, res) => {
       where: {
         tenantId: req.user.tenantId,
         isActive: true,
+        kind: "ARTICLE",
       },
     }),
   ]);

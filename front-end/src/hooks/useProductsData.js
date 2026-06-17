@@ -19,6 +19,11 @@ export const useProductsData = ({ storeId, storageZoneId } = {}) => {
       );
       setProducts(Array.isArray(response) ? response : []);
     } catch (error) {
+      if (error?.status === 403) {
+        setProducts([]);
+        return;
+      }
+
       showToast({
         title: "Erreur",
         message: error.message || "Impossible de charger les produits.",

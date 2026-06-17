@@ -8,6 +8,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, buildQuery } from "../services/apiClient";
 import { formatDate, formatName, shortId } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
@@ -62,6 +63,10 @@ function Requisitions() {
         const list = Array.isArray(data?.data) ? data.data : data;
         setRequests(Array.isArray(list) ? list : []);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) setRequests([]);
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger les requisitions.",

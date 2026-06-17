@@ -54,8 +54,11 @@ useAuthStore.subscribe((state, previousState) => {
   }
 });
 
-registerSW({
+const updateAdminSW = registerSW({
   immediate: true,
+  onNeedRefresh() {
+    updateAdminSW(true);
+  },
 });
 
 createRoot(document.getElementById("root")).render(

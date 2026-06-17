@@ -3,6 +3,7 @@ import { Eye, Printer, ReceiptText, Save, X } from "lucide-react";
 import { API_URL, requestJson } from "../api/client";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import { hasAnyPermission } from "../utils/permissions";
 
 const cardClassName = "rounded-xl border border-border bg-surface p-5 shadow-sm";
@@ -487,6 +488,9 @@ const ReceiptSettingsPage = () => {
         }
       } catch (error) {
         if (active) {
+          if (shouldSkipPermissionToast(error)) {
+            return;
+          }
           showToast({
             title: "Erreur",
             message:

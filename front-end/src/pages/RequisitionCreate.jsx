@@ -8,6 +8,7 @@ import useToastStore from "../stores/toastStore";
 import useAuthStore from "../stores/authStore";
 import { apiGet, apiPatch, apiPost, buildQuery } from "../services/apiClient";
 import { useProductsData } from "../hooks/useProductsData";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 
 const buildReference = (sequence) => `REQ${String(sequence).padStart(3, "0")}`;
 
@@ -61,6 +62,9 @@ function RequisitionCreate() {
         if (!isMounted) return;
         setReference(buildReference(nextSequence));
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de generer la reference.",
@@ -116,11 +120,13 @@ function RequisitionCreate() {
             : [],
         );
       } catch (error) {
-        showToast({
-          title: "Erreur",
-          message: error.message || "Impossible de charger la requisition.",
-          variant: "danger",
-        });
+        if (!shouldSkipPermissionToast(error)) {
+          showToast({
+            title: "Erreur",
+            message: error.message || "Impossible de charger la requisition.",
+            variant: "danger",
+          });
+        }
         navigate("/operations/requisitions", { replace: true });
       } finally {
         if (isMounted) setLoadingRequest(false);
@@ -148,6 +154,10 @@ function RequisitionCreate() {
         if (!isMounted) return;
         setGlobalInventory(totals);
       } catch (error) {
+        if (shouldSkipPermissionToast(error)) {
+          if (isMounted) setGlobalInventory({});
+          return;
+        }
         showToast({
           title: "Erreur",
           message: error.message || "Impossible de charger le stock global.",

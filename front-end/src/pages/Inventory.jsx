@@ -7,6 +7,7 @@ import useAuthStore from "../stores/authStore";
 import { apiGet, apiPatch, apiPost } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { useRealtimeRefetch } from "../hooks/useRealtimeRefetch";
+import { shouldSkipPermissionToast } from "../utils/permissionErrors";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
 const STATUS_LABELS = {
@@ -94,6 +95,11 @@ const Inventory = () => {
       hydrateDrafts(data);
     } catch (error) {
       if (error.status === 404) {
+        setSession(null);
+        setDraftItems({});
+        return;
+      }
+      if (shouldSkipPermissionToast(error)) {
         setSession(null);
         setDraftItems({});
         return;
