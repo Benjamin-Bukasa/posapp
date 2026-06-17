@@ -700,7 +700,7 @@ function Sales() {
           </div>
 
           <div className="overflow-hidden rounded-xl border border-border bg-background">
-            <div className="grid grid-cols-[minmax(0,1.8fr)_100px_120px_120px] gap-3 border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-secondary">
+            <div className="hidden grid-cols-[minmax(0,1.8fr)_100px_120px_120px] gap-3 border-b border-border bg-surface/60 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-text-secondary sm:grid">
               <span>Produit</span>
               <span className="text-right">Qte</span>
               <span className="text-right">PU</span>
@@ -711,21 +711,32 @@ function Sales() {
                 detailSale.itemsList.map((item) => (
                   <div
                     key={item.id}
-                    className="grid grid-cols-[minmax(0,1.8fr)_100px_120px_120px] gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0"
+                    className="grid grid-cols-2 gap-3 border-b border-border/70 px-4 py-3 text-sm last:border-b-0 sm:grid-cols-[minmax(0,1.8fr)_100px_120px_120px]"
                   >
-                    <div className="min-w-0">
-                      <p className="truncate font-medium text-text-primary">
+                    <div className="col-span-2 min-w-0 sm:col-span-1">
+                      <p className="font-medium text-text-primary sm:truncate">
                         {item.name}
                       </p>
                       {item.isGift ? (
                         <p className="text-xs text-success">Offert</p>
                       ) : null}
                     </div>
-                    <span className="text-right text-text-primary">{item.quantity}</span>
-                    <span className="text-right text-text-primary">
+                    <span className="text-text-primary sm:text-right">
+                      <span className="mr-1 text-xs uppercase tracking-wide text-text-secondary sm:hidden">
+                        Qte:
+                      </span>
+                      {item.quantity}
+                    </span>
+                    <span className="text-text-primary sm:text-right">
+                      <span className="mr-1 text-xs uppercase tracking-wide text-text-secondary sm:hidden">
+                        PU:
+                      </span>
                       {formatAmount(item.unitPrice, detailSale?.raw?.currencyCode)}
                     </span>
-                    <span className="text-right text-text-primary">
+                    <span className="text-text-primary sm:text-right">
+                      <span className="mr-1 text-xs uppercase tracking-wide text-text-secondary sm:hidden">
+                        Total:
+                      </span>
                       {formatAmount(item.total, detailSale?.raw?.currencyCode)}
                     </span>
                   </div>
