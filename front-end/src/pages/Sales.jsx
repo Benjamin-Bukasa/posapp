@@ -116,7 +116,9 @@ function Sales() {
 
   const isDetailOpen = location.pathname.endsWith("/details");
   const canEditSales = hasAnyPermission(user, ["sales.update"]);
+  const canEditStoreSales = hasAnyPermission(user, ["sales.update_store"]);
   const canCancelSales = hasAnyPermission(user, ["sales.cancel"]);
+  const canCancelStoreSales = hasAnyPermission(user, ["sales.cancel_store"]);
   const canReadSales = hasAnyPermission(user, ["sales.read"]);
 
   useEffect(() => {
@@ -465,6 +467,21 @@ function Sales() {
     setOrders(Array.isArray(list) ? list : []);
   };
 
+  const isOwnSale = (row) =>
+    String(row?.raw?.createdById || "") === String(user?.id || "");
+
+  const canEditRow = (row) =>
+    canEditSales &&
+    (isOwnSale(row) ||
+      (canEditStoreSales &&
+        String(row?.raw?.storeId || "") === String(user?.storeId || "")));
+
+  const canCancelRow = (row) =>
+    canCancelSales &&
+    (isOwnSale(row) ||
+      (canCancelStoreSales &&
+        String(row?.raw?.storeId || "") === String(user?.storeId || "")));
+
   const handleEditSale = async (payload) => {
     if (!selectedSale?.raw?.id) return;
     setSubmittingEdit(true);
@@ -562,7 +579,7 @@ function Sales() {
                 icon: Eye,
                 onClick: () => setDetailSale(row),
               },
-              ...(canEditSales
+              ...(canEditRow(row)
                 ? [
                     {
                       id: "edit",
@@ -573,7 +590,7 @@ function Sales() {
                     },
                   ]
                 : []),
-              ...(canCancelSales
+              ...(canCancelRow(row)
                 ? [
                     {
                       id: "delete",

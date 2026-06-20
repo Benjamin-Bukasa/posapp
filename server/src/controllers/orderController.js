@@ -47,13 +47,13 @@ const {
   synchronizeInventoryAggregate,
 } = require("../utils/inventoryLotStore");
 const { normalizeError } = require("../utils/httpErrors");
-const { isRestrictedSeller } = require("../utils/permissionAccess");
+const { hasPermission } = require("../utils/permissionAccess");
 
 const LONG_TRANSACTION_OPTIONS = {
   maxWait: 15000,
   timeout: 45000,
 };
-const isSeller = isRestrictedSeller;
+const isSeller = (user) => user?.role === "SELLER";
 
 const PAYMENT_METHOD_MAP = {
   cash: "CASH",
@@ -72,6 +72,13 @@ const GIFT_REASON_TYPES = new Set([
   "THRESHOLD_PURCHASE",
   "MANUAL",
 ]);
+
+const escapeSqlValue = (value) => {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
+  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
+  return `'${String(value).replace(/'/g, "''")}'`;
+};
 
 const toNumber = (value) => {
   const amount = Number(value);
@@ -497,12 +504,12 @@ const hasLegacyOrderWithoutLots = async ({
   const uniqueProductIds = [...new Set((productIds || []).filter(Boolean))];
   if (!uniqueProductIds.length) return true;
 
-  const values = uniqueProductIds.map((id) => `(${JSON.stringify(id)})`).join(",");
+  const values = uniqueProductIds.map((id) => `(${escapeSqlValue(id)})`).join(", ");
   const rows = await prisma.$queryRawUnsafe(`
     SELECT COUNT(*)::int AS "count"
     FROM "inventoryLots"
-    WHERE "tenantId" = ${JSON.stringify(tenantId)}
-      AND "storageZoneId" = ${JSON.stringify(storageZoneId)}
+    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
+      AND "storageZoneId" = ${escapeSqlValue(storageZoneId)}
       AND "productId" IN (SELECT "value" FROM (VALUES ${values}) AS ids("value"))
   `);
 
@@ -573,10 +580,37 @@ const getOrderWithRelations = (tenantId, id) =>
     },
   });
 
-const assertSellerOwnsOrder = (user, order, message = "Vous ne pouvez pas acceder a cette vente.") => {
+const canAccessStoreSales = (user) =>
+  isSeller(user) && hasPermission(user, "sales.read_store") && Boolean(user?.storeId);
+
+const canManageStoreSales = (user, permissionCode) =>
+  isSeller(user) && hasPermission(user, permissionCode) && Boolean(user?.storeId);
+
+const buildSellerOrderScope = (user) => {
+  if (!isSeller(user)) return {};
+  if (canAccessStoreSales(user)) {
+    return { storeId: user.storeId };
+  }
+  return { createdById: user.id };
+};
+
+const assertSellerOwnsOrder = (
+  user,
+  order,
+  message = "Vous ne pouvez pas acceder a cette vente.",
+  storePermissionCode = null,
+) => {
   if (!order) return;
   if (!isSeller(user)) return;
   if (String(order.createdById || "") === String(user.id || "")) {
+    return;
+  }
+
+  if (
+    storePermissionCode &&
+    canManageStoreSales(user, storePermissionCode) &&
+    String(order.storeId || "") === String(user.storeId || "")
+  ) {
     return;
   }
 
@@ -615,13 +649,13 @@ const listOrders = async (req, res) => {
 
   const where = {
     tenantId: req.user.tenantId,
-    ...(isSeller(req.user) ? { createdById: req.user.id } : {}),
     ...(status ? { status } : {}),
     ...(storeId ? { storeId } : {}),
     ...(customerId ? { customerId } : {}),
     ...deliveryFilter,
     ...createdAtFilter,
     ...searchFilter,
+    ...buildSellerOrderScope(req.user),
   };
 
   const orderBy =
@@ -700,7 +734,7 @@ const getOrder = async (req, res) => {
     where: {
       id,
       tenantId: req.user.tenantId,
-      ...(isSeller(req.user) ? { createdById: req.user.id } : {}),
+      ...buildSellerOrderScope(req.user),
     },
     include: {
       items: { include: { product: true } },
@@ -725,7 +759,7 @@ const getOrderHistory = async (req, res) => {
     where: {
       id,
       tenantId: req.user.tenantId,
-      ...(isSeller(req.user) ? { createdById: req.user.id } : {}),
+      ...buildSellerOrderScope(req.user),
     },
     select: { id: true, createdById: true },
   });
@@ -762,6 +796,7 @@ const cancelOrderSale = async ({
     { id: actorUserId, role: actorRole, permissions: actorPermissions },
     existingOrder,
     "Vous ne pouvez pas annuler la vente d'un autre vendeur.",
+    "sales.cancel_store",
   );
   if (existingOrder.status === "CANCELED") {
     throw Object.assign(new Error("Cette vente est deja annulee."), { status: 409 });
@@ -972,6 +1007,7 @@ const updateOrder = async (req, res) => {
       req.user,
       existingOrder,
       "Vous ne pouvez pas modifier la vente d'un autre vendeur.",
+      "sales.update_store",
     );
     const hydratedExistingOrder = await hydrateOrdersWithCurrencyCodes(existingOrder);
     if (existingOrder.status === "CANCELED") {

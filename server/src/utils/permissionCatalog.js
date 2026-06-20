@@ -149,9 +149,21 @@ const PERMISSION_MODULES = [
     description: "Ventes en caisse, consultation, modification et annulation.",
     actions: [
       { code: "sales.read", label: "Voir" },
+      {
+        code: "sales.read_store",
+        label: "Voir les ventes des autres vendeurs de sa boutique",
+      },
       { code: "sales.create", label: "Creer" },
       { code: "sales.update", label: "Modifier" },
+      {
+        code: "sales.update_store",
+        label: "Modifier les ventes des autres vendeurs de sa boutique",
+      },
       { code: "sales.cancel", label: "Annuler / supprimer" },
+      {
+        code: "sales.cancel_store",
+        label: "Annuler les ventes des autres vendeurs de sa boutique",
+      },
     ],
   },
   {
