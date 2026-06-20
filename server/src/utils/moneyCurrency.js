@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const {
   DEFAULT_PRIMARY_CURRENCY,
   normalizeCurrencyCode,
@@ -48,6 +49,9 @@ const resolveTableName = (tableKey) => {
   return tableName;
 };
 
+const resolveTableIdentifier = (tableKey) =>
+  Prisma.raw(`"${resolveTableName(tableKey)}"`);
+
 const getCurrencyCodeMap = async (prisma, tableKey, ids = []) => {
   const uniqueIds = [...new Set((ids || []).filter(Boolean))];
   if (!uniqueIds.length) {
@@ -56,11 +60,9 @@ const getCurrencyCodeMap = async (prisma, tableKey, ids = []) => {
 
   await ensureMoneyCurrencyColumns(prisma);
 
-  const tableName = resolveTableName(tableKey);
-  const placeholders = uniqueIds.map((_, index) => `$${index + 1}`).join(", ");
-  const rows = await prisma.$queryRawUnsafe(
-    `SELECT "id", "currencyCode" FROM "${tableName}" WHERE "id" IN (${placeholders})`,
-    ...uniqueIds,
+  const tableIdentifier = resolveTableIdentifier(tableKey);
+  const rows = await prisma.$queryRaw(
+    Prisma.sql`SELECT "id", "currencyCode" FROM ${tableIdentifier} WHERE "id" IN (${Prisma.join(uniqueIds)})`,
   );
 
   return new Map(
@@ -76,11 +78,9 @@ const setCurrencyCode = async (prisma, tableKey, id, currencyCode) => {
 
   await ensureMoneyCurrencyColumns(prisma);
 
-  const tableName = resolveTableName(tableKey);
-  await prisma.$executeRawUnsafe(
-    `UPDATE "${tableName}" SET "currencyCode" = $1 WHERE "id" = $2`,
-    normalizeCurrencyCode(currencyCode, DEFAULT_PRIMARY_CURRENCY),
-    id,
+  const tableIdentifier = resolveTableIdentifier(tableKey);
+  await prisma.$executeRaw(
+    Prisma.sql`UPDATE ${tableIdentifier} SET "currencyCode" = ${normalizeCurrencyCode(currencyCode, DEFAULT_PRIMARY_CURRENCY)} WHERE "id" = ${id}`,
   );
 };
 
@@ -90,12 +90,9 @@ const setCurrencyCodes = async (prisma, tableKey, ids = [], currencyCode) => {
 
   await ensureMoneyCurrencyColumns(prisma);
 
-  const tableName = resolveTableName(tableKey);
-  const placeholders = uniqueIds.map((_, index) => `$${index + 2}`).join(", ");
-  await prisma.$executeRawUnsafe(
-    `UPDATE "${tableName}" SET "currencyCode" = $1 WHERE "id" IN (${placeholders})`,
-    normalizeCurrencyCode(currencyCode, DEFAULT_PRIMARY_CURRENCY),
-    ...uniqueIds,
+  const tableIdentifier = resolveTableIdentifier(tableKey);
+  await prisma.$executeRaw(
+    Prisma.sql`UPDATE ${tableIdentifier} SET "currencyCode" = ${normalizeCurrencyCode(currencyCode, DEFAULT_PRIMARY_CURRENCY)} WHERE "id" IN (${Prisma.join(uniqueIds)})`,
   );
 };
 
