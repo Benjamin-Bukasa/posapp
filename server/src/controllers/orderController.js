@@ -1,5 +1,6 @@
-const { Prisma } = require("@prisma/client");
+const { randomUUID } = require("crypto");
 const prisma = require("../config/prisma");
+const { Prisma } = require("@prisma/client");
 const {
   convertAmount,
   loadTenantCurrencySettings,
@@ -53,6 +54,10 @@ const { hasPermission } = require("../utils/permissionAccess");
 const LONG_TRANSACTION_OPTIONS = {
   maxWait: 15000,
   timeout: 45000,
+};
+const CANCEL_TRANSACTION_OPTIONS = {
+  maxWait: 20000,
+  timeout: 120000,
 };
 const isSeller = (user) => user?.role === "SELLER";
 
@@ -490,25 +495,6 @@ const buildAuditChanges = (beforeSnapshot, afterSnapshot) => {
   return changes;
 };
 
-const hasLegacyOrderWithoutLots = async ({
-  tenantId,
-  storageZoneId,
-  productIds = [],
-}) => {
-  const uniqueProductIds = [...new Set((productIds || []).filter(Boolean))];
-  if (!uniqueProductIds.length) return true;
-
-  const rows = await prisma.$queryRaw`
-    SELECT COUNT(*)::int AS "count"
-    FROM "inventoryLots"
-    WHERE "tenantId" = ${tenantId}
-      AND "storageZoneId" = ${storageZoneId}
-      AND "productId" IN (${Prisma.join(uniqueProductIds)})
-  `;
-
-  return Number(rows?.[0]?.count || 0) === 0;
-};
-
 const restoreAggregateInventoryForRequirements = async (
   tx,
   {
@@ -520,44 +506,63 @@ const restoreAggregateInventoryForRequirements = async (
     createdById = null,
   },
 ) => {
-  const movementRows = [];
-
-  for (const [productId, quantity] of inventoryRequirements.entries()) {
-    await tx.inventory.upsert({
-      where: {
-        storageZoneId_productId: {
-          storageZoneId,
-          productId,
-        },
-      },
-      update: {
-        quantity: {
-          increment: quantity,
-        },
-        ...(storeId ? { storeId } : {}),
-      },
-      create: {
-        tenantId,
-        storeId,
-        storageZoneId,
-        productId,
-        quantity,
-      },
-    });
-
-    movementRows.push({
-      tenantId,
+  const rows = [...(inventoryRequirements?.entries?.() || [])]
+    .map(([productId, quantity]) => ({
       productId,
-      storageZoneId,
-      quantity,
-      movementType: "IN",
-      sourceType: "DIRECT",
-      sourceId,
-      createdById,
-    });
+      quantity: Number(quantity || 0),
+    }))
+    .filter((entry) => entry.productId && entry.quantity > 0);
+
+  if (!rows.length) {
+    return [];
   }
 
-  return movementRows;
+  await tx.inventory.createMany({
+    data: rows.map((entry) => ({
+      id: randomUUID(),
+      tenantId,
+      storeId,
+      storageZoneId,
+      productId: entry.productId,
+      quantity: 0,
+    })),
+    skipDuplicates: true,
+  });
+
+  await tx.$executeRaw(
+    Prisma.sql`
+      UPDATE "inventory" AS inventory
+      SET
+        "quantity" = inventory."quantity" + CAST(delta."quantity" AS INTEGER),
+        "storeId" = delta."storeId",
+        "tenantId" = delta."tenantId",
+        "updatedAt" = NOW()
+      FROM (
+        VALUES ${Prisma.join(
+          rows.map((entry) => Prisma.sql`(
+            ${storageZoneId},
+            ${entry.productId},
+            ${tenantId},
+            ${storeId},
+            ${entry.quantity}
+          )`),
+        )}
+      ) AS delta("storageZoneId", "productId", "tenantId", "storeId", "quantity")
+      WHERE inventory."storageZoneId" = delta."storageZoneId"
+        AND inventory."productId" = delta."productId"
+    `,
+  );
+
+  return rows.map((entry) => ({
+    tenantId,
+    productId: entry.productId,
+    storageZoneId,
+    quantity: entry.quantity,
+    movementType: "IN",
+    sourceType: "DIRECT",
+    sourceId,
+    createdById,
+  }));
 };
 
 const getOrderWithRelations = (tenantId, id) =>
@@ -904,29 +909,11 @@ const cancelOrderSale = async ({
         nextAmount: 0,
         nextMethod: payment.method,
       });
-    }, LONG_TRANSACTION_OPTIONS);
+    }, CANCEL_TRANSACTION_OPTIONS);
   };
 
-  let aggregateRestockOnly = await hasLegacyOrderWithoutLots({
-    tenantId,
-    storageZoneId: cashSession.storageZoneId,
-    productIds: [...saleSnapshot.inventoryRequirements.keys()],
-  });
-
-  try {
-    await runCancelTransaction({ aggregateOnly: aggregateRestockOnly });
-  } catch (transactionError) {
-    const isTransactionTimeout =
-      transactionError?.code === "P2028" ||
-      String(transactionError?.message || "").includes("Transaction already closed");
-
-    if (!isTransactionTimeout || aggregateRestockOnly) {
-      throw transactionError;
-    }
-
-    aggregateRestockOnly = true;
-    await runCancelTransaction({ aggregateOnly: true });
-  }
+  const aggregateRestockOnly = true;
+  await runCancelTransaction({ aggregateOnly: true });
 
   const canceledOrder = await hydrateOrdersWithCurrencyCodes(
     await getOrderWithRelations(tenantId, existingOrder.id),

@@ -394,7 +394,7 @@ const adjustLinkedPaymentCashTotals = async (
     cashSessionId,
   );
 
-  return getCashSessionById({ tenantId, sessionId: cashSessionId });
+  return cashSessionId;
 };
 
 const recordCashMovement = async ({
