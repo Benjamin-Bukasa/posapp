@@ -142,8 +142,7 @@ const listGiftHistoryByCashSession = async ({ tenantId, cashSessionId }) => {
     return [];
   }
 
-  const rows = await prisma.$queryRawUnsafe(
-    `
+  const rows = await prisma.$queryRaw`
       SELECT
         offer."orderId" AS "orderId",
         offer."orderItemId" AS "orderItemId",
@@ -161,19 +160,21 @@ const listGiftHistoryByCashSession = async ({ tenantId, cashSessionId }) => {
         customer."firstName" AS "customerFirstName",
         customer."lastName" AS "customerLastName"
       FROM "orderItemOffers" offer
-      INNER JOIN "orderItems" item ON item."id" = offer."orderItemId"
+      INNER JOIN "order_items" item ON item."id" = offer."orderItemId"
       INNER JOIN "orders" "order" ON "order"."id" = offer."orderId"
-      INNER JOIN "cashSessionPayments" link ON link."cashSessionId" = $1
-      INNER JOIN "payements" payment ON payment."id" = link."paymentId" AND payment."orderId" = "order"."id"
       LEFT JOIN "products" product ON product."id" = item."productId"
       LEFT JOIN "users" "user" ON "user"."id" = "order"."createdById"
       LEFT JOIN "customers" customer ON customer."id" = "order"."customerId"
-      WHERE offer."tenantId" = $2
+      WHERE offer."tenantId" = ${tenantId}
+        AND EXISTS (
+          SELECT 1
+          FROM "cashSessionPayments" link
+          INNER JOIN "payements" payment ON payment."id" = link."paymentId"
+          WHERE link."cashSessionId" = ${cashSessionId}
+            AND payment."orderId" = "order"."id"
+        )
       ORDER BY "order"."createdAt" DESC, offer."orderItemId" DESC
-    `,
-    cashSessionId,
-    tenantId,
-  );
+  `;
 
   return rows.map((row) => ({
     orderId: row.orderId,

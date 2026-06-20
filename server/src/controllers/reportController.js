@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const { sendExport } = require("../utils/exporter");
 const {
@@ -239,31 +240,29 @@ const loadReportAuditRows = async ({
 }) => {
   await ensureOrderAuditTables();
 
-  const clauses = [`log."tenantId" = $1`, `log."action" IN ('DELETED', 'REFUNDED')`];
-  const params = [tenantId];
+  const clauses = [
+    Prisma.sql`log."tenantId" = ${tenantId}`,
+    Prisma.sql`log."action" IN ('DELETED', 'REFUNDED')`,
+  ];
 
   if (sellerUserId) {
-    params.push(sellerUserId);
-    clauses.push(`"order"."createdById" = $${params.length}`);
+    clauses.push(Prisma.sql`"order"."createdById" = ${sellerUserId}`);
   }
 
   if (storeId) {
-    params.push(storeId);
-    clauses.push(`"order"."storeId" = $${params.length}`);
+    clauses.push(Prisma.sql`"order"."storeId" = ${storeId}`);
   }
 
   if (createdFrom) {
-    params.push(createdFrom);
-    clauses.push(`log."createdAt" >= $${params.length}`);
+    clauses.push(Prisma.sql`log."createdAt" >= ${createdFrom}`);
   }
 
   if (createdTo) {
-    params.push(createdTo);
-    clauses.push(`log."createdAt" <= $${params.length}`);
+    clauses.push(Prisma.sql`log."createdAt" <= ${createdTo}`);
   }
 
-  return prisma.$queryRawUnsafe(
-    `
+  return prisma.$queryRaw(
+    Prisma.sql`
       SELECT
         log."id" AS "id",
         log."orderId" AS "orderId",
@@ -282,10 +281,9 @@ const loadReportAuditRows = async ({
       LEFT JOIN "stores" store ON store."id" = "order"."storeId"
       LEFT JOIN "users" cashier ON cashier."id" = "order"."createdById"
       LEFT JOIN "customers" customer ON customer."id" = "order"."customerId"
-      WHERE ${clauses.join(" AND ")}
+      WHERE ${Prisma.join(clauses, Prisma.sql` AND `)}
       ORDER BY log."createdAt" DESC
     `,
-    ...params,
   );
 };
 

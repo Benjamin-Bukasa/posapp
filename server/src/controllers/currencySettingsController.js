@@ -1,4 +1,5 @@
 const { randomUUID } = require("crypto");
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const { emitToTenant } = require("../socket");
 const {
@@ -557,10 +558,10 @@ const countCurrencyBusinessReferences = async (tenantId, currencyCode) => {
   const hits = [];
 
   for (const ref of tableRefs) {
-    const rows = await prisma.$queryRawUnsafe(
-      `SELECT COUNT(*)::int AS count FROM "${ref.table}" WHERE "tenantId" = $1 AND "${ref.column}" = $2`,
-      tenantId,
-      currencyCode,
+    const tableIdentifier = Prisma.raw(`"${ref.table}"`);
+    const columnIdentifier = Prisma.raw(`"${ref.column}"`);
+    const rows = await prisma.$queryRaw(
+      Prisma.sql`SELECT COUNT(*)::int AS count FROM ${tableIdentifier} WHERE "tenantId" = ${tenantId} AND ${columnIdentifier} = ${currencyCode}`,
     );
     const count = Number(rows?.[0]?.count || 0);
     if (count > 0) {

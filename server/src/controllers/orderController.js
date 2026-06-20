@@ -1,3 +1,4 @@
+const { Prisma } = require("@prisma/client");
 const prisma = require("../config/prisma");
 const {
   convertAmount,
@@ -72,13 +73,6 @@ const GIFT_REASON_TYPES = new Set([
   "THRESHOLD_PURCHASE",
   "MANUAL",
 ]);
-
-const escapeSqlValue = (value) => {
-  if (value === null || value === undefined) return "NULL";
-  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
-  if (typeof value === "boolean") return value ? "TRUE" : "FALSE";
-  return `'${String(value).replace(/'/g, "''")}'`;
-};
 
 const toNumber = (value) => {
   const amount = Number(value);
@@ -504,14 +498,13 @@ const hasLegacyOrderWithoutLots = async ({
   const uniqueProductIds = [...new Set((productIds || []).filter(Boolean))];
   if (!uniqueProductIds.length) return true;
 
-  const values = uniqueProductIds.map((id) => `(${escapeSqlValue(id)})`).join(", ");
-  const rows = await prisma.$queryRawUnsafe(`
+  const rows = await prisma.$queryRaw`
     SELECT COUNT(*)::int AS "count"
     FROM "inventoryLots"
-    WHERE "tenantId" = ${escapeSqlValue(tenantId)}
-      AND "storageZoneId" = ${escapeSqlValue(storageZoneId)}
-      AND "productId" IN (SELECT "value" FROM (VALUES ${values}) AS ids("value"))
-  `);
+    WHERE "tenantId" = ${tenantId}
+      AND "storageZoneId" = ${storageZoneId}
+      AND "productId" IN (${Prisma.join(uniqueProductIds)})
+  `;
 
   return Number(rows?.[0]?.count || 0) === 0;
 };
