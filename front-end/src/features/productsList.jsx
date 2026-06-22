@@ -51,13 +51,7 @@ const CATEGORY_AVATAR_MAP = {
   ],
 };
 
-export const resolveCategoryAvatar = (category, seed = 0) => {
-  const key = category?.toLowerCase?.().trim?.() ?? "";
-  const list = CATEGORY_AVATAR_MAP[key];
-  if (!list || list.length === 0) return "";
-  const index = Math.abs(Number(seed) || 0) % list.length;
-  return list[index];
-};
+export const resolveCategoryAvatar = () => "";
 
 const escapeCsvValue = (value) => {
   if (value === null || value === undefined) return "";
