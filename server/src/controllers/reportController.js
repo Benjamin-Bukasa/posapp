@@ -240,27 +240,6 @@ const loadReportAuditRows = async ({
 }) => {
   await ensureOrderAuditTables();
 
-  const clauses = [
-    Prisma.sql`log."tenantId" = ${tenantId}`,
-    Prisma.sql`log."action" IN ('DELETED', 'REFUNDED')`,
-  ];
-
-  if (sellerUserId) {
-    clauses.push(Prisma.sql`"order"."createdById" = ${sellerUserId}`);
-  }
-
-  if (storeId) {
-    clauses.push(Prisma.sql`"order"."storeId" = ${storeId}`);
-  }
-
-  if (createdFrom) {
-    clauses.push(Prisma.sql`log."createdAt" >= ${createdFrom}`);
-  }
-
-  if (createdTo) {
-    clauses.push(Prisma.sql`log."createdAt" <= ${createdTo}`);
-  }
-
   return prisma.$queryRaw(
     Prisma.sql`
       SELECT
@@ -281,7 +260,12 @@ const loadReportAuditRows = async ({
       LEFT JOIN "stores" store ON store."id" = "order"."storeId"
       LEFT JOIN "users" cashier ON cashier."id" = "order"."createdById"
       LEFT JOIN "customers" customer ON customer."id" = "order"."customerId"
-      WHERE ${Prisma.join(clauses, Prisma.sql` AND `)}
+      WHERE log."tenantId" = ${tenantId}
+        AND log."action" IN ('DELETED', 'REFUNDED')
+        ${sellerUserId ? Prisma.sql`AND "order"."createdById" = ${sellerUserId}` : Prisma.empty}
+        ${storeId ? Prisma.sql`AND "order"."storeId" = ${storeId}` : Prisma.empty}
+        ${createdFrom ? Prisma.sql`AND log."createdAt" >= ${createdFrom}` : Prisma.empty}
+        ${createdTo ? Prisma.sql`AND log."createdAt" <= ${createdTo}` : Prisma.empty}
       ORDER BY log."createdAt" DESC
     `,
   );
