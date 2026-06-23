@@ -11,46 +11,6 @@ import { apiDelete } from "../services/apiClient";
 import { useProductsData } from "../hooks/useProductsData";
 import useSyncedQuerySearch from "../hooks/useSyncedQuerySearch";
 
-const CATEGORY_AVATAR_MAP = {
-  antalgique: [
-    "https://images.pexels.com/photos/9742740/pexels-photo-9742740.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-    "https://images.pexels.com/photos/9742744/pexels-photo-9742744.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  antibiotique: [
-    "https://images.pexels.com/photos/4210607/pexels-photo-4210607.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-    "https://images.pexels.com/photos/208512/pexels-photo-208512.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  "anti-inflammatoire": [
-    "https://images.pexels.com/photos/3683086/pexels-photo-3683086.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  antihistaminique: [
-    "https://images.pexels.com/photos/9742745/pexels-photo-9742745.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  "gastro-entérologie": [
-    "https://images.pexels.com/photos/5207322/pexels-photo-5207322.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-    "https://images.pexels.com/photos/9742782/pexels-photo-9742782.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  respiratoire: [
-    "https://images.pexels.com/photos/3923166/pexels-photo-3923166.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  diabète: [
-    "https://images.pexels.com/photos/9742749/pexels-photo-9742749.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  cardiologie: [
-    "https://images.pexels.com/photos/8015770/pexels-photo-8015770.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-    "https://images.pexels.com/photos/4210612/pexels-photo-4210612.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  psychiatrie: [
-    "https://images.pexels.com/photos/9742768/pexels-photo-9742768.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  endocrinologie: [
-    "https://images.pexels.com/photos/9742738/pexels-photo-9742738.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-  corticoïde: [
-    "https://images.pexels.com/photos/3683080/pexels-photo-3683080.jpeg?auto=compress&cs=tinysrgb&w=120&h=120&fit=crop",
-  ],
-};
-
 export const resolveCategoryAvatar = () => "";
 
 const escapeCsvValue = (value) => {
