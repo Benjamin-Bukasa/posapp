@@ -44,7 +44,7 @@ const buildQuery = (params = {}) => {
 };
 
 const apiRequest = async (path, options = {}) => {
-  const { method = "GET", body, headers = {}, retryOn401 = true } = options;
+  const { method = "GET", body, headers = {}, retryOn401 = true, responseType = "json" } = options;
   const init = {
     method,
     headers: {
@@ -86,6 +86,8 @@ const apiRequest = async (path, options = {}) => {
     response = await execute(token);
   }
 
+  if (response.ok && responseType === "blob") return response.blob();
+
   const data = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -101,8 +103,9 @@ const apiRequest = async (path, options = {}) => {
 };
 
 const apiGet = (path) => apiRequest(path);
+const apiGetBlob = (path) => apiRequest(path, { responseType: "blob" });
 const apiPost = (path, body) => apiRequest(path, { method: "POST", body });
 const apiPatch = (path, body) => apiRequest(path, { method: "PATCH", body });
 const apiDelete = (path, body) => apiRequest(path, { method: "DELETE", body });
 
-export { apiGet, apiPost, apiPatch, apiDelete, buildQuery, buildUrl, API_URL };
+export { apiGet, apiGetBlob, apiPost, apiPatch, apiDelete, buildQuery, buildUrl, API_URL };

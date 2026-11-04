@@ -16,7 +16,7 @@ import StatCard from "../components/ui/statCard";
 import CustomerCreateModal from "../components/ui/customerCreateModal";
 import useAuthStore from "../stores/authStore";
 import useToastStore from "../stores/toastStore";
-import { apiGet, apiPost } from "../services/apiClient";
+import { apiGet, apiGetBlob, apiPost, buildQuery } from "../services/apiClient";
 import { formatDate } from "../utils/formatters";
 import { getMonthRange, percentChange } from "../utils/metrics";
 import { shouldSkipPermissionToast } from "../utils/permissionErrors";
@@ -62,6 +62,7 @@ function Customers() {
   const user = useAuthStore((state) => state.user);
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [search, setSearch] = useSyncedQuerySearch("q");
   const [filterValues, setFilterValues] = useState(null);
   const [sortValues, setSortValues] = useState(null);
@@ -314,6 +315,33 @@ function Customers() {
     []
   );
 
+  const handleExport = async (item) => {
+    if (loading || exporting) return;
+    const type = item.id === "excel" ? "xlsx" : item.id;
+    if (!["csv", "xlsx", "pdf"].includes(type)) return;
+    setExporting(true);
+    try {
+      const query = buildQuery({ export: type, search: search.trim() });
+      const blob = await apiGetBlob(`/api/customers?${query}`);
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `clients.${type}`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      showToast({
+        title: "Export impossible",
+        message: error.message || "Impossible d’exporter la liste des clients.",
+        variant: "danger",
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const actionItems = [
     { id: "view", label: "Voir", icon: Eye },
     { id: "message", label: "Envoyer un message", icon: MessageCircle },
@@ -379,7 +407,8 @@ function Customers() {
           setSortValues(values);
           setPage(1);
         }}
-        onExportSelect={() => {}}
+        onExportSelect={handleExport}
+        exportLabel={exporting ? "Export en cours..." : "Exporter"}
         pagination={{
           page: safePage,
           totalPages,
